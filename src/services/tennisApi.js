@@ -2,7 +2,6 @@
 // tennisApi.js  –  TennisVantage API service layer
 // ─────────────────────────────────────────────────────────────────────────────
 
-// 1. Define these FIRST so they can be used below without crashing
 const API_KEY = import.meta.env.VITE_RAPIDAPI_KEY;
 const API_HOST = import.meta.env.VITE_RAPIDAPI_HOST || 'api-tennis.p.rapidapi.com';
 
@@ -27,7 +26,7 @@ export async function getUpcomingMatches() {
   return MOCK_DATA.matches.filter(m => m.status === 'upcoming');
 }
 
-// ── Matches by Date (FIXING YOUR DASHBOARD ERROR) ────────────────────────────
+// ── Matches by Date (FIXED: Added this function!) ────────────────────────────
 export async function getMatchesByDate(dateString) {
   console.log(`Mock fetch for matches on: ${dateString}`);
   return MOCK_DATA.matches;
@@ -74,7 +73,7 @@ export async function sendChatMessage(messages) {
   await new Promise(r => setTimeout(r, 900)); 
   const last = messages[messages.length - 1]?.content ?? '';
   return {
-    content: [{ text: `[AI stub] You asked: "${last}". Connect your AI model in tennisApi.js → sendChatMessage() to get real answers!` }],
+    content: [{ text: `[AI stub] You asked: "${last}". Connect your AI model to get real answers!` }],
   };
 }
 

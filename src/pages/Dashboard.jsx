@@ -72,7 +72,7 @@ export default function Dashboard({ showToast }) {
 
   return (
     <>
-    
+    <style>{CSS}</style>
       <div className="db-root">
 
 
