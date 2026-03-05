@@ -6,7 +6,7 @@
 //   usePrediction(match) → { prediction, loading, error }
 //   useAiChat(match) → { messages, typing, sendMessage, reset, bottomRef }
 // ─────────────────────────────────────────────────────────────────────────────
-import { useState, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useMatches, useRankings, usePrediction, useAiChat } from '../hooks/hooks';
 import { Logo, Btn, Badge, Card, Spinner } from '../components/ui';
@@ -72,7 +72,9 @@ export default function Dashboard({ showToast }) {
 
   return (
     <>
+    
       <div className="db-root">
+
 
         {/* ══ TOP NAVBAR ════════════════════════════════════════════════════ */}
         <nav className="db-nav">

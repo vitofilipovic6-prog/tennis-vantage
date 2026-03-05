@@ -1,21 +1,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // tennisApi.js  –  TennisVantage API service layer
-//
-// ┌─────────────────────────────────────────────────────────────────────────┐
-// │  RECOMMENDED API: "API-Tennis" on RapidAPI                             │
-// │  URL: https://rapidapi.com/api-sports/api/api-tennis                   │
-// │  Data: live scores, player stats, H2H, odds, rankings, tournaments     │
-// │  Free tier: 100 req/day  |  Pro: $10/mo                                │
-// │                                                                         │
-// │  TO ACTIVATE:                                                           │
-// │  1. Subscribe at the link above, grab your RapidAPI key                │
-// │  2. Add to your .env:  VITE_RAPIDAPI_KEY=your_key_here                 │
-// │  3. Remove the mock return in each function, uncomment the fetch call  │
-// └─────────────────────────────────────────────────────────────────────────┘
 // ─────────────────────────────────────────────────────────────────────────────
 
+// 1. Define these FIRST so they can be used below without crashing
+const API_KEY = import.meta.env.VITE_RAPIDAPI_KEY;
+const API_HOST = import.meta.env.VITE_RAPIDAPI_HOST || 'api-tennis.p.rapidapi.com';
+
 const BASE_URL  = 'https://api-tennis.p.rapidapi.com';
-const HEADERS   = { 'X-RapidAPI-Key': API_KEY, 'X-RapidAPI-Host': 'api-tennis.p.rapidapi.com' };
+const HEADERS   = { 'X-RapidAPI-Key': API_KEY, 'X-RapidAPI-Host': API_HOST };
 
 async function apiFetch(path, params = {}) {
   const url = new URL(`${BASE_URL}${path}`);
@@ -27,44 +19,37 @@ async function apiFetch(path, params = {}) {
 
 // ── Live matches ─────────────────────────────────────────────────────────────
 export async function getLiveMatches() {
-  // return apiFetch('/matches', { status: 'live', timezone: 'Europe/Zagreb' });
   return MOCK_DATA.matches.filter(m => m.status === 'live');
 }
 
 // ── Upcoming matches ─────────────────────────────────────────────────────────
 export async function getUpcomingMatches() {
-  // return apiFetch('/matches', { status: 'scheduled', timezone: 'Europe/Zagreb' });
   return MOCK_DATA.matches.filter(m => m.status === 'upcoming');
+}
+
+// ── Matches by Date (FIXING YOUR DASHBOARD ERROR) ────────────────────────────
+export async function getMatchesByDate(dateString) {
+  console.log(`Mock fetch for matches on: ${dateString}`);
+  return MOCK_DATA.matches;
 }
 
 // ── Rankings ─────────────────────────────────────────────────────────────────
 export async function getRankings(tour = 'ATP') {
-  // return apiFetch('/rankings', { tour });
   return MOCK_DATA.rankings;
 }
 
 // ── Player stats ─────────────────────────────────────────────────────────────
 export async function getPlayerStats(playerId) {
-  // return apiFetch('/player/statistics', { player_id: playerId });
   return MOCK_DATA.players.find(p => p.id === playerId) ?? null;
 }
 
 // ── Head to head ─────────────────────────────────────────────────────────────
 export async function getHeadToHead(p1Id, p2Id) {
-  // return apiFetch('/head2head', { player1_id: p1Id, player2_id: p2Id });
   return MOCK_DATA.h2h;
 }
 
 // ── Prediction engine ────────────────────────────────────────────────────────
-// Swap this entire function body for your ML model API call.
-// Output shape is the contract the rest of the UI depends on.
 export async function getPrediction(match) {
-  // Real call example:
-  // return fetch('/api/predict', {
-  //   method: 'POST', headers: { 'Content-Type': 'application/json' },
-  //   body: JSON.stringify(match),
-  // }).then(r => r.json());
-
   const p1 = match.player1;
   const p2 = match.player2;
   const rankEdge     = (p2.rank - p1.rank) * 1.2;
@@ -85,16 +70,8 @@ export async function getPrediction(match) {
 }
 
 // ── AI Chat stub ─────────────────────────────────────────────────────────────
-// Replace body with your real AI endpoint (Anthropic / OpenAI / Gemini)
 export async function sendChatMessage(messages) {
-  // const res = await fetch('https://api.anthropic.com/v1/messages', {
-  //   method: 'POST',
-  //   headers: { 'Content-Type': 'application/json', 'x-api-key': YOUR_KEY },
-  //   body: JSON.stringify({ model: 'claude-opus-4-6', max_tokens: 512, messages }),
-  // });
-  // return res.json();
-
-  await new Promise(r => setTimeout(r, 900)); // simulate latency
+  await new Promise(r => setTimeout(r, 900)); 
   const last = messages[messages.length - 1]?.content ?? '';
   return {
     content: [{ text: `[AI stub] You asked: "${last}". Connect your AI model in tennisApi.js → sendChatMessage() to get real answers!` }],
@@ -102,7 +79,7 @@ export async function sendChatMessage(messages) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  MOCK DATA  (remove once real API is wired)
+//  MOCK DATA 
 // ─────────────────────────────────────────────────────────────────────────────
 export const MOCK_DATA = {
   players: [
@@ -147,26 +124,3 @@ export const MOCK_DATA = {
     ],
   },
 };
-
-// src/services/tennisApi.js
-
-// 1. Pull the keys safely from your .env file
-const API_KEY = import.meta.env.VITE_RAPIDAPI_KEY;
-const API_HOST = import.meta.env.VITE_RAPIDAPI_HOST;
-
-const url = 'https://tennis-api-atp-wta-itf.p.rapidapi.com/tennis/v2/search?search=ABC';
-const options = {
-	method: 'GET',
-	headers: {
-		'x-rapidapi-key': 'af24673443mshb8f9d8569427dd6p129434jsn4c66c28697d4',
-		'x-rapidapi-host': 'tennis-api-atp-wta-itf.p.rapidapi.com'
-	}
-};
-
-try {
-	const response = await fetch(url, options);
-	const result = await response.text();
-	console.log(result);
-} catch (error) {
-	console.error(error);
-}
