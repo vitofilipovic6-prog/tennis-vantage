@@ -15,7 +15,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 const BASE_URL  = 'https://api-tennis.p.rapidapi.com';
-const API_KEY   = import.meta.env?.VITE_RAPIDAPI_KEY ?? '';
 const HEADERS   = { 'X-RapidAPI-Key': API_KEY, 'X-RapidAPI-Host': 'api-tennis.p.rapidapi.com' };
 
 async function apiFetch(path, params = {}) {
@@ -148,3 +147,26 @@ export const MOCK_DATA = {
     ],
   },
 };
+
+// src/services/tennisApi.js
+
+// 1. Pull the keys safely from your .env file
+const API_KEY = import.meta.env.VITE_RAPIDAPI_KEY;
+const API_HOST = import.meta.env.VITE_RAPIDAPI_HOST;
+
+const url = 'https://tennis-api-atp-wta-itf.p.rapidapi.com/tennis/v2/search?search=ABC';
+const options = {
+	method: 'GET',
+	headers: {
+		'x-rapidapi-key': 'af24673443mshb8f9d8569427dd6p129434jsn4c66c28697d4',
+		'x-rapidapi-host': 'tennis-api-atp-wta-itf.p.rapidapi.com'
+	}
+};
+
+try {
+	const response = await fetch(url, options);
+	const result = await response.text();
+	console.log(result);
+} catch (error) {
+	console.error(error);
+}

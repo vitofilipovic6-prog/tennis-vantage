@@ -10,6 +10,8 @@ import { useState, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useMatches, useRankings, usePrediction, useAiChat } from '../hooks/hooks';
 import { Logo, Btn, Badge, Card, Spinner } from '../components/ui';
+import MatchCalendar from '../components/MatchCalendar';
+import { getMatchesByDate } from '../services/tennisApi';
 
 // ─── NAV CONFIG ───────────────────────────────────────────────────────────────
 const TABS = [
@@ -22,9 +24,37 @@ const TABS = [
 // ─── LAYOUT SHELL ─────────────────────────────────────────────────────────────
 export default function Dashboard({ showToast }) {
   const { user, profile, firstName, logout } = useAuth();
-  const [activeTab,     setActiveTab]     = useState('matches');
-  const [mobileMenu,    setMobileMenu]    = useState(false);
+  const [activeTab, setActiveTab] = useState('matches');
+  const [mobileMenu, setMobileMenu] = useState(false);
   const [selectedMatch, setSelectedMatch] = useState(null);
+
+  // 🎾 NEW: State for API Matches
+  const [apiMatches, setApiMatches] = useState([]);
+  const [isLoadingMatches, setIsLoadingMatches] = useState(false);
+
+  // 🎾 NEW: Fetch matches when calendar date changes
+  const handleDateChange = async (selectedDate) => {
+    setIsLoadingMatches(true);
+    
+    // Format date to YYYY-MM-DD for RapidAPI
+    const formattedDate = selectedDate.toISOString().split('T')[0];
+    console.log("Fetching matches for...", formattedDate);
+    
+    try {
+      const data = await getMatchesByDate(formattedDate);
+      setApiMatches(data); // Save the data to state
+      console.log("Here are the live matches!", data);
+    } catch (error) {
+      console.error("API Error:", error);
+    } finally {
+      setIsLoadingMatches(false);
+    }
+  };
+
+  // 🎾 NEW: Load today's matches automatically when dashboard opens
+  useEffect(() => {
+    handleDateChange(new Date());
+  }, []);
 
   async function handleLogout() {
     await logout();
@@ -42,7 +72,6 @@ export default function Dashboard({ showToast }) {
 
   return (
     <>
-      <style>{CSS}</style>
       <div className="db-root">
 
         {/* ══ TOP NAVBAR ════════════════════════════════════════════════════ */}
@@ -129,7 +158,19 @@ export default function Dashboard({ showToast }) {
 
           {/* Tab content */}
           <div className="db-content">
-            {activeTab === 'matches'     && <MatchesTab     onSelectMatch={goToPredict} />}
+            {activeTab === 'matches' && (
+              <div className="tv-fade-up d1">
+                {/* 🎾 SofaScore Calendar */}
+                <MatchCalendar onSelectDate={handleDateChange} />
+                
+                {/* 🎾 Passing the API data down to your MatchesTab! */}
+                <MatchesTab 
+                   onSelectMatch={goToPredict} 
+                   apiMatches={apiMatches} 
+                   isLoading={isLoadingMatches} 
+                />
+              </div>
+            )}
             {activeTab === 'predictions' && <PredictionsTab selectedMatch={selectedMatch} onSelectMatch={setSelectedMatch} />}
             {activeTab === 'rankings'    && <RankingsTab />}
             {activeTab === 'chat'        && <AiChatTab contextMatch={selectedMatch} />}
@@ -156,37 +197,91 @@ export default function Dashboard({ showToast }) {
 }
 
 // ─── MATCHES TAB ──────────────────────────────────────────────────────────────
-function MatchesTab({ onSelectMatch }) {
-  const { live, upcoming, loading, error, refresh } = useMatches();
+function MatchesTab({ onSelectMatch, apiMatches, isLoading }) {
+  // If the API is still fetching, show a clean loading message
+  if (isLoading) {
+    return (
+      <div className="tv-fade-up" style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-muted)' }}>
+        <div className="live-dot" style={{ display: 'inline-block', margin: '0 auto 15px', transform: 'scale(1.5)' }}></div>
+        <h3>Fetching Court Data...</h3>
+      </div>
+    );
+  }
 
-  if (loading) return <LoadingGrid />;
-  if (error)   return <ErrorMessage msg={error} onRetry={refresh} />;
+  // RapidAPI sends data in a specific structure. 
+  // We need to map it so your beautiful MatchCard understands it.
+  const formattedMatches = (apiMatches || []).map((apiMatch) => {
+    // API-Sports uses "status.short" (e.g., 'LIVE', 'NS' for Not Started, 'FT' for Finished)
+    const isLive = ['LIVE', '1H', '2H', 'PT'].includes(apiMatch.fixture?.status?.short);
+    
+    // Safely grab player names (API-Sports usually stores them under 'teams')
+    const p1Name = apiMatch.teams?.home?.name || 'Player 1';
+    const p2Name = apiMatch.teams?.away?.name || 'Player 2';
+    
+    return {
+      id: apiMatch.fixture?.id || Math.random(),
+      tournament: apiMatch.league?.name || 'ATP Tour',
+      round: apiMatch.league?.round || 'Round 1',
+      surface: 'Hard', // Basic API endpoints don't always send surface, so we default to Hard
+      date: new Date(apiMatch.fixture?.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      status: isLive ? 'live' : 'upcoming',
+      player1: { name: p1Name, rank: '-', flag: '🏳️' },
+      player2: { name: p2Name, rank: '-', flag: '🏳️' },
+      score: null // You can add live score logic here later!
+    };
+  });
+
+  // Separate matches by status so we can put Live ones at the top
+  const liveMatches = formattedMatches.filter(m => m.status === 'live');
+  const upcomingMatches = formattedMatches.filter(m => m.status !== 'live');
 
   return (
     <div className="tv-fade-up">
-      {live.length > 0 && (
-        <section className="db-section">
-          <SectionHeading label="Live Now" dot accent="var(--green)" />
+      
+      {/* 🔴 LIVE MATCHES SECTION */}
+      {liveMatches.length > 0 && (
+        <section style={{ marginBottom: '3rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '1.5rem' }}>
+            <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>Live Now</h2>
+            <span style={{ background: 'rgba(74, 222, 128, 0.2)', color: 'var(--green)', padding: '2px 10px', borderRadius: '50px', fontSize: '0.8rem', fontWeight: 'bold' }}>
+              {liveMatches.length}
+            </span>
+          </div>
+          
           <div className="db-matches-grid">
-            {live.map(m => <MatchCard key={m.id} match={m} onPredict={() => onSelectMatch(m)} />)}
+            {liveMatches.map((m, i) => (
+              <div key={m.id} className={`tv-fade-up d${Math.min(i + 1, 5)}`}>
+                <MatchCard match={m} onPredict={() => onSelectMatch(m)} />
+              </div>
+            ))}
           </div>
         </section>
       )}
-      <section className="db-section">
-        <SectionHeading label="Upcoming Matches" />
-        {upcoming.length === 0
-          ? <EmptyState icon="🎾" title="No upcoming matches" desc="Check back soon — fixtures are updated daily." />
-          : (
-            <div className="db-matches-grid">
-              {upcoming.map((m, i) => (
-                <div key={m.id} className={`tv-fade-up d${Math.min(i + 1, 5)}`}>
-                  <MatchCard match={m} onPredict={() => onSelectMatch(m)} />
-                </div>
-              ))}
-            </div>
-          )
-        }
+
+      {/* 📅 UPCOMING MATCHES SECTION */}
+      <section>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '1.5rem' }}>
+          <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>Scheduled Matches</h2>
+          <span style={{ background: 'var(--bg-glass-md)', color: 'var(--text-muted)', padding: '2px 10px', borderRadius: '50px', fontSize: '0.8rem', fontWeight: 'bold' }}>
+            {upcomingMatches.length}
+          </span>
+        </div>
+
+        {upcomingMatches.length === 0 && liveMatches.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '40px', backgroundColor: 'var(--bg-card)', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
+            <p style={{ color: 'var(--text-muted)', fontSize: '1.1rem' }}>No matches found for this date. Try scrolling the calendar!</p>
+          </div>
+        ) : (
+          <div className="db-matches-grid">
+            {upcomingMatches.map((m, i) => (
+              <div key={m.id} className={`tv-fade-up d${Math.min(i + 1, 5)}`}>
+                <MatchCard match={m} onPredict={() => onSelectMatch(m)} />
+              </div>
+            ))}
+          </div>
+        )}
       </section>
+
     </div>
   );
 }
