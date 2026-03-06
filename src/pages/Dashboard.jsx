@@ -1,19 +1,18 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Dashboard.jsx – TennisVantage  (redesigned, drop-in replacement)
-// Hooks/auth API unchanged: { user, profile, firstName, logout } from useAuth
-//   useMatches  → { live, upcoming, loading, error, refresh }
-//   useRankings → { rankings, loading, error }
-//   usePrediction(match) → { prediction, loading, error }
-//   useAiChat(match) → { messages, typing, sendMessage, reset, bottomRef }
+// Dashboard.jsx – TennisVantage (complete rewrite)
+// NEW vs previous:
+//   • "Sign Out" moved into mobile hamburger overlay (not cramped in top-right)
+//   • RankingsTab → clickable rows → PlayerModal (bio + stats + last-5 serve table)
+//   • MatchCalendar integrated in MatchesTab with per-date fetch + empty state
+//   • AiChatTab wired to real Anthropic API via sendChatMessage() (ATP-only prompt)
 // ─────────────────────────────────────────────────────────────────────────────
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useMatches, useRankings, usePrediction, useAiChat } from '../hooks/hooks';
-import { Logo, Btn, Badge, Card, Spinner } from '../components/ui';
+import { Logo, Btn, Badge, Card } from '../components/ui';
 import MatchCalendar from '../components/MatchCalendar';
-import { getMatchesByDate } from '../services/tennisApi';
+import { getPlayerProfile, getMatchesByDate } from '../services/tennisApi';
 
-// ─── NAV CONFIG ───────────────────────────────────────────────────────────────
 const TABS = [
   { id: 'matches',     label: 'Live & Upcoming', icon: '🎾' },
   { id: 'predictions', label: 'Predictions',     icon: '🔮' },
@@ -21,40 +20,12 @@ const TABS = [
   { id: 'chat',        label: 'AI Analyst',      icon: '🤖' },
 ];
 
-// ─── LAYOUT SHELL ─────────────────────────────────────────────────────────────
+// ─── SHELL ────────────────────────────────────────────────────────────────────
 export default function Dashboard({ showToast }) {
-  const { user, profile, firstName, logout } = useAuth();
-  const [activeTab, setActiveTab] = useState('matches');
-  const [mobileMenu, setMobileMenu] = useState(false);
+  const { user, firstName, logout } = useAuth();
+  const [activeTab,     setActiveTab]     = useState('matches');
+  const [mobileMenu,    setMobileMenu]    = useState(false);
   const [selectedMatch, setSelectedMatch] = useState(null);
-
-  // 🎾 NEW: State for API Matches
-  const [apiMatches, setApiMatches] = useState([]);
-  const [isLoadingMatches, setIsLoadingMatches] = useState(false);
-
-  // 🎾 NEW: Fetch matches when calendar date changes
-  const handleDateChange = async (selectedDate) => {
-    setIsLoadingMatches(true);
-    
-    // Format date to YYYY-MM-DD for RapidAPI
-    const formattedDate = selectedDate.toISOString().split('T')[0];
-    console.log("Fetching matches for...", formattedDate);
-    
-    try {
-      const data = await getMatchesByDate(formattedDate);
-      setApiMatches(data); // Save the data to state
-      console.log("Here are the live matches!", data);
-    } catch (error) {
-      console.error("API Error:", error);
-    } finally {
-      setIsLoadingMatches(false);
-    }
-  };
-
-  // 🎾 NEW: Load today's matches automatically when dashboard opens
-  useEffect(() => {
-    handleDateChange(new Date());
-  }, []);
 
   async function handleLogout() {
     await logout();
@@ -67,128 +38,120 @@ export default function Dashboard({ showToast }) {
     setMobileMenu(false);
   }
 
+  // Lock scroll when mobile menu open
+  useEffect(() => {
+    document.body.style.overflow = mobileMenu ? 'hidden' : '';
+    return () => { document.body.style.overflow = ''; };
+  }, [mobileMenu]);
+
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
 
   return (
     <>
-    <style>{CSS}</style>
+      <style>{DB_CSS}</style>
       <div className="db-root">
 
-
-        {/* ══ TOP NAVBAR ════════════════════════════════════════════════════ */}
+        {/* ══ NAVBAR ════════════════════════════════════════════════════════ */}
         <nav className="db-nav">
           <Logo size="sm" />
 
           {/* Desktop tabs */}
           <div className="db-nav__tabs hide-sm">
             {TABS.map(t => (
-              <button
-                key={t.id}
-                className={`db-nav__tab${activeTab === t.id ? ' db-nav__tab--active' : ''}`}
-                onClick={() => setActiveTab(t.id)}
-              >
-                <span>{t.icon}</span>
-                {t.label}
+              <button key={t.id} className={`db-tab${activeTab===t.id?' db-tab--on':''}`} onClick={() => setActiveTab(t.id)}>
+                <span>{t.icon}</span>{t.label}
               </button>
             ))}
           </div>
 
-          {/* User area */}
-          <div className="db-nav__user">
-            <div className="db-user-pill hide-sm">
-              <div className="db-user-pill__avatar">
-                {(firstName?.[0] ?? 'P').toUpperCase()}
-              </div>
-              <span className="db-user-pill__name">{firstName}</span>
+          {/* Desktop user + sign out */}
+          <div className="db-nav__right hide-sm">
+            <div className="db-pill">
+              <div className="db-pill__av">{(firstName?.[0]??'P').toUpperCase()}</div>
+              <span className="db-pill__name">{firstName}</span>
             </div>
-            <Btn variant="ghost" size="sm" onClick={handleLogout} style={{ flexShrink: 0 }}>
-              Sign Out
-            </Btn>
-            {/* Mobile hamburger */}
-            <button
-              className="db-hamburger show-sm"
-              aria-label="Toggle menu"
-              onClick={() => setMobileMenu(v => !v)}
-            >
-              <span className={`db-hamburger__icon${mobileMenu ? ' db-hamburger__icon--open' : ''}`}>
-                <span /><span /><span />
-              </span>
-            </button>
+            <Btn variant="ghost" size="sm" onClick={handleLogout}>Sign Out</Btn>
           </div>
+
+          {/* Mobile hamburger */}
+          <button
+            className={`db-ham show-sm${mobileMenu?' db-ham--open':''}`}
+            aria-label="Toggle menu" aria-expanded={mobileMenu}
+            onClick={e => { e.stopPropagation(); setMobileMenu(v => !v); }}
+          >
+            <span className="db-ham__b db-ham__b--t"/><span className="db-ham__b db-ham__b--m"/><span className="db-ham__b db-ham__b--b"/>
+          </button>
         </nav>
 
-        {/* Mobile drawer */}
-        {mobileMenu && (
-          <div className="db-mobile-drawer show-sm">
-            {TABS.map(t => (
-              <button
-                key={t.id}
-                className={`db-mobile-drawer__item${activeTab === t.id ? ' db-mobile-drawer__item--active' : ''}`}
-                onClick={() => { setActiveTab(t.id); setMobileMenu(false); }}
-              >
-                <span className="db-mobile-drawer__icon">{t.icon}</span>
-                {t.label}
+        {/* ══ MOBILE OVERLAY ════════════════════════════════════════════════ */}
+        <div className={`db-backdrop show-sm${mobileMenu?' db-backdrop--on':''}`} onClick={() => setMobileMenu(false)} />
+        <aside className={`db-overlay show-sm${mobileMenu?' db-overlay--open':''}`}>
+          <div className="db-overlay__glow" aria-hidden="true" />
+
+          {/* User badge */}
+          <div className="db-overlay__user">
+            <div className="db-overlay__av">{(firstName?.[0]??'P').toUpperCase()}</div>
+            <div>
+              <p className="db-overlay__name">{firstName}</p>
+              <p className="db-overlay__email">{user?.email}</p>
+            </div>
+          </div>
+
+          <div className="db-overlay__hr" />
+
+          {/* Nav tabs */}
+          <nav className="db-overlay__nav">
+            {TABS.map((t,i) => (
+              <button key={t.id} className={`db-overlay__link${activeTab===t.id?' db-overlay__link--on':''}`} style={{'--i':i}}
+                onClick={() => { setActiveTab(t.id); setMobileMenu(false); }}>
+                <span className="db-overlay__icon">{t.icon}</span>
+                <span>{t.label}</span>
+                {activeTab===t.id && <span className="db-overlay__dot"/>}
               </button>
             ))}
-            <div className="db-mobile-drawer__divider" />
-            <button className="db-mobile-drawer__item db-mobile-drawer__item--danger" onClick={handleLogout}>
-              <span className="db-mobile-drawer__icon">🚪</span> Sign Out
-            </button>
-          </div>
-        )}
+          </nav>
+
+          <div className="db-overlay__hr" />
+
+          {/* ★ Sign Out lives here on mobile */}
+          <button className="db-overlay__signout" onClick={handleLogout}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+            </svg>
+            Sign Out
+          </button>
+        </aside>
 
         {/* ══ MAIN CONTENT ══════════════════════════════════════════════════ */}
         <main className="db-main">
 
           {/* Greeting */}
-          <div className="db-greeting tv-fade-up">
-            <div className="db-greeting__left">
-              <h1 className="db-greeting__title">
-                {greeting}, <span className="db-greeting__name">{firstName}</span> 👋
-              </h1>
-              <p className="db-greeting__sub">
-                {user?.email} · {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
-              </p>
+          <div className="db-greeting">
+            <div>
+              <h1 className="db-greeting__h">{greeting}, <span className="db-greeting__name">{firstName}</span> 👋</h1>
+              <p className="db-greeting__sub">{user?.email} · {new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'})}</p>
             </div>
-            {/* Active tab pill on desktop */}
-            <div className="db-greeting__tab-badge hide-sm">
-              <span>{TABS.find(t => t.id === activeTab)?.icon}</span>
-              {TABS.find(t => t.id === activeTab)?.label}
+            <div className="db-greeting__badge hide-sm">
+              <span>{TABS.find(t=>t.id===activeTab)?.icon}</span>
+              {TABS.find(t=>t.id===activeTab)?.label}
             </div>
           </div>
 
           {/* Tab content */}
-          <div className="db-content">
-            {activeTab === 'matches' && (
-              <div className="tv-fade-up d1">
-                {/* 🎾 SofaScore Calendar */}
-                <MatchCalendar onSelectDate={handleDateChange} />
-                
-                {/* 🎾 Passing the API data down to your MatchesTab! */}
-                <MatchesTab 
-                   onSelectMatch={goToPredict} 
-                   apiMatches={apiMatches} 
-                   isLoading={isLoadingMatches} 
-                />
-              </div>
-            )}
-            {activeTab === 'predictions' && <PredictionsTab selectedMatch={selectedMatch} onSelectMatch={setSelectedMatch} />}
-            {activeTab === 'rankings'    && <RankingsTab />}
-            {activeTab === 'chat'        && <AiChatTab contextMatch={selectedMatch} />}
-          </div>
+          {activeTab==='matches'     && <MatchesTab     onSelectMatch={goToPredict}                              showToast={showToast} />}
+          {activeTab==='predictions' && <PredictionsTab selectedMatch={selectedMatch} onSelectMatch={setSelectedMatch} />}
+          {activeTab==='rankings'    && <RankingsTab    showToast={showToast} />}
+          {activeTab==='chat'        && <AiChatTab      contextMatch={selectedMatch} />}
         </main>
 
-        {/* Mobile bottom nav */}
-        <nav className="db-bottom-nav show-sm">
+        {/* Mobile bottom tab bar */}
+        <nav className="db-bottom show-sm">
           {TABS.map(t => (
-            <button
-              key={t.id}
-              className={`db-bottom-nav__item${activeTab === t.id ? ' db-bottom-nav__item--active' : ''}`}
-              onClick={() => { setActiveTab(t.id); setMobileMenu(false); }}
-            >
-              <span className="db-bottom-nav__icon">{t.icon}</span>
-              <span className="db-bottom-nav__label">{t.label.split(' ')[0]}</span>
+            <button key={t.id} className={`db-bottom__item${activeTab===t.id?' db-bottom__item--on':''}`}
+              onClick={() => { setActiveTab(t.id); setMobileMenu(false); }}>
+              <span className="db-bottom__icon">{t.icon}</span>
+              <span className="db-bottom__lbl">{t.label.split(' ')[0]}</span>
             </button>
           ))}
         </nav>
@@ -198,148 +161,126 @@ export default function Dashboard({ showToast }) {
   );
 }
 
-// ─── MATCHES TAB ──────────────────────────────────────────────────────────────
-function MatchesTab({ onSelectMatch, apiMatches, isLoading }) {
-  // If the API is still fetching, show a clean loading message
-  if (isLoading) {
-    return (
-      <div className="tv-fade-up" style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-muted)' }}>
-        <div className="live-dot" style={{ display: 'inline-block', margin: '0 auto 15px', transform: 'scale(1.5)' }}></div>
-        <h3>Fetching Court Data...</h3>
-      </div>
-    );
+// ─── MATCHES TAB (with calendar) ──────────────────────────────────────────────
+function MatchesTab({ onSelectMatch, showToast }) {
+  const { live, upcoming, loading, error, refresh } = useMatches();
+  const [calDate,   setCalDate]   = useState(new Date());
+  const [calMatches,setCalMatches]= useState(null);
+  const [calLoading,setCalLoading]= useState(false);
+
+  async function handleDateSelect(date) {
+    setCalDate(date);
+    setCalLoading(true);
+    try {
+      const data = await getMatchesByDate(date);
+      setCalMatches(data);
+    } catch {
+      setCalMatches([]);
+      showToast?.('Could not load matches for this date', 'error');
+    } finally {
+      setCalLoading(false);
+    }
   }
 
-  // RapidAPI sends data in a specific structure. 
-  // We need to map it so your beautiful MatchCard understands it.
-  const formattedMatches = (apiMatches || []).map((apiMatch) => {
-    // API-Sports uses "status.short" (e.g., 'LIVE', 'NS' for Not Started, 'FT' for Finished)
-    const isLive = ['LIVE', '1H', '2H', 'PT'].includes(apiMatch.fixture?.status?.short);
-    
-    // Safely grab player names (API-Sports usually stores them under 'teams')
-    const p1Name = apiMatch.teams?.home?.name || 'Player 1';
-    const p2Name = apiMatch.teams?.away?.name || 'Player 2';
-    
-    return {
-      id: apiMatch.fixture?.id || Math.random(),
-      tournament: apiMatch.league?.name || 'ATP Tour',
-      round: apiMatch.league?.round || 'Round 1',
-      surface: 'Hard', // Basic API endpoints don't always send surface, so we default to Hard
-      date: new Date(apiMatch.fixture?.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      status: isLive ? 'live' : 'upcoming',
-      player1: { name: p1Name, rank: '-', flag: '🏳️' },
-      player2: { name: p2Name, rank: '-', flag: '🏳️' },
-      score: null // You can add live score logic here later!
-    };
-  });
+  if (loading) return <LoadingGrid />;
+  if (error)   return <ErrMsg msg={error} onRetry={refresh} />;
 
-  // Separate matches by status so we can put Live ones at the top
-  const liveMatches = formattedMatches.filter(m => m.status === 'live');
-  const upcomingMatches = formattedMatches.filter(m => m.status !== 'live');
+  const UPCOMING_SUGGESTIONS = [
+    { label:'Roland Garros', date:'Jun 26 – Jul 6', surface:'Clay',  accent:'#f97316' },
+    { label:'Wimbledon',     date:'Jun 30 – Jul 13',surface:'Grass', accent:'#4ade80' },
+    { label:'US Open',       date:'Aug 25 – Sep 7', surface:'Hard',  accent:'#60a5fa' },
+  ];
 
   return (
     <div className="tv-fade-up">
-      
-      {/* 🔴 LIVE MATCHES SECTION */}
-      {liveMatches.length > 0 && (
-        <section style={{ marginBottom: '3rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '1.5rem' }}>
-            <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>Live Now</h2>
-            <span style={{ background: 'rgba(74, 222, 128, 0.2)', color: 'var(--green)', padding: '2px 10px', borderRadius: '50px', fontSize: '0.8rem', fontWeight: 'bold' }}>
-              {liveMatches.length}
-            </span>
-          </div>
-          
-          <div className="db-matches-grid">
-            {liveMatches.map((m, i) => (
-              <div key={m.id} className={`tv-fade-up d${Math.min(i + 1, 5)}`}>
-                <MatchCard match={m} onPredict={() => onSelectMatch(m)} />
-              </div>
-            ))}
+      {/* Calendar strip */}
+      <div className="db-cal-wrap">
+        <MatchCalendar onSelectDate={handleDateSelect} />
+      </div>
+
+      {/* Per-date matches */}
+      {calMatches !== null && (
+        <section className="db-section" style={{marginBottom:32}}>
+          <SecHead label={calDate.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'})} />
+          {calLoading ? (
+            <LoadingGrid cols={2} rows={1} />
+          ) : calMatches.length === 0 ? (
+            <CalEmptyState suggestions={UPCOMING_SUGGESTIONS} onSelect={onSelectMatch} />
+          ) : (
+            <div className="db-mgrid">
+              {calMatches.map(m => <MatchCard key={m.id} match={m} onPredict={() => onSelectMatch(m)} />)}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Live matches */}
+      {live.length > 0 && (
+        <section className="db-section">
+          <SecHead label="Live Now" dot accent="var(--green)" />
+          <div className="db-mgrid">
+            {live.map(m => <MatchCard key={m.id} match={m} onPredict={() => onSelectMatch(m)} />)}
           </div>
         </section>
       )}
 
-      {/* 📅 UPCOMING MATCHES SECTION */}
-      <section>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '1.5rem' }}>
-          <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>Scheduled Matches</h2>
-          <span style={{ background: 'var(--bg-glass-md)', color: 'var(--text-muted)', padding: '2px 10px', borderRadius: '50px', fontSize: '0.8rem', fontWeight: 'bold' }}>
-            {upcomingMatches.length}
-          </span>
-        </div>
-
-        {upcomingMatches.length === 0 && liveMatches.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '40px', backgroundColor: 'var(--bg-card)', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
-            <p style={{ color: 'var(--text-muted)', fontSize: '1.1rem' }}>No matches found for this date. Try scrolling the calendar!</p>
-          </div>
-        ) : (
-          <div className="db-matches-grid">
-            {upcomingMatches.map((m, i) => (
-              <div key={m.id} className={`tv-fade-up d${Math.min(i + 1, 5)}`}>
-                <MatchCard match={m} onPredict={() => onSelectMatch(m)} />
-              </div>
-            ))}
-          </div>
-        )}
+      {/* Upcoming */}
+      <section className="db-section">
+        <SecHead label="Upcoming Matches" />
+        {upcoming.length === 0
+          ? <EmptyState icon="🎾" title="No upcoming matches" desc="Fixtures are updated daily. Check back soon." />
+          : <div className="db-mgrid">{upcoming.map((m,i)=><div key={m.id} className={`tv-fade-up d${Math.min(i+1,5)}`}><MatchCard match={m} onPredict={()=>onSelectMatch(m)} /></div>)}</div>
+        }
       </section>
-
     </div>
   );
 }
 
-function MatchCard({ match: m, onPredict }) {
-  const [hov, setHov] = useState(false);
-  const surfaceColors = { Clay: '#f97316', Hard: '#60a5fa', Grass: '#4ade80' };
-  const sc = surfaceColors[m.surface] ?? 'var(--text-muted)';
-
+function CalEmptyState({ suggestions }) {
   return (
-    <div
-      className={`db-match-card${hov ? ' db-match-card--hov' : ''}`}
-      onMouseEnter={() => setHov(true)}
-      onMouseLeave={() => setHov(false)}
-    >
-      {/* Header */}
-      <div className="db-match-card__header">
-        <div>
-          <p className="db-match-card__tournament">{m.tournament} · {m.round}</p>
-          <div className="db-match-card__badges">
-            <span className="db-surface-badge" style={{ '--sc': sc }}>
-              {m.surface}
-            </span>
-            {m.date && <span className="db-match-card__date">{m.date}</span>}
-          </div>
-        </div>
-        {m.status === 'live' && (
-          <span className="db-live-badge">
-            <span className="live-dot" /> LIVE
-          </span>
-        )}
-      </div>
-
-      {/* Players */}
-      {[m.player1, m.player2].map((p, i) => (
-        <div key={p.id ?? i} className="db-match-card__player">
-          <div className="db-match-card__player-info">
-            <span className="db-match-card__flag">{p.flag}</span>
+    <div className="db-empty-cal">
+      <div className="db-empty-cal__icon">📅</div>
+      <h3 className="db-empty-cal__title">No matches scheduled</h3>
+      <p className="db-empty-cal__desc">There are no ATP fixtures on this day. Here are the next big events to look forward to:</p>
+      <div className="db-suggestions">
+        {suggestions.map(s => (
+          <div key={s.label} className="db-suggestion" style={{'--sa':s.accent}}>
+            <div className="db-suggestion__surface" style={{background:`${s.accent}18`,color:s.accent,border:`1px solid ${s.accent}30`}}>{s.surface}</div>
             <div>
-              <p className="db-match-card__player-name">{p.name}</p>
-              <p className="db-match-card__player-rank">#{p.rank} ATP</p>
+              <p className="db-suggestion__name">{s.label}</p>
+              <p className="db-suggestion__date">{s.date}</p>
             </div>
           </div>
-          {m.score && (
-            <span className="db-match-card__score">
-              {m.score.split(', ')[i] ?? ''}
-            </span>
-          )}
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MatchCard({ match:m, onPredict }) {
+  const [hov,setHov]=useState(false);
+  const SC = { Clay:'#f97316', Hard:'#60a5fa', Grass:'#4ade80' };
+  const sc = SC[m.surface] ?? 'var(--text-muted)';
+  return (
+    <div className={`db-mc${hov?' db-mc--hov':''}`} onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)}>
+      <div className="db-mc__hdr">
+        <div>
+          <p className="db-mc__tourney">{m.tournament} · {m.round}</p>
+          <div className="db-mc__badges">
+            <span className="db-surface" style={{'--sc':sc}}>{m.surface}</span>
+            {m.date && <span className="db-mc__date">{m.date}</span>}
+          </div>
+        </div>
+        {m.status==='live' && <span className="db-live-badge"><span className="live-dot"/>LIVE</span>}
+      </div>
+      {[m.player1,m.player2].map((p,i)=>(
+        <div key={p.id??i} className="db-mc__player">
+          <div className="db-mc__pi"><span className="db-mc__flag">{p.flag}</span><div><p className="db-mc__pname">{p.name}</p><p className="db-mc__prank">#{p.rank} ATP</p></div></div>
+          {m.score && <span className="db-mc__score">{m.score.split(', ')[i]??''}</span>}
         </div>
       ))}
-
-      {/* CTA */}
-      <button className="db-match-card__btn" onClick={onPredict}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
-        </svg>
+      <button className="db-mc__btn" onClick={onPredict}>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
         Predict this match
       </button>
     </div>
@@ -349,213 +290,272 @@ function MatchCard({ match: m, onPredict }) {
 // ─── PREDICTIONS TAB ──────────────────────────────────────────────────────────
 function PredictionsTab({ selectedMatch, onSelectMatch }) {
   const { live, upcoming } = useMatches();
-  const allMatches = [...(live ?? []), ...(upcoming ?? [])];
+  const allMatches = [...(live??[]), ...(upcoming??[])];
   const { prediction, loading } = usePrediction(selectedMatch);
 
   return (
-    <div className="tv-fade-up db-predictions-layout">
-      {/* Sidebar: match picker */}
-      <div className="db-predictions-sidebar">
-        <SectionHeading label="Select a Match" />
+    <div className="tv-fade-up db-pred-layout">
+      <div className="db-pred-sidebar">
+        <SecHead label="Select a Match" />
         <div className="db-picker-list">
-          {allMatches.length === 0
-            ? <p className="db-picker-empty">No matches available</p>
-            : allMatches.map(m => (
-              <MatchPickerRow
-                key={m.id} match={m}
-                selected={selectedMatch?.id === m.id}
-                onSelect={() => onSelectMatch(m)}
-              />
-            ))
+          {allMatches.length===0
+            ? <p style={{fontSize:13,color:'var(--text-faint)',padding:'12px 0'}}>No matches available</p>
+            : allMatches.map(m=><PickerRow key={m.id} match={m} selected={selectedMatch?.id===m.id} onSelect={()=>onSelectMatch(m)} />)
           }
         </div>
       </div>
-
-      {/* Main panel */}
-      <div className="db-predictions-main">
-        <SectionHeading label="Match Analysis" />
-        {!selectedMatch ? (
-          <EmptyState
-            icon="🔮"
-            title="Select a match to analyse"
-            desc="Choose any upcoming or live match on the left to see the full AI prediction breakdown."
-          />
-        ) : loading ? (
-          <LoadingGrid cols={1} rows={3} />
-        ) : (
-          <PredictionPanel match={selectedMatch} prediction={prediction} />
-        )}
+      <div>
+        <SecHead label="Match Analysis" />
+        {!selectedMatch
+          ? <EmptyState icon="🔮" title="Select a match to analyse" desc="Choose any upcoming or live match to see the full AI prediction breakdown." />
+          : loading
+          ? <LoadingGrid cols={1} rows={3} />
+          : <PredPanel match={selectedMatch} prediction={prediction} />
+        }
       </div>
     </div>
   );
 }
 
-function MatchPickerRow({ match: m, selected, onSelect }) {
+function PickerRow({ match:m, selected, onSelect }) {
   return (
-    <button
-      onClick={onSelect}
-      className={`db-picker-row${selected ? ' db-picker-row--selected' : ''}`}
-    >
-      <div className="db-picker-row__top">
-        <span className="db-picker-row__tournament">{m.tournament}</span>
-        {m.status === 'live' && (
-          <span className="db-picker-row__live">
-            <span className="live-dot" style={{ width: 5, height: 5 }} /> LIVE
-          </span>
-        )}
+    <button onClick={onSelect} className={`db-pr${selected?' db-pr--on':''}`}>
+      <div className="db-pr__top">
+        <span className="db-pr__t">{m.tournament}</span>
+        {m.status==='live'&&<span className="db-pr__live"><span className="live-dot" style={{width:5,height:5}}/>LIVE</span>}
       </div>
-      <span className="db-picker-row__players">
-        {m.player1.name} <span className="db-picker-row__vs">vs</span> {m.player2.name}
-      </span>
+      <span className="db-pr__players">{m.player1.name} <span style={{color:'var(--text-faint)',fontWeight:400}}>vs</span> {m.player2.name}</span>
     </button>
   );
 }
 
-function PredictionPanel({ match: m, prediction: pred }) {
-  if (!pred) return <ErrorMessage msg="Could not compute prediction for this match." />;
-  const { player1_win_pct: p1, player2_win_pct: p2, confidence, key_factors } = pred;
-  const confColors = { High: 'var(--green)', Medium: 'var(--yellow)', Low: 'var(--clay)' };
-
+function PredPanel({ match:m, prediction:pred }) {
+  if (!pred) return <ErrMsg msg="Could not compute prediction for this match." />;
+  const { player1_win_pct:p1, player2_win_pct:p2, confidence, key_factors } = pred;
+  const CC = { High:'var(--green)', Medium:'var(--yellow)', Low:'var(--clay)' };
   return (
-    <div className="db-pred-panels">
-      {/* Win probability */}
+    <div style={{display:'flex',flexDirection:'column',gap:14}}>
       <div className="db-panel">
-        <div className="db-panel__header">
-          <div>
-            <p className="db-panel__eyebrow">Win Probability</p>
-            <h2 className="db-panel__title">{m.player1.name} vs {m.player2.name}</h2>
-            <p className="db-panel__sub">{m.tournament} · {m.round} · {m.surface}</p>
-          </div>
-          <Badge color={confColors[confidence] ?? 'var(--lime)'}>{confidence} confidence</Badge>
+        <div className="db-panel__hdr">
+          <div><p className="db-eyebrow">Win Probability</p><h2 className="db-panel__title">{m.player1.name} vs {m.player2.name}</h2><p className="db-panel__sub">{m.tournament} · {m.round} · {m.surface}</p></div>
+          <Badge color={CC[confidence]??'var(--lime)'}>{confidence} confidence</Badge>
         </div>
-
-        {[
-          { name: m.player1.name, flag: m.player1.flag, pct: p1, color: 'var(--lime)' },
-          { name: m.player2.name, flag: m.player2.flag, pct: p2, color: 'var(--clay)' },
-        ].map(row => (
-          <div key={row.name} className="db-prob-row">
-            <div className="db-prob-row__player">
-              <span>{row.flag}</span>
-              <span className="db-prob-row__name">{row.name}</span>
-            </div>
-            <div className="db-prob-row__bar-wrap">
-              <div className="db-prob-row__bar">
-                <div
-                  className="db-prob-row__fill"
-                  style={{ width: `${row.pct}%`, '--fill-color': row.color }}
-                />
-              </div>
-              <span className="db-prob-row__pct" style={{ color: row.color }}>{row.pct}%</span>
+        {[{name:m.player1.name,flag:m.player1.flag,pct:p1,color:'var(--lime)'},{name:m.player2.name,flag:m.player2.flag,pct:p2,color:'var(--clay)'}].map(r=>(
+          <div key={r.name} className="db-prob">
+            <div className="db-prob__p"><span>{r.flag}</span><span className="db-prob__nm">{r.name}</span></div>
+            <div className="db-prob__row">
+              <div className="db-prob__bar"><div className="db-prob__fill" style={{width:`${r.pct}%`,'--fc':r.color}}/></div>
+              <span className="db-prob__pct" style={{color:r.color}}>{r.pct}%</span>
             </div>
           </div>
         ))}
       </div>
-
-      {/* Key factors */}
       <div className="db-panel">
-        <p className="db-panel__eyebrow" style={{ marginBottom: 14 }}>Key Prediction Factors</p>
-        <div className="db-factors-list">
-          {key_factors.map(f => (
-            <div key={f} className="db-factor-item">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--lime)" strokeWidth="2.5" style={{ flexShrink: 0, marginTop: 2 }}>
-                <polyline points="20 6 9 17 4 12"/>
-              </svg>
-              <span>{f}</span>
-            </div>
-          ))}
-        </div>
+        <p className="db-eyebrow" style={{marginBottom:12}}>Key Prediction Factors</p>
+        {key_factors.map(f=>(
+          <div key={f} className="db-factor"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--lime)" strokeWidth="2.5" style={{flexShrink:0,marginTop:2}}><polyline points="20 6 9 17 4 12"/></svg><span>{f}</span></div>
+        ))}
       </div>
-
-      {/* Player stat comparison */}
       <div className="db-panel">
-        <p className="db-panel__eyebrow" style={{ marginBottom: 14 }}>Head-to-Head Stats</p>
-        <div className="db-stats-header">
-          <span className="db-stats-p1">{m.player1.flag} {m.player1.name}</span>
-          <span className="db-stats-label-center" />
-          <span className="db-stats-p2">{m.player2.flag} {m.player2.name}</span>
-        </div>
+        <p className="db-eyebrow" style={{marginBottom:12}}>Player Stats</p>
         {[
-          { label: 'ATP Rank',     v1: `#${m.player1.rank}`,                  v2: `#${m.player2.rank}` },
-          { label: 'Career Wins',  v1: m.player1.wins,                         v2: m.player2.wins },
-          { label: '1st Serve %',  v1: `${m.player1.first_serve_pct}%`,        v2: `${m.player2.first_serve_pct}%` },
-          { label: 'Ace Avg',      v1: m.player1.ace_avg,                      v2: m.player2.ace_avg },
-          { label: 'Surface Pref', v1: m.player1.surface_pref,                 v2: m.player2.surface_pref },
-        ].map(s => <StatRow key={s.label} {...s} />)}
+          {label:'ATP Rank',     v1:`#${m.player1.rank}`,             v2:`#${m.player2.rank}`},
+          {label:'Career Wins',  v1:m.player1.wins,                   v2:m.player2.wins},
+          {label:'1st Serve %',  v1:`${m.player1.first_serve_pct}%`,  v2:`${m.player2.first_serve_pct}%`},
+          {label:'Ace Avg',      v1:m.player1.ace_avg,                v2:m.player2.ace_avg},
+          {label:'Surface Pref', v1:m.player1.surface_pref,           v2:m.player2.surface_pref},
+        ].map(s=><StatRow key={s.label} {...s} />)}
       </div>
     </div>
   );
 }
-
 function StatRow({ label, v1, v2 }) {
   return (
-    <div className="db-stat-row">
-      <span className="db-stat-row__v1">{v1}</span>
-      <span className="db-stat-row__label">{label}</span>
-      <span className="db-stat-row__v2">{v2}</span>
+    <div className="db-sr">
+      <span className="db-sr__v1">{v1}</span>
+      <span className="db-sr__lbl">{label}</span>
+      <span className="db-sr__v2">{v2}</span>
     </div>
   );
 }
 
-// ─── RANKINGS TAB ─────────────────────────────────────────────────────────────
-function RankingsTab() {
-  const [tour, setTour]     = useState('ATP');
+// ─── RANKINGS TAB (with player modal) ─────────────────────────────────────────
+function RankingsTab({ showToast }) {
+  const [tour,     setTour]    = useState('ATP');
+  const [selected, setSelected]= useState(null);
+  const [profile,  setProfile] = useState(null);
+  const [loading2, setLoading2]= useState(false);
   const { rankings, loading, error } = useRankings(tour);
-  const [hovRow, setHovRow] = useState(null);
+
+  async function openPlayer(player) {
+    setSelected(player);
+    setLoading2(true);
+    try {
+      const data = await getPlayerProfile(player.id, player.tour ?? tour);
+      setProfile(data);
+    } catch {
+      setProfile(null);
+      showToast?.('Could not load player profile', 'error');
+    } finally {
+      setLoading2(false);
+    }
+  }
 
   if (loading) return <LoadingGrid cols={1} rows={10} />;
-  if (error)   return <ErrorMessage msg={error} />;
+  if (error)   return <ErrMsg msg={error} />;
 
   return (
     <div className="tv-fade-up">
       {/* Tour switcher */}
-      <div className="db-tour-switcher">
-        {['ATP', 'WTA'].map(t => (
-          <button
-            key={t}
-            className={`db-tour-btn${tour === t ? ' db-tour-btn--active' : ''}`}
-            onClick={() => setTour(t)}
-          >
+      <div className="db-tour-sw">
+        {['ATP','WTA'].map(t => (
+          <button key={t} className={`db-tour-btn${tour===t?' db-tour-btn--on':''}`}
+            onClick={() => { setTour(t); setSelected(null); setProfile(null); }}>
             {t}
+          </button>
+        ))}
+        <span className="db-tour-hint">Click a player row for full profile</span>
+      </div>
+
+      <SecHead label={`${tour} World Rankings — Top 20`} />
+
+      <div className="db-rank-card">
+        <div className="db-rank-head">
+          {['#','Player','Points','W/L'].map(h=><span key={h} className="db-rank-hcell">{h}</span>)}
+        </div>
+        {rankings.map((p,i)=>(
+          <button key={p.id} className="db-rank-row" onClick={()=>openPlayer(p)} title={`View ${p.name} profile`}>
+            <span className="db-rank-pos" data-medal={i<3?i:''}>
+              {i===0?'🥇':i===1?'🥈':i===2?'🥉':p.rank}
+            </span>
+            <div className="db-rank-player">
+              <span className="db-rank-flag">{p.flag}</span>
+              <div>
+                <p className="db-rank-name">{p.name}</p>
+                <p className="db-rank-meta">{p.country} · {p.surface_pref}</p>
+              </div>
+            </div>
+            <span className="db-rank-pts">{p.points?.toLocaleString()}</span>
+            <span className="db-rank-wl"><span className="db-rank-w">{p.wins}</span><span className="db-rank-l">/{p.losses}</span></span>
           </button>
         ))}
       </div>
 
-      <SectionHeading label={`${tour} Live Rankings`} />
+      {/* Player Modal */}
+      {selected && (
+        <PlayerModal
+          player={selected}
+          profile={loading2 ? null : profile}
+          loading={loading2}
+          onClose={() => { setSelected(null); setProfile(null); }}
+        />
+      )}
+    </div>
+  );
+}
 
-      <div className="db-rankings-card">
-        {/* Table header */}
-        <div className="db-rankings-head">
-          {['#', 'Player', 'Points', 'W/L'].map(h => (
-            <span key={h} className="db-rankings-head__cell">{h}</span>
-          ))}
+function PlayerModal({ player:p, profile, loading, onClose }) {
+  // Close on Escape
+  useEffect(() => {
+    const fn = (e) => { if (e.key==='Escape') onClose(); };
+    document.addEventListener('keydown', fn);
+    return () => document.removeEventListener('keydown', fn);
+  }, [onClose]);
+
+  return (
+    <div className="pm-backdrop" onClick={e => { if (e.target===e.currentTarget) onClose(); }} role="dialog" aria-modal="true" aria-label={`${p.name} profile`}>
+      <div className="pm-panel">
+        {/* Header */}
+        <div className="pm-header">
+          <div className="pm-header__left">
+            <div className="pm-avatar">{p.flag}</div>
+            <div>
+              <h2 className="pm-name">{p.name}</h2>
+              <p className="pm-meta">{p.country} · Rank #{p.rank}</p>
+            </div>
+          </div>
+          <button className="pm-close" onClick={onClose} aria-label="Close">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
         </div>
 
-        {rankings.map((p, i) => (
-          <div
-            key={p.id}
-            className={`db-rankings-row${hovRow === p.id ? ' db-rankings-row--hov' : ''}`}
-            onMouseEnter={() => setHovRow(p.id)}
-            onMouseLeave={() => setHovRow(null)}
-          >
-            <span className="db-rankings-row__rank" data-pos={i}>
-              {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : p.rank}
-            </span>
-            <div className="db-rankings-row__player">
-              <span className="db-rankings-row__flag">{p.flag}</span>
-              <div>
-                <p className="db-rankings-row__name">{p.name}</p>
-                <p className="db-rankings-row__meta">{p.country} · {p.surface_pref}</p>
-              </div>
-            </div>
-            <span className={`db-rankings-row__pts${hovRow === p.id ? ' db-rankings-row__pts--hov' : ''}`}>
-              {p.points?.toLocaleString()}
-            </span>
-            <span className="db-rankings-row__wl">
-              <span className="db-rankings-row__wins">{p.wins}</span>
-              <span className="db-rankings-row__losses">/{p.losses}</span>
-            </span>
+        {loading ? (
+          <div style={{padding:40,textAlign:'center'}}>
+            <div className="skeleton" style={{height:120,borderRadius:12,marginBottom:16}}/>
+            <div className="skeleton" style={{height:80,borderRadius:12}}/>
           </div>
-        ))}
+        ) : profile ? (
+          <div className="pm-body">
+            {/* Bio */}
+            <section className="pm-section">
+              <p className="pm-eyebrow">About</p>
+              <p className="pm-bio">{profile.bio}</p>
+            </section>
+
+            {/* Quick stats grid */}
+            <section className="pm-section">
+              <p className="pm-eyebrow">Career Stats</p>
+              <div className="pm-stats-grid">
+                {[
+                  {label:'Grand Slams',  val: profile.grand_slams ?? 0,             accent:'var(--lime)'},
+                  {label:'Career Wins',  val: profile.career_wins ?? '—',           accent:'var(--green)'},
+                  {label:`${profile.tour ?? 'ATP'} Rank`, val: `#${profile.rank}`,  accent:'var(--clay)'},
+                  {label:'Height',       val: profile.height ?? '—',                accent:'var(--blue,#60a5fa)'},
+                  {label:'Turned Pro',   val: profile.turned_pro ?? '—',            accent:'var(--text-muted)'},
+                  {label:'Dominant Hand',val: profile.hand ?? '—',                  accent:'var(--text-muted)'},
+                ].map(s=>(
+                  <div key={s.label} className="pm-stat">
+                    <span className="pm-stat__val" style={{color:s.accent}}>{s.val}</span>
+                    <span className="pm-stat__lbl">{s.label}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            {/* Last 5 matches with serve stats */}
+            {profile.last5?.length > 0 && (
+              <section className="pm-section">
+                <p className="pm-eyebrow">Last 5 Matches — Serve Stats</p>
+                <div className="pm-table-wrap">
+                  <table className="pm-table">
+                    <thead>
+                      <tr>
+                        <th>Result</th>
+                        <th>Tournament</th>
+                        <th>Opponent</th>
+                        <th>Score</th>
+                        <th>1st Srv%</th>
+                        <th>2nd Srv%</th>
+                        <th>Aces</th>
+                        <th>DFs</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {profile.last5.map((m,i)=>(
+                        <tr key={i}>
+                          <td><span className={`pm-result pm-result--${m.result==='W'?'w':'l'}`}>{m.result}</span></td>
+                          <td>
+                            <span className="pm-tourney">{m.tournament}</span>
+                            <span className="pm-surface-dot" style={{'--sc':m.surface==='Clay'?'#f97316':m.surface==='Grass'?'#4ade80':'#60a5fa'}} />
+                          </td>
+                          <td className="pm-opp">vs {m.opponent}</td>
+                          <td className="pm-score-cell">{m.score}</td>
+                          <td><span className={`pm-serve${m.first_serve>=65?' pm-serve--hi':m.first_serve<=57?' pm-serve--lo':''}`}>{m.first_serve}%</span></td>
+                          <td><span className="pm-serve">{m.second_serve ?? '—'}{m.second_serve?'%':''}</span></td>
+                          <td className="pm-num">{m.aces}</td>
+                          <td className="pm-num pm-num--red">{m.double_faults}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="pm-table-note">🟢 ≥65% · 🔴 ≤57% first serve percentage</p>
+              </section>
+            )}
+          </div>
+        ) : (
+          <div style={{padding:32,textAlign:'center',color:'var(--text-muted)'}}>Could not load profile data.</div>
+        )}
       </div>
     </div>
   );
@@ -566,11 +566,11 @@ function AiChatTab({ contextMatch }) {
   const { messages, typing, sendMessage, reset, bottomRef } = useAiChat(contextMatch);
   const [input, setInput] = useState('');
 
-  const SUGGESTIONS = [
+  const SUGG = [
     "Who is favoured to win today?",
-    "Explain clay vs hard court play",
-    "What does first serve % mean?",
     "Compare Djokovic and Alcaraz form",
+    "Who leads the WTA rankings?",
+    "Explain clay vs hard court play",
   ];
 
   function submit(e) {
@@ -581,385 +581,352 @@ function AiChatTab({ contextMatch }) {
   }
 
   return (
-    <div className={`tv-fade-up db-chat-layout${contextMatch ? ' db-chat-layout--with-context' : ''}`}>
-
+    <div className={`tv-fade-up db-chat-wrap${contextMatch?' db-chat-wrap--ctx':''}`}>
       {/* Chat panel */}
-      <div className="db-chat-panel">
-        {/* Header */}
-        <div className="db-chat-header">
-          <div className="db-chat-header__left">
-            <div className="db-chat-avatar">🤖</div>
-            <div>
-              <p className="db-chat-header__title">AI Tennis Analyst</p>
-              <p className="db-chat-header__status">
-                <span className="db-chat-header__dot" /> Online
-              </p>
-            </div>
+      <div className="db-chat">
+        <div className="db-chat__hdr">
+          <div className="db-chat__hdr-l">
+            <div className="db-chat__av">🤖</div>
+            <div><p className="db-chat__title">AI Tennis Analyst</p><p className="db-chat__status"><span className="db-chat__dot"/>Online · ATP & WTA</p></div>
           </div>
           <Btn variant="ghost" size="sm" onClick={reset}>Clear</Btn>
         </div>
-
-        {/* Messages */}
-        <div className="db-chat-messages">
-          {messages.map((msg, i) => <ChatBubble key={i} msg={msg} />)}
-          {typing && <TypingIndicator />}
+        <div className="db-chat__msgs">
+          {messages.map((msg,i) => <Bubble key={i} msg={msg} />)}
+          {typing && <TypingDots />}
           <div ref={bottomRef} />
         </div>
-
-        {/* Quick suggestions (only when just the welcome message) */}
-        {messages.length === 1 && (
-          <div className="db-chat-suggestions">
-            {SUGGESTIONS.map(s => (
-              <button key={s} className="db-chat-suggestion" onClick={() => sendMessage(s)}>
-                {s}
-              </button>
-            ))}
+        {messages.length===1 && (
+          <div className="db-chat__sugg">
+            {SUGG.map(s=><button key={s} className="db-chat__pill" onClick={()=>sendMessage(s)}>{s}</button>)}
           </div>
         )}
-
-        {/* Input */}
-        <form className="db-chat-input-row" onSubmit={submit}>
-          <input
-            className="db-chat-input"
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            placeholder="Ask about any match, player, or prediction…"
-          />
-          <button
-            type="submit"
-            className={`db-chat-send${(!input.trim() || typing) ? ' db-chat-send--disabled' : ''}`}
-            disabled={!input.trim() || typing}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <line x1="22" y1="2" x2="11" y2="13"/>
-              <polygon points="22 2 15 22 11 13 2 9 22 2"/>
-            </svg>
+        <form className="db-chat__input-row" onSubmit={submit}>
+          <input className="db-chat__input" value={input} onChange={e=>setInput(e.target.value)} placeholder="Ask about any ATP or WTA match, player, or stat…" />
+          <button type="submit" className={`db-chat__send${(!input.trim()||typing)?' db-chat__send--off':''}`} disabled={!input.trim()||typing}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
           </button>
         </form>
       </div>
 
-      {/* Context match card */}
+      {/* Context match sidebar */}
       {contextMatch && (
-        <div className="db-chat-context">
-          <SectionHeading label="Analysing Match" />
+        <div className="db-chat__ctx">
+          <SecHead label="Analysing" />
           <div className="db-panel">
-            <p className="db-panel__eyebrow">{contextMatch.tournament} · {contextMatch.round}</p>
-            <p className="db-chat-context__p1">{contextMatch.player1.name}</p>
-            <p className="db-chat-context__vs">vs</p>
-            <p className="db-chat-context__p2">{contextMatch.player2.name}</p>
-            <div style={{ marginTop: 14 }}>
-              <Badge color={
-                contextMatch.surface === 'Clay' ? 'var(--clay)' :
-                contextMatch.surface === 'Grass' ? 'var(--green)' : 'var(--blue)'
-              }>
-                {contextMatch.surface}
-              </Badge>
-            </div>
+            <p className="db-eyebrow">{contextMatch.tournament} · {contextMatch.round}</p>
+            <p style={{fontWeight:700,marginTop:10}}>{contextMatch.player1.name}</p>
+            <p style={{color:'var(--text-faint)',fontSize:13,margin:'5px 0'}}>vs</p>
+            <p style={{fontWeight:700,marginBottom:14}}>{contextMatch.player2.name}</p>
+            <Badge color={contextMatch.surface==='Clay'?'var(--clay)':contextMatch.surface==='Grass'?'var(--green)':'var(--blue,#60a5fa)'}>{contextMatch.surface}</Badge>
           </div>
-          <p className="db-chat-context__hint">
-            The AI analyst has context about this match. Ask specific questions for tailored predictions.
-          </p>
+          <p style={{fontSize:12,color:'var(--text-faint)',marginTop:10,lineHeight:1.6}}>The AI has context about this match. Ask specific questions for tailored analysis.</p>
         </div>
       )}
     </div>
   );
 }
 
-function ChatBubble({ msg }) {
-  const isAI = msg.role === 'assistant';
+function Bubble({ msg }) {
+  const ai = msg.role==='assistant';
   return (
-    <div className={`db-bubble-wrap${isAI ? '' : ' db-bubble-wrap--user'}`}>
-      {isAI && <div className="db-chat-avatar db-chat-avatar--sm">🤖</div>}
-      <div className={`db-bubble${isAI ? ' db-bubble--ai' : ' db-bubble--user'}`}>
-        {msg.content}
-      </div>
+    <div className={`db-bub-w${ai?'':' db-bub-w--u'}`}>
+      {ai && <div className="db-chat__av db-chat__av--sm">🤖</div>}
+      <div className={`db-bub${ai?' db-bub--ai':' db-bub--u'}`}>{msg.content}</div>
     </div>
   );
 }
-
-function TypingIndicator() {
+function TypingDots() {
   return (
-    <div className="db-bubble-wrap">
-      <div className="db-chat-avatar db-chat-avatar--sm">🤖</div>
-      <div className="db-bubble db-bubble--ai db-bubble--typing">
-        <span /><span /><span />
-      </div>
+    <div className="db-bub-w">
+      <div className="db-chat__av db-chat__av--sm">🤖</div>
+      <div className="db-bub db-bub--ai db-bub--typing"><span/><span/><span/></div>
     </div>
   );
 }
 
 // ─── SHARED HELPERS ────────────────────────────────────────────────────────────
-function SectionHeading({ label, accent = 'var(--lime)', dot }) {
+function SecHead({ label, accent='var(--lime)', dot }) {
   return (
-    <h2 className="db-section-heading">
+    <h2 className="db-sh">
       {dot && <span className="live-dot" />}
-      <span style={{ color: accent }}>{label}</span>
-      <span className="db-section-heading__line" />
+      <span style={{color:accent}}>{label}</span>
+      <span className="db-sh__line" />
     </h2>
   );
 }
-
-function LoadingGrid({ cols = 2, rows = 3 }) {
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 16 }}>
-      {Array.from({ length: cols * rows }).map((_, i) => (
-        <div key={i} className="skeleton" style={{ height: 180, borderRadius: 'var(--radius)' }} />
-      ))}
-    </div>
-  );
+function LoadingGrid({ cols=2, rows=3 }) {
+  return <div style={{display:'grid',gridTemplateColumns:`repeat(${cols},1fr)`,gap:16}}>{Array.from({length:cols*rows}).map((_,i)=><div key={i} className="skeleton" style={{height:180,borderRadius:'var(--radius)'}}/>)}</div>;
 }
-
-function ErrorMessage({ msg, onRetry }) {
+function ErrMsg({ msg, onRetry }) {
   return (
-    <div className="db-error">
-      <p className="db-error__msg">⚠ {msg}</p>
+    <div className="db-err">
+      <p className="db-err__msg">⚠ {msg}</p>
       {onRetry && <Btn variant="danger" size="sm" onClick={onRetry}>Retry</Btn>}
     </div>
   );
 }
-
 function EmptyState({ icon, title, desc }) {
-  return (
-    <div className="db-empty">
-      <div className="db-empty__icon">{icon}</div>
-      <h3 className="db-empty__title">{title}</h3>
-      <p className="db-empty__desc">{desc}</p>
-    </div>
-  );
+  return <div className="db-empty"><div className="db-empty__icon">{icon}</div><h3 className="db-empty__title">{title}</h3><p className="db-empty__desc">{desc}</p></div>;
 }
 
-// ─── ALL SCOPED CSS ───────────────────────────────────────────────────────────
-const CSS = `
-/* ── Root ── */
+// ─── SCOPED CSS ───────────────────────────────────────────────────────────────
+const DB_CSS = `
+.db-root*,.db-root*::before,.db-root*::after{box-sizing:border-box}
 .db-root{min-height:100dvh;background:var(--bg);color:var(--text);display:flex;flex-direction:column;overflow-x:hidden}
-.db-root *{box-sizing:border-box}
 .db-root button{-webkit-tap-highlight-color:transparent;font-family:var(--font-body)}
 
+@keyframes db-slide-in{from{opacity:0;transform:translateX(12px)}to{opacity:1;transform:translateX(0)}}
+@keyframes db-dots{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+
 /* ── Navbar ── */
-.db-nav{
-  position:sticky;top:0;z-index:100;
-  height:62px;display:flex;align-items:center;justify-content:space-between;
-  padding:0 clamp(14px,3vw,40px);
-  background:rgba(7,11,20,.92);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
-  border-bottom:1px solid var(--border);
-  gap:12px;
-}
+.db-nav{position:sticky;top:0;z-index:100;height:62px;display:flex;align-items:center;justify-content:space-between;padding:0 clamp(14px,3vw,40px);background:rgba(7,11,20,.92);backdrop-filter:blur(20px);border-bottom:1px solid var(--border);gap:12px}
 .db-nav__tabs{display:flex;gap:3px;flex:1;justify-content:center}
-.db-nav__tab{
-  display:flex;align-items:center;gap:7px;
-  padding:8px 16px;border:none;border-radius:8px;
-  background:transparent;color:var(--text-muted);
-  font-size:14px;font-weight:500;cursor:pointer;
-  transition:var(--t);white-space:nowrap;
-}
-.db-nav__tab:hover{background:rgba(255,255,255,.05);color:var(--text)}
-.db-nav__tab--active{background:rgba(159,239,102,.12)!important;color:var(--lime)!important;font-weight:600}
-.db-nav__user{display:flex;align-items:center;gap:10px;flex-shrink:0}
+.db-tab{display:flex;align-items:center;gap:7px;padding:8px 16px;border:none;border-radius:8px;background:transparent;color:var(--text-muted);font-size:14px;font-weight:500;cursor:pointer;transition:var(--t);white-space:nowrap}
+.db-tab:hover{background:rgba(255,255,255,.05);color:var(--text)}
+.db-tab--on{background:rgba(159,239,102,.12)!important;color:var(--lime)!important;font-weight:600}
+.db-nav__right{display:flex;align-items:center;gap:10px;flex-shrink:0}
+.db-pill{display:flex;align-items:center;gap:9px;padding:5px 13px 5px 5px;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:999px}
+.db-pill__av{width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,#9fef66,#6bc940);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#070B14;flex-shrink:0}
+.db-pill__name{font-size:13px;font-weight:500;color:var(--text)}
 
-/* ── User pill ── */
-.db-user-pill{display:flex;align-items:center;gap:9px;padding:5px 13px 5px 5px;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:999px}
-.db-user-pill__avatar{width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,#9fef66,#6bc940);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#070B14;flex-shrink:0}
-.db-user-pill__name{font-size:13px;font-weight:500;color:var(--text)}
+/* ── Mobile hamburger ── */
+.db-ham{display:flex;flex-direction:column;justify-content:center;align-items:center;gap:5px;width:38px;height:38px;border-radius:8px;background:rgba(159,239,102,.08);border:1px solid rgba(159,239,102,.2);cursor:pointer;transition:background .2s}
+.db-ham:hover{background:rgba(159,239,102,.14)}
+.db-ham__b{display:block;width:17px;height:2px;background:var(--lime);border-radius:2px;transition:transform .3s cubic-bezier(.4,0,.2,1),opacity .25s;transform-origin:center}
+.db-ham--open .db-ham__b--t{transform:translateY(7px) rotate(45deg)}
+.db-ham--open .db-ham__b--m{opacity:0;transform:scaleX(0)}
+.db-ham--open .db-ham__b--b{transform:translateY(-7px) rotate(-45deg)}
 
-/* ── Hamburger ── */
-.db-hamburger{display:flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:8px;background:rgba(255,255,255,.05);border:1px solid var(--border);cursor:pointer;transition:var(--t)}
-.db-hamburger:hover{background:rgba(255,255,255,.09);border-color:rgba(159,239,102,.3)}
-.db-hamburger__icon{display:flex;flex-direction:column;gap:5px;width:17px}
-.db-hamburger__icon span{display:block;height:2px;background:var(--text-muted);border-radius:2px;transition:all .25s ease;transform-origin:center}
-.db-hamburger__icon--open span:nth-child(1){transform:translateY(7px) rotate(45deg);background:var(--lime)}
-.db-hamburger__icon--open span:nth-child(2){opacity:0;transform:scaleX(0)}
-.db-hamburger__icon--open span:nth-child(3){transform:translateY(-7px) rotate(-45deg);background:var(--lime)}
-
-/* ── Mobile drawer ── */
-.db-mobile-drawer{position:fixed;top:62px;left:0;right:0;z-index:99;background:rgba(11,17,28,.97);backdrop-filter:blur(20px);border-bottom:1px solid var(--border);padding:8px 0 16px;animation:db-drop .22s ease both}
-@keyframes db-drop{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
-.db-mobile-drawer__item{display:flex;align-items:center;gap:12px;width:100%;padding:13px clamp(16px,4vw,32px);border:none;background:transparent;color:var(--text-muted);font-size:15px;font-weight:500;cursor:pointer;transition:var(--t);text-align:left}
-.db-mobile-drawer__item:hover,.db-mobile-drawer__item:active{background:rgba(159,239,102,.05);color:var(--lime)}
-.db-mobile-drawer__item--active{color:var(--lime)}
-.db-mobile-drawer__item--danger{color:var(--red)!important}
-.db-mobile-drawer__item--danger:hover{background:rgba(248,113,113,.06)!important}
-.db-mobile-drawer__icon{font-size:18px;width:24px;text-align:center;flex-shrink:0}
-.db-mobile-drawer__divider{height:1px;background:var(--border);margin:8px clamp(16px,4vw,32px)}
+/* ── Mobile backdrop + overlay ── */
+.db-backdrop{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.55);backdrop-filter:blur(4px);opacity:0;pointer-events:none;transition:opacity .3s}
+.db-backdrop--on{opacity:1;pointer-events:all}
+.db-overlay{position:fixed;top:0;right:0;bottom:0;z-index:210;width:min(88vw,300px);background:rgba(7,11,20,.97);border-left:1px solid rgba(159,239,102,.12);display:flex;flex-direction:column;padding:0 0 env(safe-area-inset-bottom);transform:translateX(100%);opacity:0;transition:transform .35s cubic-bezier(.4,0,.2,1),opacity .3s;pointer-events:none;overflow-y:auto}
+.db-overlay--open{transform:translateX(0);opacity:1;pointer-events:all}
+.db-overlay__glow{position:absolute;top:-60px;right:-60px;width:220px;height:220px;border-radius:50%;background:radial-gradient(circle,rgba(159,239,102,.07)0%,transparent 65%);pointer-events:none;flex-shrink:0}
+.db-overlay__user{display:flex;align-items:center;gap:12px;padding:20px 20px 16px;position:relative}
+.db-overlay__av{width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#9fef66,#6bc940);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:#070B14;flex-shrink:0}
+.db-overlay__name{font-weight:700;font-size:15px;color:var(--text)}
+.db-overlay__email{font-size:11.5px;color:var(--text-faint);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px}
+.db-overlay__hr{height:1px;background:rgba(159,239,102,.08);margin:0 20px}
+.db-overlay__nav{display:flex;flex-direction:column;padding:8px 0}
+.db-overlay__link{display:flex;align-items:center;gap:12px;padding:13px 20px;border:none;background:transparent;color:var(--text-muted);font-size:14.5px;font-weight:500;cursor:pointer;transition:var(--t);text-align:left;width:100%;opacity:0;animation:none;position:relative}
+.db-overlay--open .db-overlay__link{animation:db-slide-in .35s ease both;animation-delay:calc(.04s + var(--i,0) * .06s)}
+.db-overlay__link:hover,.db-overlay__link--on{color:var(--lime);background:rgba(159,239,102,.05)}
+.db-overlay__icon{font-size:18px;width:24px;text-align:center;flex-shrink:0}
+.db-overlay__dot{width:6px;height:6px;border-radius:50%;background:var(--lime);margin-left:auto}
+.db-overlay__signout{display:flex;align-items:center;gap:12px;padding:14px 20px;border:none;background:transparent;color:var(--red,#f87171);font-size:14.5px;font-weight:500;cursor:pointer;transition:var(--t);text-align:left;width:100%;margin-top:4px}
+.db-overlay__signout:hover{background:rgba(248,113,113,.07)}
 
 /* ── Main ── */
 .db-main{flex:1;max-width:1200px;width:100%;margin:0 auto;padding:clamp(20px,3vh,40px) clamp(14px,3vw,40px);padding-bottom:80px}
-.db-content{margin-top:0}
-.db-section{margin-bottom:40px}
+.db-section{margin-bottom:36px}
 
 /* ── Greeting ── */
 .db-greeting{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:clamp(20px,4vh,36px);gap:16px;flex-wrap:wrap}
-.db-greeting__title{font-family:var(--font-display);font-weight:700;font-size:clamp(18px,3vw,26px);letter-spacing:-.02em;line-height:1.2}
+.db-greeting__h{font-family:var(--font-display);font-weight:700;font-size:clamp(18px,3vw,26px);letter-spacing:-.02em;line-height:1.2}
 .db-greeting__name{color:var(--lime)}
 .db-greeting__sub{color:var(--text-muted);font-size:13px;margin-top:4px}
-.db-greeting__tab-badge{display:flex;align-items:center;gap:7px;padding:8px 16px;background:rgba(159,239,102,.08);border:1px solid rgba(159,239,102,.2);border-radius:999px;font-size:13px;font-weight:600;color:var(--lime);white-space:nowrap}
+.db-greeting__badge{display:flex;align-items:center;gap:7px;padding:8px 16px;background:rgba(159,239,102,.08);border:1px solid rgba(159,239,102,.2);border-radius:999px;font-size:13px;font-weight:600;color:var(--lime);white-space:nowrap}
+
+/* ── Calendar wrap ── */
+.db-cal-wrap{margin-bottom:24px}
 
 /* ── Section heading ── */
-.db-section-heading{font-family:var(--font-display);font-weight:700;font-size:clamp(13px,2vw,16px);letter-spacing:-.01em;margin-bottom:14px;display:flex;align-items:center;gap:9px;color:var(--text)}
-.db-section-heading__line{flex:1;height:1px;background:var(--border);display:block}
+.db-sh{font-family:var(--font-display);font-weight:700;font-size:clamp(13px,2vw,16px);letter-spacing:-.01em;margin-bottom:14px;display:flex;align-items:center;gap:9px;color:var(--text)}
+.db-sh__line{flex:1;height:1px;background:var(--border);display:block}
 
 /* ── Match card ── */
-.db-matches-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(clamp(260px,30vw,340px),1fr));gap:16px}
-.db-match-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:20px;transition:var(--t-md);display:flex;flex-direction:column;gap:0}
-.db-match-card--hov{border-color:rgba(159,239,102,.28);transform:translateY(-3px);box-shadow:0 16px 48px rgba(0,0,0,.5),0 0 30px rgba(159,239,102,.06)}
-.db-match-card__header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;gap:8px}
-.db-match-card__tournament{font-size:12px;color:var(--text-faint);font-weight:500;margin-bottom:5px}
-.db-match-card__badges{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-.db-surface-badge{font-size:10px;font-weight:700;letter-spacing:.06em;padding:2px 8px;border-radius:999px;background:color-mix(in srgb,var(--sc) 15%,transparent);color:var(--sc);border:1px solid color-mix(in srgb,var(--sc) 30%,transparent);text-transform:uppercase}
-.db-match-card__date{font-size:11px;color:var(--text-faint)}
+.db-mgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(clamp(260px,30vw,340px),1fr));gap:16px}
+.db-mc{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:20px;transition:var(--t-md);display:flex;flex-direction:column;cursor:default}
+.db-mc--hov{border-color:rgba(159,239,102,.28);transform:translateY(-3px);box-shadow:0 16px 48px rgba(0,0,0,.5),0 0 30px rgba(159,239,102,.06)}
+.db-mc__hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;gap:8px}
+.db-mc__tourney{font-size:12px;color:var(--text-faint);font-weight:500;margin-bottom:5px}
+.db-mc__badges{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.db-surface{font-size:10px;font-weight:700;letter-spacing:.06em;padding:2px 8px;border-radius:999px;background:color-mix(in srgb,var(--sc) 15%,transparent);color:var(--sc);border:1px solid color-mix(in srgb,var(--sc) 28%,transparent);text-transform:uppercase}
+.db-mc__date{font-size:11px;color:var(--text-faint)}
 .db-live-badge{display:flex;align-items:center;gap:5px;font-size:11px;font-weight:700;color:var(--green);background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.25);padding:4px 10px;border-radius:999px;white-space:nowrap;flex-shrink:0}
-.db-match-card__player{display:flex;justify-content:space-between;align-items:center;padding:10px 13px;margin-bottom:7px;background:rgba(255,255,255,.02);border:1px solid var(--border);border-radius:var(--radius-sm)}
-.db-match-card__player:last-of-type{margin-bottom:0}
-.db-match-card__player-info{display:flex;align-items:center;gap:9px}
-.db-match-card__flag{font-size:17px}
-.db-match-card__player-name{font-weight:600;font-size:14px;color:var(--text)}
-.db-match-card__player-rank{font-size:11px;color:var(--text-faint);margin-top:1px}
-.db-match-card__score{font-family:var(--font-mono);font-size:13px;font-weight:600;color:var(--lime)}
-.db-match-card__btn{width:100%;margin-top:14px;padding:10px;border:1px solid rgba(159,239,102,.25);border-radius:var(--radius-sm);background:rgba(159,239,102,.07);color:var(--lime);font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;transition:var(--t)}
-.db-match-card__btn:hover{background:rgba(159,239,102,.14);border-color:rgba(159,239,102,.4)}
+.db-mc__player{display:flex;justify-content:space-between;align-items:center;padding:10px 13px;margin-bottom:7px;background:rgba(255,255,255,.02);border:1px solid var(--border);border-radius:var(--radius-sm)}
+.db-mc__pi{display:flex;align-items:center;gap:9px}
+.db-mc__flag{font-size:17px}
+.db-mc__pname{font-weight:600;font-size:14px}
+.db-mc__prank{font-size:11px;color:var(--text-faint);margin-top:1px}
+.db-mc__score{font-family:var(--font-mono);font-size:13px;font-weight:600;color:var(--lime)}
+.db-mc__btn{width:100%;margin-top:14px;padding:10px;border:1px solid rgba(159,239,102,.25);border-radius:var(--radius-sm);background:rgba(159,239,102,.07);color:var(--lime);font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;transition:var(--t)}
+.db-mc__btn:hover{background:rgba(159,239,102,.14);border-color:rgba(159,239,102,.4)}
+
+/* ── Calendar empty state ── */
+.db-empty-cal{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:32px;text-align:center}
+.db-empty-cal__icon{font-size:40px;margin-bottom:12px;opacity:.7}
+.db-empty-cal__title{font-family:var(--font-display);font-weight:700;font-size:17px;color:var(--text);margin-bottom:8px}
+.db-empty-cal__desc{color:var(--text-muted);font-size:14px;max-width:420px;margin:0 auto 20px;line-height:1.7}
+.db-suggestions{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}
+.db-suggestion{display:flex;align-items:center;gap:12px;padding:12px 16px;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:default;transition:border-color .2s}
+.db-suggestion:hover{border-color:var(--sa)}
+.db-suggestion__surface{font-size:10px;font-weight:700;letter-spacing:.06em;padding:3px 9px;border-radius:999px;text-transform:uppercase;white-space:nowrap}
+.db-suggestion__name{font-weight:600;font-size:13.5px;color:var(--text)}
+.db-suggestion__date{font-size:11.5px;color:var(--text-faint);margin-top:2px}
 
 /* ── Predictions layout ── */
-.db-predictions-layout{display:grid;grid-template-columns:clamp(220px,30%,340px) 1fr;gap:20px;align-items:start}
-.db-predictions-sidebar{}
-.db-predictions-main{}
-
-/* ── Match picker ── */
+.db-pred-layout{display:grid;grid-template-columns:clamp(220px,30%,340px) 1fr;gap:20px;align-items:start}
 .db-picker-list{display:flex;flex-direction:column;gap:7px}
-.db-picker-empty{font-size:13px;color:var(--text-faint);padding:16px 0}
-.db-picker-row{display:flex;flex-direction:column;gap:5px;padding:13px 15px;width:100%;text-align:left;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;transition:var(--t)}
-.db-picker-row:hover{border-color:rgba(159,239,102,.25);background:var(--bg-card-alt)}
-.db-picker-row--selected{background:rgba(159,239,102,.08)!important;border-color:rgba(159,239,102,.35)!important}
-.db-picker-row__top{display:flex;justify-content:space-between;align-items:center}
-.db-picker-row__tournament{font-size:11px;color:var(--text-faint)}
-.db-picker-row__live{display:flex;align-items:center;gap:4px;font-size:10px;color:var(--green);font-weight:700}
-.db-picker-row__players{font-size:13.5px;font-weight:600;color:var(--text)}
-.db-picker-row__vs{color:var(--text-faint);font-weight:400}
+.db-pr{display:flex;flex-direction:column;gap:5px;padding:13px 15px;width:100%;text-align:left;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;transition:var(--t)}
+.db-pr:hover{border-color:rgba(159,239,102,.25);background:rgba(255,255,255,.02)}
+.db-pr--on{background:rgba(159,239,102,.08)!important;border-color:rgba(159,239,102,.35)!important}
+.db-pr__top{display:flex;justify-content:space-between;align-items:center}
+.db-pr__t{font-size:11px;color:var(--text-faint)}
+.db-pr__live{display:flex;align-items:center;gap:4px;font-size:10px;color:var(--green);font-weight:700}
+.db-pr__players{font-size:13.5px;font-weight:600;color:var(--text)}
 
-/* ── Prediction panels ── */
-.db-pred-panels{display:flex;flex-direction:column;gap:14px}
+/* ── Panel / shared card ── */
 .db-panel{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:20px}
-.db-panel__header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:20px;flex-wrap:wrap}
-.db-panel__eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-faint)}
+.db-panel__hdr{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:20px;flex-wrap:wrap}
+.db-eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-faint)}
 .db-panel__title{font-family:var(--font-display);font-size:18px;font-weight:700;margin-top:5px}
 .db-panel__sub{font-size:13px;color:var(--text-muted);margin-top:3px}
-
-/* Prob bars */
-.db-prob-row{margin-bottom:16px}
-.db-prob-row:last-child{margin-bottom:0}
-.db-prob-row__player{display:flex;align-items:center;gap:8px;margin-bottom:7px}
-.db-prob-row__name{font-size:14px;font-weight:600}
-.db-prob-row__bar-wrap{display:flex;align-items:center;gap:10px}
-.db-prob-row__bar{flex:1;height:10px;background:rgba(255,255,255,.07);border-radius:99px;overflow:hidden}
-.db-prob-row__fill{height:100%;border-radius:99px;background:var(--fill-color);box-shadow:0 0 12px color-mix(in srgb,var(--fill-color) 50%,transparent);transition:width .8s cubic-bezier(.4,0,.2,1)}
-.db-prob-row__pct{font-family:var(--font-mono);font-size:15px;font-weight:700;width:42px;flex-shrink:0;text-align:right}
-
-/* Factors */
-.db-factors-list{display:flex;flex-direction:column;gap:8px}
-.db-factor-item{display:flex;gap:9px;align-items:flex-start;padding:10px 13px;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:14px;color:var(--text-muted)}
-
-/* Stats comparison */
-.db-stats-header{display:grid;grid-template-columns:1fr 1fr 1fr;margin-bottom:12px;font-size:12px;font-weight:600;color:var(--text-muted)}
-.db-stats-p1{color:var(--lime);text-align:right}
-.db-stats-p2{color:var(--clay)}
-.db-stat-row{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);gap:10px}
-.db-stat-row:last-child{border-bottom:none}
-.db-stat-row__v1{font-family:var(--font-mono);font-size:13px;font-weight:700;color:var(--lime);text-align:right}
-.db-stat-row__label{font-size:11.5px;color:var(--text-faint);text-align:center;white-space:nowrap}
-.db-stat-row__v2{font-family:var(--font-mono);font-size:13px;font-weight:700;color:var(--clay)}
+.db-prob{margin-bottom:16px}
+.db-prob:last-child{margin-bottom:0}
+.db-prob__p{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+.db-prob__nm{font-size:14px;font-weight:600}
+.db-prob__row{display:flex;align-items:center;gap:10px}
+.db-prob__bar{flex:1;height:10px;background:rgba(255,255,255,.07);border-radius:99px;overflow:hidden}
+.db-prob__fill{height:100%;border-radius:99px;background:var(--fc);box-shadow:0 0 12px color-mix(in srgb,var(--fc) 40%,transparent);transition:width .8s cubic-bezier(.4,0,.2,1)}
+.db-prob__pct{font-family:var(--font-mono);font-size:15px;font-weight:700;width:42px;text-align:right;flex-shrink:0}
+.db-factor{display:flex;gap:9px;align-items:flex-start;padding:10px 13px;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:14px;color:var(--text-muted);margin-bottom:8px}
+.db-factor:last-child{margin-bottom:0}
+.db-sr{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);gap:10px}
+.db-sr:last-child{border-bottom:none}
+.db-sr__v1{font-family:var(--font-mono);font-size:13px;font-weight:700;color:var(--lime);text-align:right}
+.db-sr__lbl{font-size:11.5px;color:var(--text-faint);text-align:center;white-space:nowrap}
+.db-sr__v2{font-family:var(--font-mono);font-size:13px;font-weight:700;color:var(--clay)}
 
 /* ── Rankings ── */
-.db-tour-switcher{display:flex;gap:6px;margin-bottom:18px}
+.db-tour-sw{display:flex;align-items:center;gap:8px;margin-bottom:18px;flex-wrap:wrap}
 .db-tour-btn{padding:8px 22px;border:1px solid var(--border);border-radius:8px;background:transparent;color:var(--text-muted);font-size:14px;font-weight:600;cursor:pointer;transition:var(--t)}
 .db-tour-btn:hover{border-color:rgba(159,239,102,.3);color:var(--lime)}
-.db-tour-btn--active{background:rgba(159,239,102,.12);border-color:rgba(159,239,102,.35);color:var(--lime)}
+.db-tour-btn--on{background:rgba(159,239,102,.12);border-color:rgba(159,239,102,.35);color:var(--lime)}
+.db-tour-hint{font-size:12px;color:var(--text-faint);margin-left:4px}
+.db-rank-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.db-rank-head{display:grid;grid-template-columns:52px 1fr 110px 80px;padding:11px 20px;border-bottom:1px solid var(--border);background:rgba(255,255,255,.02)}
+.db-rank-hcell{font-size:11px;font-weight:700;color:var(--text-faint);text-transform:uppercase;letter-spacing:.06em}
+.db-rank-row{display:grid;grid-template-columns:52px 1fr 110px 80px;padding:13px 20px;align-items:center;border-bottom:1px solid var(--border);transition:var(--t);cursor:pointer;width:100%;background:transparent;text-align:left}
+.db-rank-row:last-child{border-bottom:none}
+.db-rank-row:hover{background:rgba(159,239,102,.04)}
+.db-rank-pos{font-family:var(--font-mono);font-weight:700;font-size:14px;color:var(--text-faint)}
+.db-rank-pos[data-medal="0"],.db-rank-pos[data-medal="1"],.db-rank-pos[data-medal="2"]{font-size:18px}
+.db-rank-player{display:flex;align-items:center;gap:11px}
+.db-rank-flag{font-size:20px}
+.db-rank-name{font-weight:600;font-size:14px;color:var(--text)}
+.db-rank-meta{font-size:11px;color:var(--text-faint);margin-top:1px}
+.db-rank-pts{font-family:var(--font-mono);font-size:14px;font-weight:600;color:var(--text)}
+.db-rank-row:hover .db-rank-pts{color:var(--lime)}
+.db-rank-wl{font-size:13px}
+.db-rank-w{color:var(--green);font-weight:600}
+.db-rank-l{color:var(--text-faint)}
 
-.db-rankings-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
-.db-rankings-head{display:grid;grid-template-columns:52px 1fr 110px 80px;padding:11px 20px;border-bottom:1px solid var(--border);background:rgba(255,255,255,.02)}
-.db-rankings-head__cell{font-size:11px;font-weight:700;color:var(--text-faint);text-transform:uppercase;letter-spacing:.06em}
-.db-rankings-row{display:grid;grid-template-columns:52px 1fr 110px 80px;padding:13px 20px;align-items:center;border-bottom:1px solid var(--border);transition:var(--t);cursor:default}
-.db-rankings-row:last-child{border-bottom:none}
-.db-rankings-row--hov{background:rgba(159,239,102,.04)}
-.db-rankings-row__rank{font-family:var(--font-mono);font-weight:700;font-size:14px;color:var(--text-faint)}
-.db-rankings-row__rank[data-pos="0"]{font-size:17px}
-.db-rankings-row__rank[data-pos="1"]{font-size:17px}
-.db-rankings-row__rank[data-pos="2"]{font-size:17px}
-.db-rankings-row__player{display:flex;align-items:center;gap:11px}
-.db-rankings-row__flag{font-size:20px}
-.db-rankings-row__name{font-weight:600;font-size:14px}
-.db-rankings-row__meta{font-size:11px;color:var(--text-faint);margin-top:1px}
-.db-rankings-row__pts{font-family:var(--font-mono);font-size:14px;font-weight:600;color:var(--text);transition:var(--t)}
-.db-rankings-row__pts--hov{color:var(--lime)}
-.db-rankings-row__wl{font-size:13px}
-.db-rankings-row__wins{color:var(--green);font-weight:600}
-.db-rankings-row__losses{color:var(--text-faint)}
+/* ── Player Modal ── */
+.pm-backdrop{position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.7);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:20px;animation:db-fade-in .2s ease}
+@keyframes db-fade-in{from{opacity:0}to{opacity:1}}
+.pm-panel{background:var(--bg-card);border:1px solid rgba(159,239,102,.18);border-radius:var(--radius-lg,16px);width:100%;max-width:720px;max-height:90vh;overflow-y:auto;animation:pm-pop .28s cubic-bezier(.34,1.56,.64,1)}
+@keyframes pm-pop{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:scale(1)}}
+.pm-header{display:flex;justify-content:space-between;align-items:flex-start;padding:24px 24px 20px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg-card);z-index:10}
+.pm-header__left{display:flex;align-items:center;gap:14px}
+.pm-avatar{font-size:36px;width:56px;height:56px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:12px}
+.pm-name{font-family:var(--font-display);font-size:20px;font-weight:800;color:var(--text)}
+.pm-meta{font-size:13px;color:var(--text-muted);margin-top:3px}
+.pm-close{width:34px;height:34px;border-radius:8px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text-muted);transition:var(--t);flex-shrink:0}
+.pm-close:hover{background:rgba(248,113,113,.12);border-color:rgba(248,113,113,.3);color:var(--red,#f87171)}
+.pm-body{padding:24px;display:flex;flex-direction:column;gap:24px}
+.pm-section{display:flex;flex-direction:column;gap:10px}
+.pm-eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--lime);font-weight:700}
+.pm-bio{font-size:14px;color:var(--text-muted);line-height:1.75}
+.pm-stats-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.pm-stat{background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;text-align:center}
+.pm-stat__val{display:block;font-family:var(--font-mono);font-size:18px;font-weight:800;margin-bottom:5px}
+.pm-stat__lbl{font-size:11px;color:var(--text-faint)}
+.pm-table-wrap{overflow-x:auto;border-radius:var(--radius-sm);border:1px solid var(--border)}
+.pm-table{width:100%;border-collapse:collapse;font-size:13px}
+.pm-table th{padding:9px 12px;background:rgba(255,255,255,.03);color:var(--text-faint);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap}
+.pm-table td{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.04);vertical-align:middle}
+.pm-table tr:last-child td{border-bottom:none}
+.pm-table tr:hover td{background:rgba(159,239,102,.03)}
+.pm-result{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;font-size:11px;font-weight:700}
+.pm-result--w{background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3)}
+.pm-result--l{background:rgba(248,113,113,.12);color:var(--red,#f87171);border:1px solid rgba(248,113,113,.25)}
+.pm-tourney{font-weight:600;color:var(--text);display:inline-block;margin-right:6px}
+.pm-surface-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--sc);vertical-align:middle}
+.pm-opp{color:var(--text-muted)}
+.pm-score-cell{font-family:var(--font-mono);font-size:12px;color:var(--text-muted);white-space:nowrap}
+.pm-serve{font-family:var(--font-mono);font-weight:600;color:var(--text);font-size:13px}
+.pm-serve--hi{color:var(--green)}
+.pm-serve--lo{color:var(--red,#f87171)}
+.pm-num{font-family:var(--font-mono);color:var(--text-muted)}
+.pm-num--red{color:var(--red,#f87171)}
+.pm-table-note{font-size:11.5px;color:var(--text-faint);margin-top:8px}
 
 /* ── AI Chat ── */
-.db-chat-layout{display:grid;grid-template-columns:1fr;gap:20px;align-items:start}
-.db-chat-layout--with-context{grid-template-columns:1fr clamp(200px,26%,280px)}
-.db-chat-panel{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);display:flex;flex-direction:column;height:clamp(480px,70vh,720px);overflow:hidden}
-.db-chat-header{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--border);background:rgba(255,255,255,.02);flex-shrink:0}
-.db-chat-header__left{display:flex;align-items:center;gap:10px}
-.db-chat-avatar{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,#a78bfa,#7c3aed);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
-.db-chat-avatar--sm{width:28px;height:28px;font-size:13px}
-.db-chat-header__title{font-weight:600;font-size:14px}
-.db-chat-header__status{font-size:11px;color:var(--green);display:flex;align-items:center;gap:4px;margin-top:2px}
-.db-chat-header__dot{width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block}
-.db-chat-messages{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
-.db-bubble-wrap{display:flex;gap:8px;align-items:flex-end}
-.db-bubble-wrap--user{flex-direction:row-reverse}
-.db-bubble{max-width:82%;padding:11px 15px;font-size:14px;line-height:1.6}
-.db-bubble--ai{background:var(--bg-card-alt,#161e2e);border:1px solid var(--border);border-radius:14px 14px 14px 2px}
-.db-bubble--user{background:rgba(159,239,102,.1);border:1px solid rgba(159,239,102,.22);border-radius:14px 14px 2px 14px}
-.db-bubble--typing{display:flex;gap:5px;align-items:center;padding:12px 16px}
-.db-bubble--typing span{width:7px;height:7px;border-radius:50%;background:var(--text-faint);animation:tv-live-dot 1s ease infinite}
-.db-bubble--typing span:nth-child(2){animation-delay:.18s}
-.db-bubble--typing span:nth-child(3){animation-delay:.36s}
-.db-chat-suggestions{padding:0 14px 10px;display:flex;flex-wrap:wrap;gap:6px;flex-shrink:0}
-.db-chat-suggestion{padding:6px 12px;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:999px;color:var(--text-muted);font-size:12px;cursor:pointer;transition:var(--t)}
-.db-chat-suggestion:hover{border-color:rgba(159,239,102,.35);color:var(--lime)}
-.db-chat-input-row{padding:11px 14px;border-top:1px solid var(--border);display:flex;gap:9px;flex-shrink:0}
-.db-chat-input{flex:1;padding:10px 16px;background:rgba(255,255,255,.04);border:1px solid var(--border-md);border-radius:999px;color:var(--text);font-size:14px;outline:none;transition:var(--t)}
-.db-chat-input:focus{border-color:rgba(159,239,102,.4);background:rgba(159,239,102,.03)}
-.db-chat-send{width:38px;height:38px;border-radius:50%;background:var(--lime);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#070B14;flex-shrink:0;transition:var(--t)}
-.db-chat-send:hover{background:#b5f07a;transform:scale(1.05)}
-.db-chat-send--disabled{background:var(--border)!important;color:var(--text-faint)!important;cursor:not-allowed!important;transform:none!important}
-.db-chat-context__p1{font-weight:700;font-size:15px;margin-top:10px}
-.db-chat-context__vs{color:var(--text-faint);font-size:13px;margin:5px 0}
-.db-chat-context__p2{font-weight:700;font-size:15px}
-.db-chat-context__hint{font-size:12px;color:var(--text-faint);margin-top:12px;line-height:1.6}
+.db-chat-wrap{display:grid;grid-template-columns:1fr;gap:20px;align-items:start}
+.db-chat-wrap--ctx{grid-template-columns:1fr clamp(200px,26%,280px)}
+.db-chat{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);display:flex;flex-direction:column;height:clamp(480px,70vh,720px);overflow:hidden}
+.db-chat__hdr{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--border);background:rgba(255,255,255,.02);flex-shrink:0}
+.db-chat__hdr-l{display:flex;align-items:center;gap:10px}
+.db-chat__av{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,#a78bfa,#7c3aed);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+.db-chat__av--sm{width:28px;height:28px;font-size:13px}
+.db-chat__title{font-weight:600;font-size:14px}
+.db-chat__status{font-size:11px;color:var(--green);display:flex;align-items:center;gap:4px;margin-top:2px}
+.db-chat__dot{width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block}
+.db-chat__msgs{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+.db-bub-w{display:flex;gap:8px;align-items:flex-end}
+.db-bub-w--u{flex-direction:row-reverse}
+.db-bub{max-width:82%;padding:11px 15px;font-size:14px;line-height:1.6}
+.db-bub--ai{background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:14px 14px 14px 2px}
+.db-bub--u{background:rgba(159,239,102,.1);border:1px solid rgba(159,239,102,.22);border-radius:14px 14px 2px 14px}
+.db-bub--typing{display:flex;gap:5px;align-items:center;padding:12px 16px}
+.db-bub--typing span{width:7px;height:7px;border-radius:50%;background:var(--text-faint);animation:db-dots 1s ease infinite}
+.db-bub--typing span:nth-child(2){animation-delay:.18s}
+.db-bub--typing span:nth-child(3){animation-delay:.36s}
+.db-chat__sugg{padding:0 14px 10px;display:flex;flex-wrap:wrap;gap:6px;flex-shrink:0}
+.db-chat__pill{padding:6px 12px;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:999px;color:var(--text-muted);font-size:12px;cursor:pointer;transition:var(--t)}
+.db-chat__pill:hover{border-color:rgba(159,239,102,.35);color:var(--lime)}
+.db-chat__input-row{padding:11px 14px;border-top:1px solid var(--border);display:flex;gap:9px;flex-shrink:0}
+.db-chat__input{flex:1;padding:10px 16px;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:999px;color:var(--text);font-size:14px;outline:none;transition:var(--t);font-family:var(--font-body)}
+.db-chat__input:focus{border-color:rgba(159,239,102,.4);background:rgba(159,239,102,.03)}
+.db-chat__send{width:38px;height:38px;border-radius:50%;background:var(--lime);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#070B14;flex-shrink:0;transition:var(--t)}
+.db-chat__send:hover{background:#b5f07a;transform:scale(1.06)}
+.db-chat__send--off{background:var(--border)!important;color:var(--text-faint)!important;cursor:not-allowed!important;transform:none!important}
+.db-chat__ctx{}
 
 /* ── Error / Empty ── */
-.db-error{padding:28px;text-align:center;background:rgba(248,113,113,.05);border:1px solid rgba(248,113,113,.2);border-radius:var(--radius);display:flex;flex-direction:column;align-items:center;gap:12px}
-.db-error__msg{color:var(--red);font-size:14px}
+.db-err{padding:28px;text-align:center;background:rgba(248,113,113,.05);border:1px solid rgba(248,113,113,.2);border-radius:var(--radius);display:flex;flex-direction:column;align-items:center;gap:12px}
+.db-err__msg{color:var(--red,#f87171);font-size:14px}
 .db-empty{padding:48px 24px;text-align:center}
 .db-empty__icon{font-size:44px;margin-bottom:14px;opacity:.7}
 .db-empty__title{font-family:var(--font-display);font-weight:700;font-size:17px;margin-bottom:8px}
 .db-empty__desc{color:var(--text-muted);font-size:14px;max-width:300px;margin:0 auto;line-height:1.7}
 
-/* ── Mobile bottom nav ── */
-.db-bottom-nav{position:fixed;bottom:0;left:0;right:0;z-index:100;display:flex;background:rgba(11,17,28,.97);border-top:1px solid var(--border);backdrop-filter:blur(20px);padding-bottom:env(safe-area-inset-bottom)}
-.db-bottom-nav__item{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:9px 4px;border:none;background:transparent;color:var(--text-muted);cursor:pointer;transition:var(--t)}
-.db-bottom-nav__item--active{color:var(--lime)}
-.db-bottom-nav__icon{font-size:20px;line-height:1}
-.db-bottom-nav__label{font-size:9px;font-weight:600;letter-spacing:.03em;text-transform:uppercase}
+/* ── Bottom nav ── */
+.db-bottom{position:fixed;bottom:0;left:0;right:0;z-index:100;display:flex;background:rgba(11,17,28,.97);border-top:1px solid var(--border);backdrop-filter:blur(20px);padding-bottom:env(safe-area-inset-bottom)}
+.db-bottom__item{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:9px 4px;border:none;background:transparent;color:var(--text-muted);cursor:pointer;transition:var(--t)}
+.db-bottom__item--on{color:var(--lime)}
+.db-bottom__icon{font-size:20px;line-height:1}
+.db-bottom__lbl{font-size:9px;font-weight:600;letter-spacing:.03em;text-transform:uppercase}
 
 /* ── Responsive ── */
 @media(max-width:900px){
-  .db-predictions-layout{grid-template-columns:1fr}
-  .db-chat-layout--with-context{grid-template-columns:1fr}
-  .db-chat-context{display:none}
-  .db-rankings-head,.db-rankings-row{grid-template-columns:44px 1fr 90px}
-  .db-rankings-head__cell:last-child,.db-rankings-row__wl{display:none}
-  .db-main{padding-bottom:90px}
+  .db-pred-layout{grid-template-columns:1fr}
+  .db-chat-wrap--ctx{grid-template-columns:1fr}
+  .db-chat__ctx{display:none}
+  .db-rank-head,.db-rank-row{grid-template-columns:44px 1fr 90px}
+  .db-rank-hcell:last-child,.db-rank-wl{display:none}
+  .pm-stats-grid{grid-template-columns:repeat(2,1fr)}
 }
 @media(max-width:640px){
-  .db-matches-grid{grid-template-columns:1fr}
-  .db-rankings-head,.db-rankings-row{grid-template-columns:40px 1fr 80px}
-  .db-rankings-row__meta{display:none}
+  .db-mgrid{grid-template-columns:1fr}
+  .db-rank-head,.db-rank-row{grid-template-columns:40px 1fr 80px}
+  .db-rank-meta{display:none}
+  .pm-stats-grid{grid-template-columns:repeat(2,1fr)}
+  .db-main{padding-bottom:90px}
 }
-@media(max-width:400px){
-  .db-nav{padding:0 10px}
-}
-/* hide/show helpers (from index.css globals) */
 @media(max-width:640px){.hide-sm{display:none!important}}
 @media(min-width:641px){.show-sm{display:none!important}}
 `;

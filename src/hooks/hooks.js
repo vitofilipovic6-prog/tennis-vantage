@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// hooks.js  –  TennisVantage custom React hooks
+// hooks.js – TennisVantage custom React hooks
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
@@ -30,7 +30,6 @@ export function useMatches() {
 
   useEffect(() => {
     fetchAll();
-    // Poll live matches every 30 seconds
     intervalRef.current = setInterval(() => {
       getLiveMatches().then(setLive).catch(() => {});
     }, 30_000);
@@ -40,7 +39,7 @@ export function useMatches() {
   return { live, upcoming, loading, error, refresh: fetchAll };
 }
 
-// ── useRankings ────────────────────────────────────────────────────────────────
+// ── useRankings: re-fetches whenever tour changes ─────────────────────────────
 export function useRankings(tour = 'ATP') {
   const [rankings, setRankings] = useState([]);
   const [loading,  setLoading]  = useState(true);
@@ -48,9 +47,10 @@ export function useRankings(tour = 'ATP') {
 
   useEffect(() => {
     setLoading(true);
+    setRankings([]);
     getRankings(tour)
       .then(data => { setRankings(data); setError(null); })
-      .catch(e  => setError(e.message))
+      .catch(e => setError(e.message))
       .finally(() => setLoading(false));
   }, [tour]);
 
@@ -68,7 +68,7 @@ export function usePrediction(match) {
     setLoading(true);
     getPrediction(match)
       .then(data => { setPrediction(data); setError(null); })
-      .catch(e   => setError(e.message))
+      .catch(e => setError(e.message))
       .finally(() => setLoading(false));
   }, [match?.id]);
 
@@ -90,12 +90,11 @@ export function usePlayerSearch() {
 }
 
 // ── useAiChat ─────────────────────────────────────────────────────────────────
-// AI Integration Prep — swap sendChatMessage in tennisApi.js for a real model
 export function useAiChat(contextMatch = null) {
   const [messages, setMessages] = useState([
-    { role: 'assistant', content: 'Hi! I\'m your AI tennis analyst. Ask me anything about match predictions, player stats, or tournament strategies.' },
+    { role: 'assistant', content: "Hi! I'm your AI tennis analyst. I cover both the ATP and WTA tours — ask me anything about match predictions, player stats, rankings, or tournament strategies." },
   ]);
-  const [typing, setTyping] = useState(false);
+  const [typing,    setTyping]  = useState(false);
   const bottomRef = useRef(null);
 
   useEffect(() => {
@@ -107,16 +106,13 @@ export function useAiChat(contextMatch = null) {
     const userMsg = { role: 'user', content: text };
     setMessages(prev => [...prev, userMsg]);
     setTyping(true);
-
     try {
-      // Build context-enriched message history
       const systemContext = contextMatch
         ? `Context: ${contextMatch.player1.name} vs ${contextMatch.player2.name} on ${contextMatch.surface} at ${contextMatch.tournament}.`
-        : 'Context: General tennis analysis assistant.';
-
-      const history = [...messages, userMsg].map(m => ({ role: m.role, content: m.content }));
+        : 'Context: General tennis analysis assistant covering ATP and WTA.';
+      const history  = [...messages, userMsg].map(m => ({ role: m.role, content: m.content }));
       const response = await sendChatMessage(history, systemContext);
-      const aiText = response?.content?.[0]?.text ?? 'Sorry, I couldn\'t process that.';
+      const aiText   = response?.content?.[0]?.text ?? "Sorry, I couldn't process that.";
       setMessages(prev => [...prev, { role: 'assistant', content: aiText }]);
     } catch {
       setMessages(prev => [...prev, { role: 'assistant', content: 'Connection error. Please try again.' }]);
@@ -126,7 +122,7 @@ export function useAiChat(contextMatch = null) {
   }, [messages, contextMatch]);
 
   const reset = useCallback(() => {
-    setMessages([{ role: 'assistant', content: 'New session started. Ask me anything about tennis!' }]);
+    setMessages([{ role: 'assistant', content: "New session started. Ask me anything about ATP or WTA tennis!" }]);
   }, []);
 
   return { messages, typing, sendMessage, reset, bottomRef };
