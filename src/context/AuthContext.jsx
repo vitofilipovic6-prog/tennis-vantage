@@ -42,18 +42,33 @@ export function AuthProvider({ children }) {
   }, []);
 
   // ── Bootstrap session ───────────────────────────────────────────────────────
+ // ── Bootstrap session ───────────────────────────────────────────────────────
   useEffect(() => {
     let mounted = true;
     let userWasSignedIn = false;
 
     (async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!mounted) return;
-      if (session?.user) {
-        userWasSignedIn = true;
-        const profile = await loadProfile(session.user.id);
-        if (mounted) dispatch({ type: 'SET_USER', user: session.user, profile });
-      } else {
+      try {
+        // 1. Safely fetch data without immediately destructuring session
+        const { data, error } = await supabase.auth.getSession();
+        
+        // 2. If Supabase returns an explicit error, throw it so the catch block handles it
+        if (error) throw error; 
+
+        if (!mounted) return;
+        
+        // 3. Safely check if session exists using optional chaining (?.)
+        if (data?.session?.user) {
+          userWasSignedIn = true;
+          const profile = await loadProfile(data.session.user.id);
+          if (mounted) dispatch({ type: 'SET_USER', user: data.session.user, profile });
+        } else {
+          // No user found, stop loading
+          if (mounted) dispatch({ type: 'LOADING_DONE' });
+        }
+      } catch (err) {
+        console.error("Supabase Connection Error:", err);
+        // 4. THE MAGIC FIX: Always stop the loading screen, even if the request completely failed!
         if (mounted) dispatch({ type: 'LOADING_DONE' });
       }
     })();
@@ -66,7 +81,7 @@ export function AuthProvider({ children }) {
           const profile = await loadProfile(session.user.id);
           if (mounted) dispatch({ type: 'SET_USER', user: session.user, profile });
           if (window.location.hash) {
-            history.replaceState(null, '', window.location.pathname + window.location.search);
+            window.history.replaceState(null, '', window.location.pathname + window.location.search);
           }
         }
         if (event === 'SIGNED_OUT' && userWasSignedIn) {
