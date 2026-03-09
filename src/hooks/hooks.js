@@ -1,63 +1,31 @@
-// src/hooks/hooks.js
+// ─────────────────────────────────────────────────────────────────────────────
+// hooks.js – TennisVantage custom React hooks
+// ─────────────────────────────────────────────────────────────────────────────
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { supabase } from '../services/supabase';
 import {
-  getLiveMatches,
-  getUpcomingMatches,
-  getMatchesByDate,
-  getRankings,
-  getPrediction,
-  sendChatMessage,
-  MOCK_DATA,
+  getLiveMatches, getUpcomingMatches, getRankings,
+  getPrediction, sendChatMessage, MOCK_DATA,
 } from '../services/tennisApi';
 
-// ── Module-level cache — survives tab switches, cleared on page refresh ────────
-const CACHE = {
-  live:     { data: null, ts: 0 },
-  upcoming: { data: null, ts: 0 },
-  byDate:   new Map(),
-  rankings: { ATP: null, WTA: null, ts: { ATP: 0, WTA: 0 } },
-};
-const STALE = {
-  live:     30  * 1000,      // 30 seconds
-  upcoming: 5   * 60 * 1000, // 5 minutes
-  rankings: 5   * 60 * 1000, // 5 minutes
-  byDate:   2   * 60 * 1000, // 2 minutes
-};
-
-// ── useMatches ────────────────────────────────────────────────────────────────
+// ── useMatches ─────────────────────────────────────────────────────────────────
 export function useMatches() {
-  const [live,     setLive]     = useState(CACHE.live.data     ?? []);
-  const [upcoming, setUpcoming] = useState(CACHE.upcoming.data ?? []);
-  const [loading,  setLoading]  = useState(!CACHE.live.data && !CACHE.upcoming.data);
-  const [error,    setError]    = useState(null);
+  const [live, setLive]         = useState([]);
+  const [upcoming, setUpcoming] = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [error, setError]       = useState(null);
+  const intervalRef             = useRef(null);
 
-  const fetchAll = useCallback(async (force = false) => {
-    const now           = Date.now();
-    const liveStale     = now - CACHE.live.ts     > STALE.live;
-    const upcomingStale = now - CACHE.upcoming.ts > STALE.upcoming;
-
-    if (!force && !liveStale && !upcomingStale) return;
-
-    setLoading(true);
+  const fetchAll = useCallback(async () => {
     try {
-      // Both fire simultaneously — no waterfall
       const [liveData, upcomingData] = await Promise.all([
-        liveStale     ? getLiveMatches()     : Promise.resolve(CACHE.live.data),
-        upcomingStale ? getUpcomingMatches() : Promise.resolve(CACHE.upcoming.data),
+        getLiveMatches(),
+        getUpcomingMatches(),
       ]);
-
-      if (liveStale)     CACHE.live     = { data: liveData,     ts: now };
-      if (upcomingStale) CACHE.upcoming = { data: upcomingData, ts: now };
-
-      setLive(liveData     ?? []);
-      setUpcoming(upcomingData ?? []);
+      setLive(liveData);
+      setUpcoming(upcomingData);
       setError(null);
     } catch (e) {
       setError(e.message ?? 'Failed to load matches');
-      // Keep showing stale data on error — don't blank the screen
-      if (CACHE.live.data)     setLive(CACHE.live.data);
-      if (CACHE.upcoming.data) setUpcoming(CACHE.upcoming.data);
     } finally {
       setLoading(false);
     }
@@ -65,135 +33,78 @@ export function useMatches() {
 
   useEffect(() => {
     fetchAll();
-
-    // Supabase Realtime — pushes live score changes instantly
-    const channel = supabase
-      .channel('matches-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, () => {
-        CACHE.live.ts     = 0;
-        CACHE.upcoming.ts = 0;
-        fetchAll(true);
-      })
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
+    intervalRef.current = setInterval(() => {
+      getLiveMatches()
+        .then(setLive)
+        .catch(() => {});
+    }, 30_000);
+    return () => clearInterval(intervalRef.current);
   }, [fetchAll]);
 
-  return { live, upcoming, loading, error, refresh: () => fetchAll(true) };
+  return { live, upcoming, loading, error, refresh: fetchAll };
 }
 
-// ── useMatchesByDate ──────────────────────────────────────────────────────────
-export function useMatchesByDate(dateString) {
-  const [matches, setMatches] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error,   setError]   = useState(null);
-
-  useEffect(() => {
-    if (!dateString) { setMatches([]); return; }
-
-    const cached = CACHE.byDate.get(dateString);
-    if (cached && Date.now() - cached.ts < STALE.byDate) {
-      setMatches(cached.data);
-      return;
-    }
-
-    setLoading(true);
-    getMatchesByDate(dateString)
-      .then(data => {
-        CACHE.byDate.set(dateString, { data, ts: Date.now() });
-        setMatches(data);
-        setError(null);
-      })
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false));
-  }, [dateString]);
-
-  return { matches, loading, error };
-}
-
-// ── useRankings ───────────────────────────────────────────────────────────────
+// ── useRankings ────────────────────────────────────────────────────────────────
 export function useRankings(tour = 'ATP') {
-  const cached = CACHE.rankings[tour];
-  const [rankings, setRankings] = useState(cached ?? []);
-  const [loading,  setLoading]  = useState(!cached);
-  const [error,    setError]    = useState(null);
+  const [rankings, setRankings] = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [error, setError]       = useState(null);
 
   useEffect(() => {
-    const now       = Date.now();
-    const lastFetch = CACHE.rankings.ts[tour] ?? 0;
-
-    if (cached && (now - lastFetch) < STALE.rankings) {
-      setRankings(cached);
-      setLoading(false);
-      return;
-    }
-
+    let cancelled = false;
     setLoading(true);
+    setRankings([]);
     getRankings(tour)
-      .then(data => {
-        CACHE.rankings[tour]    = data;
-        CACHE.rankings.ts[tour] = Date.now();
-        setRankings(data);
-        setError(null);
-      })
-      .catch(e => setError(e.message ?? 'Failed to load rankings'))
-      .finally(() => setLoading(false));
+      .then(data  => { if (!cancelled) { setRankings(data); setError(null); } })
+      .catch(e    => { if (!cancelled) setError(e.message ?? 'Failed to load rankings'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [tour]);
 
   return { rankings, loading, error };
 }
 
 // ── usePrediction ─────────────────────────────────────────────────────────────
-const predictionCache = new Map();
-
 export function usePrediction(match) {
-  const [prediction, setPrediction] = useState(predictionCache.get(match?.id) ?? null);
-  const [loading,    setLoading]    = useState(false);
-  const [error,      setError]      = useState(null);
+  const [prediction, setPrediction] = useState(null);
+  const [loading, setLoading]       = useState(false);
+  const [error, setError]           = useState(null);
+
+  const matchId = match?.id ?? null;
 
   useEffect(() => {
-    if (!match?.id) { setPrediction(null); return; }
-    if (predictionCache.has(match.id)) {
-      setPrediction(predictionCache.get(match.id));
+    if (!matchId) {
+      setPrediction(null);
+      setError(null);
       return;
     }
+    let cancelled = false;
     setLoading(true);
+    setError(null);
     getPrediction(match)
-      .then(data => {
-        predictionCache.set(match.id, data);
-        setPrediction(data);
-        setError(null);
-      })
-      .catch(e => setError(e.message ?? 'Prediction failed'))
-      .finally(() => setLoading(false));
-  }, [match?.id]);
+      .then(data => { if (!cancelled) { setPrediction(data); setError(null); } })
+      .catch(e   => { if (!cancelled) setError(e.message ?? 'Prediction failed'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matchId]);
 
   return { prediction, loading, error };
 }
 
-// ── usePlayerSearch ───────────────────────────────────────────────────────────
+// ── usePlayerSearch ────────────────────────────────────────────────────────────
 export function usePlayerSearch() {
-  const [query,   setQuery]   = useState('');
+  const [query, setQuery]     = useState('');
   const [results, setResults] = useState([]);
-  const debounceRef = useRef(null);
 
   useEffect(() => {
     if (!query.trim()) { setResults([]); return; }
-    clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(async () => {
-      const { data } = await supabase
-        .from('players')
-        .select('id, name, country, flag, rank')
-        .ilike('name', `%${query}%`)
-        .limit(8);
-      if (data?.length > 0) {
-        setResults(data);
-      } else {
-        const lower = query.toLowerCase();
-        setResults(MOCK_DATA.players.filter(p => p.name.toLowerCase().includes(lower)));
-      }
-    }, 300);
-    return () => clearTimeout(debounceRef.current);
+    const lower      = query.toLowerCase();
+    const allPlayers = [
+      ...(MOCK_DATA.atpPlayers ?? MOCK_DATA.players ?? []),
+      ...(MOCK_DATA.wtaPlayers ?? []),
+    ];
+    setResults(allPlayers.filter(p => p.name.toLowerCase().includes(lower)));
   }, [query]);
 
   return { query, setQuery, results };
@@ -201,12 +112,16 @@ export function usePlayerSearch() {
 
 // ── useAiChat ─────────────────────────────────────────────────────────────────
 export function useAiChat(contextMatch = null) {
-  const [messages, setMessages] = useState([{
-    role:    'assistant',
-    content: "I'm your AI tennis analyst. Ask me about today's matches, player form, predictions — or anything about the game.",
-  }]);
-  const [typing,  setTyping]  = useState(false);
-  const bottomRef             = useRef(null);
+  const GREETING = "Hi! I'm your AI tennis analyst. Ask me anything about match predictions, player stats, or tournament strategies.";
+
+  const [messages, setMessages] = useState([
+    { role: 'assistant', content: GREETING },
+  ]);
+  const [typing, setTyping] = useState(false);
+  const bottomRef           = useRef(null);
+  const messagesRef         = useRef(messages);
+
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -217,47 +132,40 @@ export function useAiChat(contextMatch = null) {
     const userMsg = { role: 'user', content: text };
     setMessages(prev => [...prev, userMsg]);
     setTyping(true);
+
     try {
       const systemContext = contextMatch
-        ? `Active match context: ${contextMatch.player1?.name ?? '?'} vs ${contextMatch.player2?.name ?? '?'} — ${contextMatch.surface} at ${contextMatch.tournament} (${contextMatch.round}).`
-        : 'No specific match selected. General tennis analysis mode.';
+        ? `You are a professional tennis analyst. Context: ${contextMatch.player1.name} vs ${contextMatch.player2.name} on ${contextMatch.surface} at ${contextMatch.tournament}, ${contextMatch.round}.`
+        : 'You are a professional tennis analyst. Provide insightful, data-driven analysis.';
 
-      const history = [...messages, userMsg].map(m => ({
-        role:    m.role,
-        content: m.content,
+      const history = [...messagesRef.current, userMsg].map(m => ({
+        role: m.role, content: m.content,
       }));
 
       const response = await sendChatMessage(history, systemContext);
-      const aiText   =
-        response?.content?.[0]?.text ??
-        response?.text ??
-        "Sorry, I couldn't process that. Please try again.";
-
+      const aiText   = response?.content?.[0]?.text ?? "Sorry, I couldn't process that.";
       setMessages(prev => [...prev, { role: 'assistant', content: aiText }]);
     } catch {
-      setMessages(prev => [...prev, {
-        role:    'assistant',
-        content: 'Connection issue — please try again in a moment.',
-      }]);
+      setMessages(prev => [
+        ...prev,
+        { role: 'assistant', content: '⚠️ Connection error. Please try again.' },
+      ]);
     } finally {
       setTyping(false);
     }
-  }, [messages, contextMatch]);
+  }, [contextMatch]);
 
   const reset = useCallback(() => {
-    setMessages([{
-      role:    'assistant',
-      content: 'Fresh session. What would you like to analyse?',
-    }]);
+    setMessages([{ role: 'assistant', content: 'New session started. Ask me anything about tennis!' }]);
   }, []);
 
   return { messages, typing, sendMessage, reset, bottomRef };
 }
 
-// ── useToast ──────────────────────────────────────────────────────────────────
+// ── useToast ───────────────────────────────────────────────────────────────────
 export function useToast() {
   const [toasts, setToasts] = useState([]);
-  const idRef = useRef(0);
+  const idRef               = useRef(0);
 
   const show = useCallback((message, type = 'info', duration = 4000) => {
     const id = ++idRef.current;
@@ -265,10 +173,9 @@ export function useToast() {
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), duration);
   }, []);
 
-  const dismiss = useCallback(
-    (id) => setToasts(prev => prev.filter(t => t.id !== id)),
-    []
-  );
+  const dismiss = useCallback((id) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
 
   return { toasts, show, dismiss };
 }
