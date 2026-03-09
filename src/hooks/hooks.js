@@ -1,14 +1,4 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// src/hooks/hooks.js – TennisVantage Custom React Hooks
-//
-// Key upgrades vs original:
-//  • useMatches: Supabase Realtime WebSocket replaces setInterval polling.
-//    Live score updates push instantly to the UI with zero wasted requests.
-//  • useRankings: Added tour toggle + staleTime (5 min) to prevent redundant
-//    re-fetches when switching tabs.
-//  • usePrediction: Feeds the upgraded multi-factor engine in tennisApi.js.
-//  • useAiChat: Fully wired to the Supabase Edge Function proxy (Task 4 ready).
-// ─────────────────────────────────────────────────────────────────────────────
+// src/hooks/hooks.js
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../services/supabase';
 import {
@@ -21,29 +11,53 @@ import {
   MOCK_DATA,
 } from '../services/tennisApi';
 
+// ── Module-level cache — survives tab switches, cleared on page refresh ────────
+const CACHE = {
+  live:     { data: null, ts: 0 },
+  upcoming: { data: null, ts: 0 },
+  byDate:   new Map(),
+  rankings: { ATP: null, WTA: null, ts: { ATP: 0, WTA: 0 } },
+};
+const STALE = {
+  live:     30  * 1000,      // 30 seconds
+  upcoming: 5   * 60 * 1000, // 5 minutes
+  rankings: 5   * 60 * 1000, // 5 minutes
+  byDate:   2   * 60 * 1000, // 2 minutes
+};
+
 // ── useMatches ────────────────────────────────────────────────────────────────
-// Fetches live + upcoming on mount. Live matches stay fresh via Supabase
-// Realtime — any DB row change pushes immediately through the WebSocket.
-// No polling interval needed.
 export function useMatches() {
-  const [live,     setLive]     = useState([]);
-  const [upcoming, setUpcoming] = useState([]);
-  const [loading,  setLoading]  = useState(true);
+  const [live,     setLive]     = useState(CACHE.live.data     ?? []);
+  const [upcoming, setUpcoming] = useState(CACHE.upcoming.data ?? []);
+  const [loading,  setLoading]  = useState(!CACHE.live.data && !CACHE.upcoming.data);
   const [error,    setError]    = useState(null);
 
-  // Initial fetch (both live + upcoming in parallel — eliminates waterfall)
-  const fetchAll = useCallback(async () => {
+  const fetchAll = useCallback(async (force = false) => {
+    const now           = Date.now();
+    const liveStale     = now - CACHE.live.ts     > STALE.live;
+    const upcomingStale = now - CACHE.upcoming.ts > STALE.upcoming;
+
+    if (!force && !liveStale && !upcomingStale) return;
+
     setLoading(true);
     try {
+      // Both fire simultaneously — no waterfall
       const [liveData, upcomingData] = await Promise.all([
-        getLiveMatches(),
-        getUpcomingMatches(),
+        liveStale     ? getLiveMatches()     : Promise.resolve(CACHE.live.data),
+        upcomingStale ? getUpcomingMatches() : Promise.resolve(CACHE.upcoming.data),
       ]);
-      setLive(liveData);
-      setUpcoming(upcomingData);
+
+      if (liveStale)     CACHE.live     = { data: liveData,     ts: now };
+      if (upcomingStale) CACHE.upcoming = { data: upcomingData, ts: now };
+
+      setLive(liveData     ?? []);
+      setUpcoming(upcomingData ?? []);
       setError(null);
     } catch (e) {
       setError(e.message ?? 'Failed to load matches');
+      // Keep showing stale data on error — don't blank the screen
+      if (CACHE.live.data)     setLive(CACHE.live.data);
+      if (CACHE.upcoming.data) setUpcoming(CACHE.upcoming.data);
     } finally {
       setLoading(false);
     }
@@ -52,51 +66,44 @@ export function useMatches() {
   useEffect(() => {
     fetchAll();
 
-    // ── Supabase Realtime: subscribe to ALL changes on matches table ──────
-    // When sync-matches Edge Function upserts a row, the browser gets pushed
-    // the update instantly — no 30s polling lag.
+    // Supabase Realtime — pushes live score changes instantly
     const channel = supabase
       .channel('matches-realtime')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'matches' },
-        async (payload) => {
-          // A match changed — re-fetch both lists to stay consistent.
-          // We avoid surgical state patching here because the match row
-          // doesn't embed player objects (they come via JOIN on SELECT).
-          try {
-            const [liveData, upcomingData] = await Promise.all([
-              getLiveMatches(),
-              getUpcomingMatches(),
-            ]);
-            setLive(liveData);
-            setUpcoming(upcomingData);
-          } catch {
-            // Silently ignore realtime refresh errors — initial data still shows
-          }
-        }
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, () => {
+        CACHE.live.ts     = 0;
+        CACHE.upcoming.ts = 0;
+        fetchAll(true);
+      })
       .subscribe();
 
-    // Cleanup: unsubscribe when component unmounts
     return () => { supabase.removeChannel(channel); };
   }, [fetchAll]);
 
-  return { live, upcoming, loading, error, refresh: fetchAll };
+  return { live, upcoming, loading, error, refresh: () => fetchAll(true) };
 }
 
-// ── useMatchesByDate (for Prediction Calendar — Task 3) ───────────────────────
-// Returns matches for a specific calendar date.
+// ── useMatchesByDate ──────────────────────────────────────────────────────────
 export function useMatchesByDate(dateString) {
-  const [matches,  setMatches]  = useState([]);
-  const [loading,  setLoading]  = useState(false);
-  const [error,    setError]    = useState(null);
+  const [matches, setMatches] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState(null);
 
   useEffect(() => {
     if (!dateString) { setMatches([]); return; }
+
+    const cached = CACHE.byDate.get(dateString);
+    if (cached && Date.now() - cached.ts < STALE.byDate) {
+      setMatches(cached.data);
+      return;
+    }
+
     setLoading(true);
     getMatchesByDate(dateString)
-      .then(data => { setMatches(data); setError(null); })
+      .then(data => {
+        CACHE.byDate.set(dateString, { data, ts: Date.now() });
+        setMatches(data);
+        setError(null);
+      })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
   }, [dateString]);
@@ -105,23 +112,18 @@ export function useMatchesByDate(dateString) {
 }
 
 // ── useRankings ───────────────────────────────────────────────────────────────
-// staleTime: 5 minutes — data fetched within that window is reused,
-// preventing unnecessary Supabase reads when the user switches tabs quickly.
-const rankingsCache = { ATP: null, WTA: null, fetchedAt: {} };
-
 export function useRankings(tour = 'ATP') {
-  const [rankings, setRankings] = useState([]);
-  const [loading,  setLoading]  = useState(true);
+  const cached = CACHE.rankings[tour];
+  const [rankings, setRankings] = useState(cached ?? []);
+  const [loading,  setLoading]  = useState(!cached);
   const [error,    setError]    = useState(null);
 
   useEffect(() => {
-    const STALE_MS = 5 * 60 * 1000; // 5 minutes
-    const now      = Date.now();
-    const lastFetch = rankingsCache.fetchedAt[tour] ?? 0;
+    const now       = Date.now();
+    const lastFetch = CACHE.rankings.ts[tour] ?? 0;
 
-    // Return cached data if fresh enough
-    if (rankingsCache[tour] && (now - lastFetch) < STALE_MS) {
-      setRankings(rankingsCache[tour]);
+    if (cached && (now - lastFetch) < STALE.rankings) {
+      setRankings(cached);
       setLoading(false);
       return;
     }
@@ -129,8 +131,8 @@ export function useRankings(tour = 'ATP') {
     setLoading(true);
     getRankings(tour)
       .then(data => {
-        rankingsCache[tour] = data;
-        rankingsCache.fetchedAt[tour] = Date.now();
+        CACHE.rankings[tour]    = data;
+        CACHE.rankings.ts[tour] = Date.now();
         setRankings(data);
         setError(null);
       })
@@ -142,24 +144,19 @@ export function useRankings(tour = 'ATP') {
 }
 
 // ── usePrediction ─────────────────────────────────────────────────────────────
-// Calls the upgraded multi-factor engine. Results are memoized by match.id
-// so switching back to an already-computed match is instant.
 const predictionCache = new Map();
 
 export function usePrediction(match) {
-  const [prediction, setPrediction] = useState(null);
+  const [prediction, setPrediction] = useState(predictionCache.get(match?.id) ?? null);
   const [loading,    setLoading]    = useState(false);
   const [error,      setError]      = useState(null);
 
   useEffect(() => {
     if (!match?.id) { setPrediction(null); return; }
-
-    // Return cached prediction if available
     if (predictionCache.has(match.id)) {
       setPrediction(predictionCache.get(match.id));
       return;
     }
-
     setLoading(true);
     getPrediction(match)
       .then(data => {
@@ -175,7 +172,6 @@ export function usePrediction(match) {
 }
 
 // ── usePlayerSearch ───────────────────────────────────────────────────────────
-// Searches the players table in Supabase. Falls back to MOCK_DATA.
 export function usePlayerSearch() {
   const [query,   setQuery]   = useState('');
   const [results, setResults] = useState([]);
@@ -183,8 +179,6 @@ export function usePlayerSearch() {
 
   useEffect(() => {
     if (!query.trim()) { setResults([]); return; }
-
-    // Debounce 300ms to avoid spamming Supabase on every keystroke
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       const { data } = await supabase
@@ -192,16 +186,13 @@ export function usePlayerSearch() {
         .select('id, name, country, flag, rank')
         .ilike('name', `%${query}%`)
         .limit(8);
-
-      if (data && data.length > 0) {
+      if (data?.length > 0) {
         setResults(data);
       } else {
-        // Fallback to mock while DB is empty
         const lower = query.toLowerCase();
         setResults(MOCK_DATA.players.filter(p => p.name.toLowerCase().includes(lower)));
       }
     }, 300);
-
     return () => clearTimeout(debounceRef.current);
   }, [query]);
 
@@ -209,56 +200,45 @@ export function usePlayerSearch() {
 }
 
 // ── useAiChat ─────────────────────────────────────────────────────────────────
-// Sends message history + match context to the Supabase Edge Function /chat.
-// The Edge Function builds the Anthropic system prompt with live DB context.
 export function useAiChat(contextMatch = null) {
-  const [messages, setMessages] = useState([
-    {
-      role: 'assistant',
-      content: "I'm your AI tennis analyst. Ask me about today's matches, player form, predictions — or anything about the game.",
-    },
-  ]);
-  const [typing,    setTyping]   = useState(false);
-  const bottomRef                = useRef(null);
+  const [messages, setMessages] = useState([{
+    role:    'assistant',
+    content: "I'm your AI tennis analyst. Ask me about today's matches, player form, predictions — or anything about the game.",
+  }]);
+  const [typing,  setTyping]  = useState(false);
+  const bottomRef             = useRef(null);
 
-  // Auto-scroll to latest message
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, typing]);
 
   const sendMessage = useCallback(async (text) => {
     if (!text.trim()) return;
-
     const userMsg = { role: 'user', content: text };
     setMessages(prev => [...prev, userMsg]);
     setTyping(true);
-
     try {
       const systemContext = contextMatch
         ? `Active match context: ${contextMatch.player1?.name ?? '?'} vs ${contextMatch.player2?.name ?? '?'} — ${contextMatch.surface} at ${contextMatch.tournament} (${contextMatch.round}).`
         : 'No specific match selected. General tennis analysis mode.';
 
-      // Include full history so the AI has conversation context
       const history = [...messages, userMsg].map(m => ({
         role:    m.role,
         content: m.content,
       }));
 
       const response = await sendChatMessage(history, systemContext);
-
-      // Handle both streaming and non-streaming response shapes
-      const aiText =
+      const aiText   =
         response?.content?.[0]?.text ??
         response?.text ??
         "Sorry, I couldn't process that. Please try again.";
 
       setMessages(prev => [...prev, { role: 'assistant', content: aiText }]);
-    } catch (err) {
-      console.error('[useAiChat] sendMessage error:', err);
-      setMessages(prev => [
-        ...prev,
-        { role: 'assistant', content: 'Connection issue — please try again in a moment.' },
-      ]);
+    } catch {
+      setMessages(prev => [...prev, {
+        role:    'assistant',
+        content: 'Connection issue — please try again in a moment.',
+      }]);
     } finally {
       setTyping(false);
     }
@@ -266,8 +246,8 @@ export function useAiChat(contextMatch = null) {
 
   const reset = useCallback(() => {
     setMessages([{
-      role: 'assistant',
-      content: "Fresh session. What would you like to analyse?",
+      role:    'assistant',
+      content: 'Fresh session. What would you like to analyse?',
     }]);
   }, []);
 
