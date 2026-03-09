@@ -1,63 +1,188 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // tennisApi.js – TennisVantage API service layer
+// Reads from Supabase tables populated by sync-matches + sync-rankings Edge Fns
 // ─────────────────────────────────────────────────────────────────────────────
+import { createClient } from '@supabase/supabase-js';
 
-const API_KEY  = import.meta.env.VITE_RAPIDAPI_KEY;
-const API_HOST = import.meta.env.VITE_RAPIDAPI_HOST || 'api-tennis.p.rapidapi.com';
-const BASE_URL = 'https://api-tennis.p.rapidapi.com';
-const HEADERS  = { 'X-RapidAPI-Key': API_KEY, 'X-RapidAPI-Host': API_HOST };
+const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_ANON_KEY,
+);
 
-async function apiFetch(path, params = {}) {
-  const url = new URL(`${BASE_URL}${path}`);
-  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-  const res = await fetch(url.toString(), { headers: HEADERS });
-  if (!res.ok) throw new Error(`API_ERROR:${res.status}`);
-  return res.json();
+// ── Helper: join player data onto a match row ─────────────────────────────────
+async function attachPlayers(matches) {
+  if (!matches.length) return [];
+
+  const ids = [...new Set(matches.flatMap(m => [m.player1_id, m.player2_id]))];
+  const { data: players } = await supabase
+    .from('players')
+    .select('*')
+    .in('id', ids);
+
+  const map = Object.fromEntries((players ?? []).map(p => [p.id, p]));
+
+  return matches.map(m => ({
+    id:         m.id,
+    status:     m.status,
+    tournament: m.tournament,
+    round:      m.round,
+    surface:    m.surface,
+    score:      m.score ?? null,
+    date:       m.match_date,
+    player1:    map[m.player1_id] ?? { id: m.player1_id, name: 'TBD', flag: '🏳️', rank: 999 },
+    player2:    map[m.player2_id] ?? { id: m.player2_id, name: 'TBD', flag: '🏳️', rank: 999 },
+  }));
 }
 
 // ── Live matches ──────────────────────────────────────────────────────────────
 export async function getLiveMatches() {
-  return MOCK_DATA.matches.filter(m => m.status === 'live');
+  try {
+    const { data, error } = await supabase
+      .from('matches')
+      .select('*')
+      .eq('status', 'live')
+      .order('match_date', { ascending: true });
+
+    if (error) throw error;
+    return attachPlayers(data ?? []);
+  } catch (e) {
+    console.error('[getLiveMatches]', e.message);
+    return MOCK_DATA.matches.filter(m => m.status === 'live');
+  }
 }
 
 // ── Upcoming matches ──────────────────────────────────────────────────────────
 export async function getUpcomingMatches() {
-  return MOCK_DATA.matches.filter(m => m.status === 'upcoming');
+  try {
+    const { data, error } = await supabase
+      .from('matches')
+      .select('*')
+      .eq('status', 'upcoming')
+      .order('match_date', { ascending: true })
+      .limit(20);
+
+    if (error) throw error;
+    return attachPlayers(data ?? []);
+  } catch (e) {
+    console.error('[getUpcomingMatches]', e.message);
+    return MOCK_DATA.matches.filter(m => m.status === 'upcoming');
+  }
 }
 
 // ── Matches by date ───────────────────────────────────────────────────────────
 export async function getMatchesByDate(dateString) {
-  return MOCK_DATA.matches;
+  try {
+    const start = `${dateString}T00:00:00.000Z`;
+    const end   = `${dateString}T23:59:59.999Z`;
+
+    const { data, error } = await supabase
+      .from('matches')
+      .select('*')
+      .gte('match_date', start)
+      .lte('match_date', end)
+      .order('match_date', { ascending: true });
+
+    if (error) throw error;
+    return attachPlayers(data ?? []);
+  } catch (e) {
+    console.error('[getMatchesByDate]', e.message);
+    return MOCK_DATA.matches;
+  }
 }
 
 // ── Rankings ──────────────────────────────────────────────────────────────────
 export async function getRankings(tour = 'ATP') {
-  return tour === 'WTA' ? MOCK_DATA.wtaRankings : MOCK_DATA.atpRankings;
+  try {
+    const { data, error } = await supabase
+      .from('rankings')
+      .select(`
+        rank,
+        points,
+        prev_rank,
+        players (
+          id, name, country, flag,
+          wins, losses, ace_avg,
+          surface_pref, first_serve_pct, recent_form
+        )
+      `)
+      .eq('tour', tour)
+      .order('rank', { ascending: true })
+      .limit(50);
+
+    if (error) throw error;
+
+    return (data ?? []).map(r => ({
+      ...r.players,
+      rank:      r.rank,
+      points:    r.points,
+      prev_rank: r.prev_rank,
+    }));
+  } catch (e) {
+    console.error('[getRankings]', e.message);
+    return MOCK_DATA.rankings;
+  }
 }
 
 // ── Player stats ──────────────────────────────────────────────────────────────
 export async function getPlayerStats(playerId) {
-  const all = [...MOCK_DATA.atpPlayers, ...MOCK_DATA.wtaPlayers];
-  return all.find(p => p.id === playerId) ?? null;
+  try {
+    const { data, error } = await supabase
+      .from('players')
+      .select('*')
+      .eq('id', playerId)
+      .single();
+
+    if (error) throw error;
+    return data;
+  } catch (e) {
+    console.error('[getPlayerStats]', e.message);
+    return MOCK_DATA.players.find(p => p.id === playerId) ?? null;
+  }
 }
 
 // ── Head to head ──────────────────────────────────────────────────────────────
 export async function getHeadToHead(p1Id, p2Id) {
-  return MOCK_DATA.h2h;
+  try {
+    const { data, error } = await supabase
+      .from('matches')
+      .select('*')
+      .eq('status', 'finished')
+      .or(`and(player1_id.eq.${p1Id},player2_id.eq.${p2Id}),and(player1_id.eq.${p2Id},player2_id.eq.${p1Id})`)
+      .order('match_date', { ascending: false })
+      .limit(10);
+
+    if (error) throw error;
+    if (!data?.length) return MOCK_DATA.h2h;
+
+    const p1Wins = data.filter(m => m.winner_id === p1Id).length;
+    const p2Wins = data.filter(m => m.winner_id === p2Id).length;
+
+    return {
+      total:    data.length,
+      p1_wins:  p1Wins,
+      p2_wins:  p2Wins,
+      last5:    data.slice(0, 5).map(m => m.winner_id === p1Id ? 'W' : 'L'),
+      meetings: data.map(m => ({
+        year:       new Date(m.match_date).getFullYear(),
+        tournament: m.tournament,
+        surface:    m.surface,
+        winner:     m.winner_id === p1Id ? 'p1' : 'p2',
+        score:      m.score ?? '',
+      })),
+    };
+  } catch (e) {
+    console.error('[getHeadToHead]', e.message);
+    return MOCK_DATA.h2h;
+  }
 }
 
-// ── Prediction engine ─────────────────────────────────────────────────────────
+// ── Prediction engine (pure local calc — no API needed) ───────────────────────
 export async function getPrediction(match) {
-  if (!match?.player1 || !match?.player2) {
-    throw new Error('Invalid match data for prediction');
-  }
   const p1 = match.player1;
   const p2 = match.player2;
-
   const rankEdge    = (p2.rank - p1.rank) * 1.2;
   const surfaceEdge = match.surface === p1.surface_pref ? 6
-                    : match.surface === p2.surface_pref ? -6
-                    : 0;
+                    : match.surface === p2.surface_pref ? -6 : 0;
   const raw      = 50 + rankEdge + surfaceEdge;
   const p1WinPct = Math.min(88, Math.max(12, Math.round(raw)));
 
@@ -65,91 +190,55 @@ export async function getPrediction(match) {
     player1_win_pct: p1WinPct,
     player2_win_pct: 100 - p1WinPct,
     confidence: Math.abs(p1WinPct - 50) > 20 ? 'High'
-              : Math.abs(p1WinPct - 50) > 10 ? 'Medium'
-              : 'Low',
+              : Math.abs(p1WinPct - 50) > 10 ? 'Medium' : 'Low',
     key_factors: [
       `Ranking: #${p1.rank} vs #${p2.rank}`,
-      `Surface advantage: ${
-        match.surface === p1.surface_pref ? p1.name
-        : match.surface === p2.surface_pref ? p2.name
-        : 'Neutral'
-      }`,
+      `Surface advantage: ${match.surface === p1.surface_pref ? p1.name : match.surface === p2.surface_pref ? p2.name : 'Neutral'}`,
       `Recent form: ${p1.recent_form ?? '---'} vs ${p2.recent_form ?? '---'}`,
     ],
   };
 }
 
-// ── AI Chat ───────────────────────────────────────────────────────────────────
-// Calls the Vercel Edge Function at /api/chat which securely proxies to Gemini.
-// Returns { content: [{ text: '...' }] } — same shape hooks.js already expects.
-export async function sendChatMessage(messages, systemContext = '') {
-  const res = await fetch('/api/chat', {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ messages, systemContext }),
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error ?? `Chat API error: ${res.status}`);
-  }
-
-  return res.json();
+// ── AI Chat stub ──────────────────────────────────────────────────────────────
+export async function sendChatMessage(messages) {
+  await new Promise(r => setTimeout(r, 900));
+  const last = messages[messages.length - 1]?.content ?? '';
+  return {
+    content: [{ text: `[AI stub] You asked: "${last}". Connect your AI model to get real answers!` }],
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MOCK DATA
+// MOCK DATA — fallback only when Supabase query fails
 // ─────────────────────────────────────────────────────────────────────────────
 export const MOCK_DATA = {
-  atpPlayers: [
-    { id:1, name:'Novak Djokovic',     country:'SRB', flag:'🇷🇸', rank:1, wins:1104, losses:214, ace_avg:6.2, surface_pref:'Hard', first_serve_pct:63, recent_form:'W W W L W' },
-    { id:2, name:'Carlos Alcaraz',    country:'ESP', flag:'🇪🇸', rank:2, wins:214,  losses:63,  ace_avg:7.1, surface_pref:'Clay', first_serve_pct:66, recent_form:'W W L W W' },
-    { id:3, name:'Jannik Sinner',     country:'ITA', flag:'🇮🇹', rank:3, wins:198,  losses:74,  ace_avg:5.8, surface_pref:'Hard', first_serve_pct:61, recent_form:'W W W W L' },
-    { id:4, name:'Daniil Medvedev',   country:'RUS', flag:'🇷🇺', rank:4, wins:377,  losses:192, ace_avg:8.3, surface_pref:'Hard', first_serve_pct:59, recent_form:'L W W W W' },
-    { id:5, name:'Andrey Rublev',     country:'RUS', flag:'🇷🇺', rank:5, wins:344,  losses:187, ace_avg:5.1, surface_pref:'Clay', first_serve_pct:58, recent_form:'W L W L W' },
-    { id:6, name:'Holger Rune',       country:'DEN', flag:'🇩🇰', rank:6, wins:148,  losses:87,  ace_avg:6.7, surface_pref:'Clay', first_serve_pct:60, recent_form:'W W L W L' },
-    { id:7, name:'Casper Ruud',       country:'NOR', flag:'🇳🇴', rank:7, wins:258,  losses:139, ace_avg:5.5, surface_pref:'Clay', first_serve_pct:57, recent_form:'L W W W W' },
-    { id:8, name:'Stefanos Tsitsipas',country:'GRE', flag:'🇬🇷', rank:8, wins:336,  losses:165, ace_avg:7.9, surface_pref:'Clay', first_serve_pct:62, recent_form:'W L W W L' },
+  players: [
+    { id:'1', name:'Novak Djokovic',    country:'Serbia',       flag:'🇷🇸', rank:1, wins:1104, losses:214, ace_avg:6.2, surface_pref:'Hard', first_serve_pct:63, recent_form:'W W W L W' },
+    { id:'2', name:'Carlos Alcaraz',    country:'Spain',        flag:'🇪🇸', rank:2, wins:214,  losses:63,  ace_avg:7.1, surface_pref:'Clay', first_serve_pct:66, recent_form:'W W L W W' },
+    { id:'3', name:'Jannik Sinner',     country:'Italy',        flag:'🇮🇹', rank:3, wins:198,  losses:74,  ace_avg:5.8, surface_pref:'Hard', first_serve_pct:61, recent_form:'W W W W L' },
+    { id:'4', name:'Daniil Medvedev',   country:'Russia',       flag:'🇷🇺', rank:4, wins:377,  losses:192, ace_avg:8.3, surface_pref:'Hard', first_serve_pct:59, recent_form:'L W W W W' },
+    { id:'5', name:'Andrey Rublev',     country:'Russia',       flag:'🇷🇺', rank:5, wins:344,  losses:187, ace_avg:5.1, surface_pref:'Clay', first_serve_pct:58, recent_form:'W L W L W' },
+    { id:'6', name:'Holger Rune',       country:'Denmark',      flag:'🇩🇰', rank:6, wins:148,  losses:87,  ace_avg:6.7, surface_pref:'Clay', first_serve_pct:60, recent_form:'W W L W L' },
+    { id:'7', name:'Casper Ruud',       country:'Norway',       flag:'🇳🇴', rank:7, wins:258,  losses:139, ace_avg:5.5, surface_pref:'Clay', first_serve_pct:57, recent_form:'L W W W W' },
+    { id:'8', name:'Stefanos Tsitsipas',country:'Greece',       flag:'🇬🇷', rank:8, wins:336,  losses:165, ace_avg:7.9, surface_pref:'Clay', first_serve_pct:62, recent_form:'W L W W L' },
   ],
-
-  wtaPlayers: [
-    { id:101, name:'Aryna Sabalenka', country:'BLR', flag:'🇧🇾', rank:1, wins:412, losses:148, ace_avg:4.1, surface_pref:'Hard', first_serve_pct:61, recent_form:'W W W W L' },
-    { id:102, name:'Iga Świątek',     country:'POL', flag:'🇵🇱', rank:2, wins:398, losses:97,  ace_avg:3.2, surface_pref:'Clay', first_serve_pct:67, recent_form:'W W L W W' },
-    { id:103, name:'Coco Gauff',      country:'USA', flag:'🇺🇸', rank:3, wins:214, losses:88,  ace_avg:4.8, surface_pref:'Hard', first_serve_pct:62, recent_form:'W L W W W' },
-    { id:104, name:'Elena Rybakina',  country:'KAZ', flag:'🇰🇿', rank:4, wins:287, losses:134, ace_avg:7.2, surface_pref:'Grass',first_serve_pct:65, recent_form:'L W W L W' },
-    { id:105, name:'Jessica Pegula',  country:'USA', flag:'🇺🇸', rank:5, wins:198, losses:103, ace_avg:3.6, surface_pref:'Hard', first_serve_pct:58, recent_form:'W W W L W' },
-    { id:106, name:'Jasmine Paolini', country:'ITA', flag:'🇮🇹', rank:6, wins:167, losses:112, ace_avg:2.8, surface_pref:'Clay', first_serve_pct:56, recent_form:'W L W W L' },
-    { id:107, name:'Mirra Andreeva',  country:'RUS', flag:'🇷🇺', rank:7, wins:134, losses:89,  ace_avg:3.9, surface_pref:'Hard', first_serve_pct:59, recent_form:'L W W W W' },
-    { id:108, name:'Daria Kasatkina', country:'RUS', flag:'🇷🇺', rank:8, wins:225, losses:148, ace_avg:3.1, surface_pref:'Clay', first_serve_pct:57, recent_form:'W W L L W' },
-  ],
-
   get matches() {
-    const p = this.atpPlayers;
+    const p = this.players;
     return [
-      { id:'m1', status:'live',     tournament:'Roland Garros',  round:'QF', surface:'Clay',  score:'6-4, 3-2*', player1:p[0], player2:p[1] },
-      { id:'m2', status:'upcoming', tournament:'Wimbledon',       round:'SF', surface:'Grass', score:null, date:'Today 15:00',    player1:p[2], player2:p[3] },
-      { id:'m3', status:'upcoming', tournament:'US Open',         round:'F',  surface:'Hard',  score:null, date:'Tomorrow 20:00', player1:p[1], player2:p[3] },
-      { id:'m4', status:'upcoming', tournament:'Australian Open', round:'SF', surface:'Hard',  score:null, date:'Fri 09:00',      player1:p[4], player2:p[5] },
-      { id:'m5', status:'upcoming', tournament:'Monte-Carlo',     round:'R32',surface:'Clay',  score:null, date:'Sat 14:00',      player1:p[6], player2:p[7] },
+      { id:'m1', status:'live',     tournament:'Roland Garros',  round:'QF',  surface:'Clay',  score:'6-4, 3-2*', date: new Date().toISOString(), player1:p[0], player2:p[1] },
+      { id:'m2', status:'upcoming', tournament:'Wimbledon',       round:'SF',  surface:'Grass', score:null, date: new Date().toISOString(), player1:p[2], player2:p[3] },
+      { id:'m3', status:'upcoming', tournament:'US Open',         round:'F',   surface:'Hard',  score:null, date: new Date().toISOString(), player1:p[1], player2:p[3] },
+      { id:'m4', status:'upcoming', tournament:'Australian Open', round:'SF',  surface:'Hard',  score:null, date: new Date().toISOString(), player1:p[4], player2:p[5] },
+      { id:'m5', status:'upcoming', tournament:'Monte-Carlo',     round:'R32', surface:'Clay',  score:null, date: new Date().toISOString(), player1:p[6], player2:p[7] },
     ];
   },
-
-  get atpRankings() {
-    return this.atpPlayers.map((p, i) => ({
+  get rankings() {
+    return this.players.map((p, i) => ({
       ...p,
       points:    Math.round(11000 / (i + 1)),
-      prev_rank: i + 1 + (Math.random() > 0.5 ? 1 : -1),
+      prev_rank: p.rank,
     }));
   },
-
-  get wtaRankings() {
-    return this.wtaPlayers.map((p, i) => ({
-      ...p,
-      points:    Math.round(9500 / (i + 1)),
-      prev_rank: i + 1 + (Math.random() > 0.5 ? 1 : -1),
-    }));
-  },
-
   h2h: {
     total: 12, p1_wins: 7, p2_wins: 5,
     last5: ['W','W','L','W','L'],
