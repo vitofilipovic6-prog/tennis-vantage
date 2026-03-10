@@ -216,24 +216,16 @@ export async function getPrediction(match) {
 //        the `ai-chat` Edge Function, which uses ANTHROPIC_API_KEY from
 //        Supabase Secrets (the key is NEVER sent to the browser).
 export async function sendChatMessage(messages, systemContext = '') {
-  const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL;
-  const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-  const res = await fetch(`${SUPABASE_URL}/functions/v1/ai-chat`, {
+  const res = await fetch('/api/chat', {
     method: 'POST',
-    headers: {
-      'Content-Type':  'application/json',
-      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ messages, systemContext }),
   });
-
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(err?.error ?? `AI service error (${res.status})`);
   }
-
-  return res.json();  // { content: [{ text: "..." }] }  — same shape as before
+  return res.json();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
