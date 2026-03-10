@@ -15,6 +15,7 @@ import { useAuth }       from '../context/AuthContext';
 import { useMatches, useRankings, usePrediction, useAiChat } from '../hooks/hooks';
 import { Logo, Btn, Badge, Card } from '../components/ui';
 import MatchCalendar from '../components/MatchCalendar';
+import PlayerBioModal from '../components/PlayerBioModal';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LAYOUT SHELL
@@ -513,34 +514,40 @@ function StatRow({ label, v1, v2 }) {
 // FIX: ATP/WTA pill toggle now wired up — useRankings(tour) returns correct data.
 // ─────────────────────────────────────────────────────────────────────────────
 function RankingsTab() {
-  const [tour, setTour]   = useState('ATP');
-  const [hovRow, setHovRow] = useState(null);
-  const { rankings, loading, error } = useRankings(tour);
+  const [tour,           setTour]           = useState('ATP');
+  const [hovRow,         setHovRow]         = useState(null);
+  const [selectedPlayer, setSelectedPlayer] = useState(null);
+  const { rankings, loading, error }        = useRankings(tour);
 
   return (
     <div className="tv-fade-up">
-      {/* Tour toggle */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
-        <SectionHeading label={`${tour} Live Rankings`} />
+
+      {/* Tour toggle + heading */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
+        <SectionHeading label={`${tour} World Rankings — Top 20`} />
         <div style={{ display: 'flex', gap: '6px', marginLeft: 'auto' }}>
           {['ATP', 'WTA'].map(t => (
             <button
               key={t}
               onClick={() => setTour(t)}
               style={{
-                padding: '6px 18px', border: 'none', borderRadius: '999px',
+                padding:    '6px 18px',
+                border:     tour === t ? 'none' : '1px solid var(--border)',
+                borderRadius: '999px',
                 background: tour === t ? 'var(--lime)' : 'var(--bg-glass-md)',
-                color: tour === t ? '#070B14' : 'var(--text-muted)',
+                color:      tour === t ? '#070B14' : 'var(--text-muted)',
                 fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: '13px',
-                cursor: 'pointer', transition: 'var(--t)',
-                border: tour === t ? 'none' : '1px solid var(--border)',
+                cursor:     'pointer', transition: 'var(--t)',
               }}
-            >
-              {t}
-            </button>
+            >{t}</button>
           ))}
         </div>
       </div>
+
+      {/* Hint */}
+      <p style={{ fontSize: '12px', color: 'var(--text-faint)', marginBottom: '16px' }}>
+        Click any player for their full profile →
+      </p>
 
       {loading ? (
         <LoadingGrid cols={1} rows={8} />
@@ -550,58 +557,104 @@ function RankingsTab() {
         <Card padding="0" style={{ overflow: 'hidden' }}>
           {/* Table header */}
           <div style={{
-            display: 'grid', gridTemplateColumns: '52px 1fr 100px 80px',
-            padding: '12px 20px', borderBottom: '1px solid var(--border)',
+            display: 'grid',
+            gridTemplateColumns: '52px 1fr 110px 80px 36px',
+            padding: '12px 20px',
+            borderBottom: '1px solid var(--border)',
             background: 'var(--bg-glass)',
           }}>
-            {['#', 'Player', 'Points', 'W/L'].map(h => (
-              <span key={h} style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</span>
+            {['#', 'Player', 'Points', 'W/L', ''].map((h, i) => (
+              <span key={i} style={{
+                fontSize: '11px', fontWeight: 700,
+                color: 'var(--text-faint)',
+                textTransform: 'uppercase', letterSpacing: '0.06em',
+              }}>{h}</span>
             ))}
           </div>
 
           {rankings.map((p, i) => (
             <div
               key={p.id}
+              onClick={() => setSelectedPlayer(p)}
               onMouseEnter={() => setHovRow(p.id)}
               onMouseLeave={() => setHovRow(null)}
               style={{
-                display: 'grid', gridTemplateColumns: '52px 1fr 100px 80px',
-                padding: '14px 20px', alignItems: 'center',
+                display:     'grid',
+                gridTemplateColumns: '52px 1fr 110px 80px 36px',
+                padding:     '14px 20px',
+                alignItems:  'center',
                 borderBottom: i < rankings.length - 1 ? '1px solid var(--border)' : 'none',
-                background: hovRow === p.id ? 'rgba(159,239,102,0.04)' : 'transparent',
-                transition: 'var(--t)', cursor: 'default',
+                background:  hovRow === p.id ? 'rgba(159,239,102,0.05)' : 'transparent',
+                transition:  'var(--t)',
+                cursor:      'pointer',
               }}
             >
+              {/* Rank */}
               <span style={{
                 fontFamily: 'var(--font-mono)', fontWeight: 700,
-                fontSize: i < 3 ? '16px' : '14px',
-                color: i === 0 ? 'var(--lime)' : i === 1 ? 'var(--yellow)' : i === 2 ? 'var(--clay)' : 'var(--text-faint)',
+                fontSize:   i < 3 ? '17px' : '14px',
+                color: i === 0 ? 'var(--lime)'
+                     : i === 1 ? 'var(--yellow)'
+                     : i === 2 ? 'var(--clay)'
+                     : 'var(--text-faint)',
               }}>
                 {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : p.rank}
               </span>
 
+              {/* Player name + country */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <span style={{ fontSize: '20px' }}>{p.flag}</span>
+                <span style={{ fontSize: '22px', lineHeight: 1 }}>{p.flag}</span>
                 <div>
-                  <p style={{ fontWeight: 600, fontSize: '14.5px' }}>{p.name}</p>
-                  <p style={{ fontSize: '11px', color: 'var(--text-faint)' }}>{p.country} · {p.surface_pref}</p>
+                  <p style={{
+                    fontWeight: 600, fontSize: '14.5px', margin: 0,
+                    color: hovRow === p.id ? 'var(--lime)' : 'var(--text)',
+                    transition: 'color 0.2s',
+                  }}>{p.name}</p>
+                  <p style={{ fontSize: '11px', color: 'var(--text-faint)', margin: '2px 0 0' }}>
+                    {p.country}
+                    {p.surface_pref && ` · ${p.surface_pref}`}
+                  </p>
                 </div>
               </div>
 
+              {/* Points */}
               <span style={{
-                fontFamily: 'var(--font-mono)', fontWeight: 600,
-                color: hovRow === p.id ? 'var(--lime)' : 'var(--text)', fontSize: '14px',
+                fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: '14px',
+                color: hovRow === p.id ? 'var(--lime)' : 'var(--text)',
+                transition: 'color 0.2s',
               }}>
-                {p.points?.toLocaleString()}
+                {p.points?.toLocaleString() ?? '—'}
               </span>
 
+              {/* W/L */}
               <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-                <span style={{ color: 'var(--green)' }}>{p.wins}</span>
-                <span style={{ color: 'var(--text-faint)' }}>/{p.losses}</span>
+                <span style={{ color: 'var(--green)' }}>{p.wins ?? 0}</span>
+                <span style={{ color: 'var(--text-faint)' }}>/{p.losses ?? 0}</span>
               </span>
+
+              {/* Arrow hint */}
+              <svg
+                width="14" height="14" viewBox="0 0 24 24"
+                fill="none" stroke="currentColor" strokeWidth="2.5"
+                style={{
+                  color: hovRow === p.id ? 'var(--lime)' : 'transparent',
+                  transition: 'color 0.2s',
+                }}
+              >
+                <polyline points="9 18 15 12 9 6"/>
+              </svg>
             </div>
           ))}
         </Card>
+      )}
+
+      {/* Player bio modal — Gemini generates bio on-demand for any player */}
+      {selectedPlayer && (
+        <PlayerBioModal
+          player={selectedPlayer}
+          tour={tour}
+          onClose={() => setSelectedPlayer(null)}
+        />
       )}
     </div>
   );
