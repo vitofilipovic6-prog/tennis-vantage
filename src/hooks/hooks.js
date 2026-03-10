@@ -1,13 +1,11 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// hooks.js – TennisVantage custom React hooks
-// ─────────────────────────────────────────────────────────────────────────────
+// src/hooks/hooks.js
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   getLiveMatches, getUpcomingMatches, getRankings,
   getPrediction, sendChatMessage, MOCK_DATA,
 } from '../services/tennisApi';
 
-// ── useMatches ─────────────────────────────────────────────────────────────────
+// ── useMatches ────────────────────────────────────────────────────────────────
 export function useMatches() {
   const [live, setLive]         = useState([]);
   const [upcoming, setUpcoming] = useState([]);
@@ -34,9 +32,7 @@ export function useMatches() {
   useEffect(() => {
     fetchAll();
     intervalRef.current = setInterval(() => {
-      getLiveMatches()
-        .then(setLive)
-        .catch(() => {});
+      getLiveMatches().then(setLive).catch(() => {});
     }, 30_000);
     return () => clearInterval(intervalRef.current);
   }, [fetchAll]);
@@ -44,7 +40,7 @@ export function useMatches() {
   return { live, upcoming, loading, error, refresh: fetchAll };
 }
 
-// ── useRankings ────────────────────────────────────────────────────────────────
+// ── useRankings ───────────────────────────────────────────────────────────────
 export function useRankings(tour = 'ATP') {
   const [rankings, setRankings] = useState([]);
   const [loading, setLoading]   = useState(true);
@@ -73,11 +69,7 @@ export function usePrediction(match) {
   const matchId = match?.id ?? null;
 
   useEffect(() => {
-    if (!matchId) {
-      setPrediction(null);
-      setError(null);
-      return;
-    }
+    if (!matchId) { setPrediction(null); setError(null); return; }
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -92,17 +84,20 @@ export function usePrediction(match) {
   return { prediction, loading, error };
 }
 
-// ── usePlayerSearch ────────────────────────────────────────────────────────────
+// ── usePlayerSearch ───────────────────────────────────────────────────────────
+// FIX: was referencing MOCK_DATA.atpPlayers / MOCK_DATA.wtaPlayers
+//      which don't exist → always returned empty results.
+//      Correct property names are MOCK_DATA.rankings and MOCK_DATA.rankingsWTA.
 export function usePlayerSearch() {
   const [query, setQuery]     = useState('');
   const [results, setResults] = useState([]);
 
   useEffect(() => {
     if (!query.trim()) { setResults([]); return; }
-    const lower      = query.toLowerCase();
+    const lower     = query.toLowerCase();
     const allPlayers = [
-      ...(MOCK_DATA.atpPlayers ?? MOCK_DATA.players ?? []),
-      ...(MOCK_DATA.wtaPlayers ?? []),
+      ...(MOCK_DATA.rankings    ?? []),   // ← fixed: was MOCK_DATA.atpPlayers
+      ...(MOCK_DATA.rankingsWTA ?? []),   // ← fixed: was MOCK_DATA.wtaPlayers
     ];
     setResults(allPlayers.filter(p => p.name.toLowerCase().includes(lower)));
   }, [query]);
@@ -162,7 +157,7 @@ export function useAiChat(contextMatch = null) {
   return { messages, typing, sendMessage, reset, bottomRef };
 }
 
-// ── useToast ───────────────────────────────────────────────────────────────────
+// ── useToast ──────────────────────────────────────────────────────────────────
 export function useToast() {
   const [toasts, setToasts] = useState([]);
   const idRef               = useRef(0);
