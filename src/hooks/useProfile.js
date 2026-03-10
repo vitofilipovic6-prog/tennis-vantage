@@ -1,132 +1,125 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// useProfile.js  –  TennisVantage profile hook
-// Handles: fetch profile, update name, upload avatar, manage favourite players
+// useProfile.js  –  TennisVantage profile management hook
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../services/supabase';
+import { useAuth } from '../context/AuthContext';
 
-export function useProfile(userId) {
-  const [profile, setProfile]   = useState(null);
-  const [loading, setLoading]   = useState(true);
-  const [saving,  setSaving]    = useState(false);
-  const [error,   setError]     = useState(null);
+export function useProfile() {
+  const { user, profile: ctxProfile, updateProfileInContext } = useAuth();
+  const [profile, setProfile] = useState(ctxProfile);
+  const [loading, setLoading] = useState(!ctxProfile);
+  const [saving, setSaving]   = useState(false);
 
-  // ── Fetch ───────────────────────────────────────────────────────────────────
+  // Keep local state in sync when AuthContext profile changes
+  useEffect(() => {
+    if (ctxProfile) { setProfile(ctxProfile); setLoading(false); }
+  }, [ctxProfile]);
+
   const fetchProfile = useCallback(async () => {
-    if (!userId) return;
+    if (!user) return;
     setLoading(true);
-    setError(null);
     try {
       const { data, error } = await supabase
         .from('profiles')
         .select('full_name, avatar_url, favourite_players, updated_at')
-        .eq('id', userId)
+        .eq('id', user.id)
         .single();
       if (error) throw error;
-      setProfile(data ?? { full_name: '', avatar_url: null, favourite_players: [] });
+      const p = data ?? { full_name: 'Player', avatar_url: null, favourite_players: [] };
+      setProfile(p);
+      updateProfileInContext(p);
     } catch (e) {
-      setError(e.message);
+      console.error('[fetchProfile]', e.message);
     } finally {
       setLoading(false);
     }
-  }, [userId]);
+  }, [user, updateProfileInContext]);
 
-  useEffect(() => { fetchProfile(); }, [fetchProfile]);
-
-  // ── Update display name ─────────────────────────────────────────────────────
   const updateName = useCallback(async (fullName) => {
-    if (!userId) return { error: 'Not authenticated' };
+    if (!user) return { error: 'Not signed in' };
     setSaving(true);
     try {
       const { error } = await supabase
         .from('profiles')
         .update({ full_name: fullName, updated_at: new Date().toISOString() })
-        .eq('id', userId);
+        .eq('id', user.id);
       if (error) throw error;
-      setProfile(prev => ({ ...prev, full_name: fullName }));
+      const patch = { full_name: fullName };
+      setProfile(p => ({ ...p, ...patch }));
+      updateProfileInContext(patch);
       return { error: null };
     } catch (e) {
       return { error: e.message };
     } finally {
       setSaving(false);
     }
-  }, [userId]);
+  }, [user, updateProfileInContext]);
 
-  // ── Upload avatar ───────────────────────────────────────────────────────────
-  // Files go to: avatars/{userId}/avatar.{ext}
-  // The bucket is public so we construct the URL directly after upload.
   const uploadAvatar = useCallback(async (file) => {
-    if (!userId) return { error: 'Not authenticated' };
+    if (!user) return { error: 'Not signed in' };
+    if (file.size > 3 * 1024 * 1024) return { error: 'Image must be under 3 MB' };
+    if (!['image/jpeg','image/png','image/webp'].includes(file.type))
+      return { error: 'Only JPG, PNG or WebP allowed' };
+
     setSaving(true);
     try {
-      const ext  = file.name.split('.').pop();
-      const path = `${userId}/avatar.${ext}`;
+      const ext  = file.name.split('.').pop().toLowerCase();
+      const path = `${user.id}/avatar_${Date.now()}.${ext}`;
 
-      // Upload (upsert — overwrites previous avatar)
-      const { error: uploadError } = await supabase.storage
+      const { error: upErr } = await supabase.storage
         .from('avatars')
         .upload(path, file, { upsert: true, contentType: file.type });
-      if (uploadError) throw uploadError;
+      if (upErr) throw upErr;
 
-      // Get public URL
-      const { data } = supabase.storage.from('avatars').getPublicUrl(path);
-      // Bust cache with a timestamp so the browser doesn't show the old avatar
-      const avatarUrl = `${data.publicUrl}?t=${Date.now()}`;
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatars').getPublicUrl(path);
 
-      // Persist to profiles table
-      const { error: dbError } = await supabase
+      const { error: dbErr } = await supabase
         .from('profiles')
-        .update({ avatar_url: avatarUrl, updated_at: new Date().toISOString() })
-        .eq('id', userId);
-      if (dbError) throw dbError;
+        .update({ avatar_url: publicUrl, updated_at: new Date().toISOString() })
+        .eq('id', user.id);
+      if (dbErr) throw dbErr;
 
-      setProfile(prev => ({ ...prev, avatar_url: avatarUrl }));
-      return { error: null, avatarUrl };
+      const patch = { avatar_url: publicUrl };
+      setProfile(p => ({ ...p, ...patch }));
+      updateProfileInContext(patch);
+      return { error: null, url: publicUrl };
     } catch (e) {
       return { error: e.message };
     } finally {
       setSaving(false);
     }
-  }, [userId]);
+  }, [user, updateProfileInContext]);
 
-  // ── Toggle favourite player ─────────────────────────────────────────────────
   const toggleFavourite = useCallback(async (playerName) => {
-    if (!userId) return { error: 'Not authenticated' };
+    if (!user) return { error: 'Not signed in' };
+    const current  = profile?.favourite_players ?? [];
+    const isAdding = !current.includes(playerName);
+    if (isAdding && current.length >= 10)
+      return { error: 'Maximum 10 favourite players' };
+
+    const updated = isAdding
+      ? [...current, playerName]
+      : current.filter(p => p !== playerName);
+
     setSaving(true);
     try {
-      const current = profile?.favourite_players ?? [];
-      const updated = current.includes(playerName)
-        ? current.filter(p => p !== playerName)   // remove
-        : [...current, playerName];               // add (max 10)
-
-      if (updated.length > 10) {
-        setSaving(false);
-        return { error: 'You can favourite up to 10 players.' };
-      }
-
       const { error } = await supabase
         .from('profiles')
         .update({ favourite_players: updated, updated_at: new Date().toISOString() })
-        .eq('id', userId);
+        .eq('id', user.id);
       if (error) throw error;
-
-      setProfile(prev => ({ ...prev, favourite_players: updated }));
+      const patch = { favourite_players: updated };
+      setProfile(p => ({ ...p, ...patch }));
+      updateProfileInContext(patch);
       return { error: null };
     } catch (e) {
       return { error: e.message };
     } finally {
       setSaving(false);
     }
-  }, [userId, profile]);
+  }, [user, profile, updateProfileInContext]);
 
-  return {
-    profile,
-    loading,
-    saving,
-    error,
-    refetch: fetchProfile,
-    updateName,
-    uploadAvatar,
-    toggleFavourite,
-  };
+  return { profile, loading, saving, fetchProfile, updateName, uploadAvatar, toggleFavourite };
 }

@@ -4,9 +4,59 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#070B14" />
-    <meta name="description" content="TennisVantage – AI-powered tennis match predictor" />
-    <title>TennisVantage · Predict Every Match</title>
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎾</text></svg>" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="description" content="AI-powered ATP & WTA tennis match predictor. Win probabilities, live rankings, player stats and expert analysis — free." />
+    <meta property="og:title"       content="TennisVantage · AI Match Predictions" />
+    <meta property="og:description" content="AI-powered ATP & WTA tennis predictions. Win probabilities, live scores and expert analysis." />
+    <meta property="og:type"        content="website" />
+    <meta property="og:url"         content="https://tennis-vantage.vercel.app" />
+    <title>TennisVantage · AI-Powered Match Predictions</title>
+
+    <link rel="icon" type="image/svg+xml"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎾</text></svg>" />
+
+    <!--
+      FIX: font preconnect — opens TCP to Google's servers immediately,
+      saving 150-300ms before the browser even reads the font URL.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+    <!--
+      FIX: Non-blocking font load.
+      The OLD code had @import inside index.css — that is RENDER-BLOCKING.
+      The browser cannot paint a single pixel until the @import resolves.
+      This technique (media="print" swapped to "all" via onload) loads fonts
+      in the background while React renders immediately.
+    -->
+    <link
+      rel="stylesheet"
+      media="print"
+      onload="this.media='all'"
+      href="https://fonts.googleapis.com/css2?family=Syne:wght@500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500;600&display=swap"
+    />
+    <noscript>
+      <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" />
+    </noscript>
+
+    <!--
+      FIX: Critical inline CSS — paints the dark background INSTANTLY.
+      Without this, users see a white flash before the CSS bundle loads.
+      Keep this minimal — it's intentionally just background + font fallback.
+    -->
+    <style>
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+      html, body {
+        background: #070B14;
+        color: #f1f5f9;
+        min-height: 100dvh;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        -webkit-font-smoothing: antialiased;
+        overflow-x: hidden;
+      }
+      #root { min-height: 100dvh; display: flex; flex-direction: column; }
+    </style>
   </head>
   <body>
     <div id="root"></div>
