@@ -1,27 +1,33 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // App.jsx  –  TennisVantage root
+// FIX: useEffect stale-closure bug — used functional updater so `screen`
+//      is not a dependency while still reading its previous value correctly.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import LandingPage  from './pages/LandingPage';
-import LoginPage    from './pages/LoginPage';
-import SignupPage   from './pages/SignupPage';
-import ResetPage    from './pages/ResetPage';
-import Dashboard    from './pages/Dashboard';
-import { useToast } from './hooks/hooks';
+import LandingPage    from './pages/LandingPage';
+import LoginPage      from './pages/LoginPage';
+import SignupPage     from './pages/SignupPage';
+import ResetPage      from './pages/ResetPage';
+import Dashboard      from './pages/Dashboard';
+import { useToast }   from './hooks/hooks';
 import ToastContainer from './components/ToastContainer';
 
 // ── Inner router ──────────────────────────────────────────────────────────────
 function AppRouter() {
   const { user, loading } = useAuth();
-  const [screen, setScreen] = useState('landing'); // landing | login | signup | reset
+  const [screen, setScreen] = useState('landing'); // landing | login | signup | reset | dashboard
   const { toasts, show: showToast, dismiss } = useToast();
 
-  // Once user logs in, always go to dashboard; on logout return to landing
+  // FIX: functional updater reads the *current* screen without it being
+  // a stale dep. No more "else if (screen === 'dashboard')" inside the closure.
   useEffect(() => {
-    if (!loading) {
-      if (user) setScreen('dashboard');
-      else if (screen === 'dashboard') setScreen('landing');
+    if (loading) return;
+    if (user) {
+      setScreen('dashboard');
+    } else {
+      // Only bounce back to landing if we were on the protected dashboard.
+      setScreen(prev => (prev === 'dashboard' ? 'landing' : prev));
     }
   }, [user, loading]);
 
@@ -47,10 +53,14 @@ function FullscreenLoader() {
   return (
     <div style={{
       minHeight: '100vh', background: '#070B14',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 20,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      flexDirection: 'column', gap: 20,
     }}>
       <div style={{ fontSize: 48, animation: 'tv-bounce 1.2s ease infinite' }}>🎾</div>
-      <p style={{ color: '#9fef66', fontFamily: '"DM Sans", sans-serif', fontSize: 14, letterSpacing: '0.1em', textTransform: 'uppercase', opacity: 0.7 }}>
+      <p style={{
+        color: '#9fef66', fontFamily: '"DM Sans", sans-serif',
+        fontSize: 14, letterSpacing: '0.1em', textTransform: 'uppercase', opacity: 0.7,
+      }}>
         Loading TennisVantage
       </p>
     </div>
