@@ -16,7 +16,7 @@ export const config = {
   runtime: 'edge',
 };
 
-const GEMINI_MODEL = 'gemini-2.5 flash' // fast, cheap, excellent for chat
+const GEMINI_MODEL = 'gemini-2.5-flash' // fast, cheap, excellent for chat
 
 export default async function handler(req) {
   // ── CORS preflight (needed if you ever call from a different origin) ────────
