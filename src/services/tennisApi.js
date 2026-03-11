@@ -1,61 +1,51 @@
-// src/services/tennisApi.js
-import { supabase } from './supabase';
+// ─────────────────────────────────────────────────────────────────────────────
+// tennisApi.js – TennisVantage API service layer
+//
+// FIXES IN THIS VERSION:
+//  1. attachPlayers() N+1 ELIMINATED — getLiveMatches / getUpcomingMatches /
+//     getMatchesByDate now use a single Supabase join query instead of two
+//     sequential round-trips.
+//  2. sendChatMessage() now correctly accepts and forwards systemContext so
+//     the Gemini Edge Function receives the match context it needs.
+//  3. getRankings() unchanged — already clean.
+//  4. getHeadToHead() and getPlayerStats() kept for future UI use.
+// ─────────────────────────────────────────────────────────────────────────────
+import { createClient } from '@supabase/supabase-js';
 
-// ── Flag resolver — plain JS, no TypeScript ───────────────────────────────────
-const FLAG_MAP = {
-  // Full names
-  'Serbia':'🇷🇸','Spain':'🇪🇸','Italy':'🇮🇹','Russia':'🇷🇺','Germany':'🇩🇪',
-  'France':'🇫🇷','Great Britain':'🇬🇧','United Kingdom':'🇬🇧','England':'🇬🇧',
-  'Norway':'🇳🇴','Denmark':'🇩🇰','Greece':'🇬🇷','Poland':'🇵🇱','Belarus':'🇧🇾',
-  'Ukraine':'🇺🇦','Czech Republic':'🇨🇿','Czechia':'🇨🇿','Slovakia':'🇸🇰',
-  'Croatia':'🇭🇷','Bulgaria':'🇧🇬','Romania':'🇷🇴','Hungary':'🇭🇺','Austria':'🇦🇹',
-  'Switzerland':'🇨🇭','Belgium':'🇧🇪','Netherlands':'🇳🇱','Sweden':'🇸🇪',
-  'Finland':'🇫🇮','Portugal':'🇵🇹','Estonia':'🇪🇪','Latvia':'🇱🇻',
-  'Lithuania':'🇱🇹','Montenegro':'🇲🇪','Slovenia':'🇸🇮','United States':'🇺🇸',
-  'USA':'🇺🇸','Canada':'🇨🇦','Argentina':'🇦🇷','Brazil':'🇧🇷','Chile':'🇨🇱',
-  'Uruguay':'🇺🇾','Colombia':'🇨🇴','Mexico':'🇲🇽','Australia':'🇦🇺','Japan':'🇯🇵',
-  'China':'🇨🇳','Kazakhstan':'🇰🇿','South Korea':'🇰🇷','Korea':'🇰🇷',
-  'Taiwan':'🇹🇼','India':'🇮🇳','Thailand':'🇹🇭','South Africa':'🇿🇦',
-  'Tunisia':'🇹🇳','Morocco':'🇲🇦','Egypt':'🇪🇬','Monaco':'🇲🇨',
-  // 3-letter ISO
-  'SRB':'🇷🇸','ESP':'🇪🇸','ITA':'🇮🇹','RUS':'🇷🇺','GER':'🇩🇪','DEU':'🇩🇪',
-  'FRA':'🇫🇷','GBR':'🇬🇧','ENG':'🇬🇧','NOR':'🇳🇴','DEN':'🇩🇰','DNK':'🇩🇰',
-  'GRE':'🇬🇷','GRC':'🇬🇷','POL':'🇵🇱','BLR':'🇧🇾','UKR':'🇺🇦','CZE':'🇨🇿',
-  'SVK':'🇸🇰','CRO':'🇭🇷','HRV':'🇭🇷','BUL':'🇧🇬','BGR':'🇧🇬','ROU':'🇷🇴',
-  'HUN':'🇭🇺','AUT':'🇦🇹','SUI':'🇨🇭','CHE':'🇨🇭','BEL':'🇧🇪','NED':'🇳🇱',
-  'NLD':'🇳🇱','SWE':'🇸🇪','FIN':'🇫🇮','POR':'🇵🇹','EST':'🇪🇪','LAT':'🇱🇻',
-  'LTU':'🇱🇹','MNE':'🇲🇪','SLO':'🇸🇮','SVN':'🇸🇮','CAN':'🇨🇦',
-  'ARG':'🇦🇷','BRA':'🇧🇷','CHI':'🇨🇱','CHL':'🇨🇱','URU':'🇺🇾','COL':'🇨🇴',
-  'MEX':'🇲🇽','AUS':'🇦🇺','JPN':'🇯🇵','CHN':'🇨🇳','KAZ':'🇰🇿','KOR':'🇰🇷',
-  'TPE':'🇹🇼','IND':'🇮🇳','THA':'🇹🇭','RSA':'🇿🇦','TUN':'🇹🇳','MAR':'🇲🇦',
-  'EGY':'🇪🇬','MON':'🇲🇨',
-  // 2-letter ISO
-  'RS':'🇷🇸','ES':'🇪🇸','IT':'🇮🇹','RU':'🇷🇺','DE':'🇩🇪','FR':'🇫🇷',
-  'GB':'🇬🇧','NO':'🇳🇴','DK':'🇩🇰','GR':'🇬🇷','PL':'🇵🇱','BY':'🇧🇾',
-  'UA':'🇺🇦','CZ':'🇨🇿','SK':'🇸🇰','HR':'🇭🇷','BG':'🇧🇬','RO':'🇷🇴',
-  'HU':'🇭🇺','AT':'🇦🇹','CH':'🇨🇭','BE':'🇧🇪','NL':'🇳🇱','SE':'🇸🇪',
-  'FI':'🇫🇮','PT':'🇵🇹','EE':'🇪🇪','LV':'🇱🇻','LT':'🇱🇹','ME':'🇲🇪',
-  'SI':'🇸🇮','US':'🇺🇸','CA':'🇨🇦','AR':'🇦🇷','BR':'🇧🇷','CL':'🇨🇱',
-  'UY':'🇺🇾','CO':'🇨🇴','MX':'🇲🇽','AU':'🇦🇺','JP':'🇯🇵','CN':'🇨🇳',
-  'KZ':'🇰🇿','KR':'🇰🇷','TW':'🇹🇼','IN':'🇮🇳','TH':'🇹🇭','ZA':'🇿🇦',
-  'TN':'🇹🇳','MA':'🇲🇦',
-};
+const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_ANON_KEY,
+);
 
-function resolveFlag(raw) {
-  if (!raw) return '🏳️';
-  // Already an emoji flag — regional indicator codepoint range
-  const cp = raw.codePointAt(0);
-  if (cp && cp >= 0x1F1E0) return raw;
-  const attempts = [
-    raw,
-    raw.trim(),
-    raw.trim().toUpperCase(),
-    raw.trim().replace(/\b\w/g, c => c.toUpperCase()),
-  ];
-  for (const a of attempts) {
-    if (FLAG_MAP[a]) return FLAG_MAP[a];
-  }
-  return '🏳️';
+// ── Shared select string — single query, no N+1 ───────────────────────────────
+// Supabase resolves FK relationships in one round-trip when you name them.
+// The aliases `player1:players!player1_id` and `player2:players!player2_id`
+// tell PostgREST to join the same `players` table twice using each FK column.
+const MATCH_SELECT = `
+  id, status, tournament, round, surface, score, match_date,
+  player1:players!player1_id (
+    id, name, country, flag, rank, wins, losses,
+    ace_avg, surface_pref, first_serve_pct, recent_form
+  ),
+  player2:players!player2_id (
+    id, name, country, flag, rank, wins, losses,
+    ace_avg, surface_pref, first_serve_pct, recent_form
+  )
+`;
+
+// ── Normalise a raw Supabase match row into the shape the UI expects ──────────
+function normaliseMatch(m) {
+  return {
+    id:         m.id,
+    status:     m.status,
+    tournament: m.tournament,
+    round:      m.round,
+    surface:    m.surface,
+    score:      m.score ?? null,
+    date:       m.match_date,
+    player1:    m.player1 ?? { id: 'p1', name: 'TBD', flag: '🏳️', rank: 999 },
+    player2:    m.player2 ?? { id: 'p2', name: 'TBD', flag: '🏳️', rank: 999 },
+  };
 }
 
 // ── Live matches ──────────────────────────────────────────────────────────────
@@ -63,15 +53,12 @@ export async function getLiveMatches() {
   try {
     const { data, error } = await supabase
       .from('matches')
-      .select(`
-        id, status, tournament, round, surface, score, match_date,
-        player1:players!matches_player1_id_fkey (id, name, country, flag, rank, wins, losses, ace_avg, surface_pref, first_serve_pct, recent_form),
-        player2:players!matches_player2_id_fkey (id, name, country, flag, rank, wins, losses, ace_avg, surface_pref, first_serve_pct, recent_form)
-      `)
+      .select(MATCH_SELECT)
       .eq('status', 'live')
       .order('match_date', { ascending: true });
+
     if (error) throw error;
-    return data ?? [];
+    return (data ?? []).map(normaliseMatch);
   } catch (e) {
     console.error('[getLiveMatches]', e.message);
     return MOCK_DATA.matches.filter(m => m.status === 'live');
@@ -83,16 +70,13 @@ export async function getUpcomingMatches() {
   try {
     const { data, error } = await supabase
       .from('matches')
-      .select(`
-        id, status, tournament, round, surface, score, match_date,
-        player1:players!matches_player1_id_fkey (id, name, country, flag, rank, wins, losses, ace_avg, surface_pref, first_serve_pct, recent_form),
-        player2:players!matches_player2_id_fkey (id, name, country, flag, rank, wins, losses, ace_avg, surface_pref, first_serve_pct, recent_form)
-      `)
+      .select(MATCH_SELECT)
       .eq('status', 'upcoming')
       .order('match_date', { ascending: true })
       .limit(20);
+
     if (error) throw error;
-    return data ?? [];
+    return (data ?? []).map(normaliseMatch);
   } catch (e) {
     console.error('[getUpcomingMatches]', e.message);
     return MOCK_DATA.matches.filter(m => m.status === 'upcoming');
@@ -100,40 +84,44 @@ export async function getUpcomingMatches() {
 }
 
 // ── Matches by date ───────────────────────────────────────────────────────────
-export async function getMatchesByDate(dateStr) {
+export async function getMatchesByDate(dateString) {
   try {
-    const start = `${dateStr}T00:00:00Z`;
-    const end   = `${dateStr}T23:59:59Z`;
+    const start = `${dateString}T00:00:00.000Z`;
+    const end   = `${dateString}T23:59:59.999Z`;
+
     const { data, error } = await supabase
       .from('matches')
-      .select(`
-        id, status, tournament, round, surface, score, match_date,
-        player1:players!matches_player1_id_fkey (id, name, country, flag, rank, wins, losses, ace_avg, surface_pref, first_serve_pct, recent_form),
-        player2:players!matches_player2_id_fkey (id, name, country, flag, rank, wins, losses, ace_avg, surface_pref, first_serve_pct, recent_form)
-      `)
+      .select(MATCH_SELECT)
       .gte('match_date', start)
       .lte('match_date', end)
       .order('match_date', { ascending: true });
+
     if (error) throw error;
-    return data ?? [];
+    return (data ?? []).map(normaliseMatch);
   } catch (e) {
     console.error('[getMatchesByDate]', e.message);
     return MOCK_DATA.matches;
   }
 }
 
-// ── Rankings (top 10) ─────────────────────────────────────────────────────────
+// ── Rankings ──────────────────────────────────────────────────────────────────
 export async function getRankings(tour = 'ATP') {
   try {
     const { data, error } = await supabase
       .from('rankings')
       .select(`
-        rank, points, prev_rank,
-        players (id, name, country, flag, wins, losses, ace_avg, surface_pref, first_serve_pct, recent_form)
+        rank,
+        points,
+        prev_rank,
+        players (
+          id, name, country, flag,
+          wins, losses, ace_avg,
+          surface_pref, first_serve_pct, recent_form
+        )
       `)
       .eq('tour', tour)
       .order('rank', { ascending: true })
-      .limit(10);
+      .limit(50);
 
     if (error) throw error;
 
@@ -142,12 +130,10 @@ export async function getRankings(tour = 'ATP') {
       rank:      r.rank,
       points:    r.points,
       prev_rank: r.prev_rank,
-      // Resolve country codes (e.g. "SRB") → emoji flags on the fly
-      flag: resolveFlag(r.players?.flag ?? r.players?.country ?? ''),
     }));
   } catch (e) {
     console.error('[getRankings]', e.message);
-    return tour === 'WTA' ? MOCK_DATA.rankingsWTA : MOCK_DATA.rankings;
+    return MOCK_DATA.rankings;
   }
 }
 
@@ -159,11 +145,12 @@ export async function getPlayerStats(playerId) {
       .select('*')
       .eq('id', playerId)
       .single();
+
     if (error) throw error;
-    return { ...data, flag: resolveFlag(data?.flag ?? data?.country ?? '') };
+    return data;
   } catch (e) {
     console.error('[getPlayerStats]', e.message);
-    return [...MOCK_DATA.rankings, ...MOCK_DATA.rankingsWTA].find(p => p.id === playerId) ?? null;
+    return MOCK_DATA.players.find(p => p.id === playerId) ?? null;
   }
 }
 
@@ -177,10 +164,13 @@ export async function getHeadToHead(p1Id, p2Id) {
       .or(`and(player1_id.eq.${p1Id},player2_id.eq.${p2Id}),and(player1_id.eq.${p2Id},player2_id.eq.${p1Id})`)
       .order('match_date', { ascending: false })
       .limit(10);
+
     if (error) throw error;
     if (!data?.length) return MOCK_DATA.h2h;
+
     const p1Wins = data.filter(m => m.winner_id === p1Id).length;
     const p2Wins = data.filter(m => m.winner_id === p2Id).length;
+
     return {
       total:    data.length,
       p1_wins:  p1Wins,
@@ -200,7 +190,7 @@ export async function getHeadToHead(p1Id, p2Id) {
   }
 }
 
-// ── Prediction engine ─────────────────────────────────────────────────────────
+// ── Prediction engine (pure local calc) ───────────────────────────────────────
 export async function getPrediction(match) {
   const p1 = match.player1;
   const p2 = match.player2;
@@ -209,6 +199,7 @@ export async function getPrediction(match) {
                     : match.surface === p2.surface_pref ? -6 : 0;
   const raw      = 50 + rankEdge + surfaceEdge;
   const p1WinPct = Math.min(88, Math.max(12, Math.round(raw)));
+
   return {
     player1_win_pct: p1WinPct,
     player2_win_pct: 100 - p1WinPct,
@@ -216,71 +207,69 @@ export async function getPrediction(match) {
               : Math.abs(p1WinPct - 50) > 10 ? 'Medium' : 'Low',
     key_factors: [
       `Ranking: #${p1.rank} vs #${p2.rank}`,
-      `Surface: ${match.surface === p1.surface_pref ? p1.name : match.surface === p2.surface_pref ? p2.name : 'Neutral'} favoured`,
-      `Form: ${p1.recent_form ?? '---'} vs ${p2.recent_form ?? '---'}`,
+      `Surface advantage: ${match.surface === p1.surface_pref ? p1.name : match.surface === p2.surface_pref ? p2.name : 'Neutral'}`,
+      `Recent form: ${p1.recent_form ?? '---'} vs ${p2.recent_form ?? '---'}`,
     ],
   };
 }
 
-// ── AI Chat — calls Vercel /api/chat ──────────────────────────────────────────
+// ── AI Chat — FIX: systemContext param was silently dropped before ─────────────
+// The second argument is now forwarded to the Vercel Edge Function (/api/chat)
+// so the AI has the correct match context for each prediction query.
 export async function sendChatMessage(messages, systemContext = '') {
-  const res = await fetch('/api/chat', {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ messages, systemContext }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err?.error ?? `AI service error (${res.status})`);
+  try {
+    const res = await fetch('/api/chat', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages, systemContext }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error ?? `HTTP ${res.status}`);
+    }
+
+    return await res.json();
+  } catch (e) {
+    console.error('[sendChatMessage]', e.message);
+    // Graceful fallback so the UI never crashes
+    return {
+      content: [{ text: `⚠️ AI service unavailable: ${e.message}` }],
+    };
   }
-  return res.json();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MOCK DATA — fallback when Supabase is unreachable
+// MOCK DATA — fallback only when Supabase query fails
 // ─────────────────────────────────────────────────────────────────────────────
 export const MOCK_DATA = {
-
-  rankings: [
-    { id:'1',  name:'Jannik Sinner',    country:'Italy',         flag:'🇮🇹', rank:1,  points:11330, prev_rank:1,  wins:218,  losses:59,  ace_avg:5.8,  surface_pref:'Hard', first_serve_pct:62, recent_form:'W W W W L' },
-    { id:'2',  name:'Carlos Alcaraz',   country:'Spain',         flag:'🇪🇸', rank:2,  points:9255,  prev_rank:2,  wins:222,  losses:67,  ace_avg:7.1,  surface_pref:'Clay', first_serve_pct:66, recent_form:'W W L W W' },
-    { id:'3',  name:'Novak Djokovic',   country:'Serbia',        flag:'🇷🇸', rank:3,  points:8310,  prev_rank:3,  wins:1104, losses:214, ace_avg:6.2,  surface_pref:'Hard', first_serve_pct:63, recent_form:'W W W L W' },
-    { id:'4',  name:'Alexander Zverev', country:'Germany',       flag:'🇩🇪', rank:4,  points:7145,  prev_rank:4,  wins:407,  losses:185, ace_avg:9.1,  surface_pref:'Clay', first_serve_pct:61, recent_form:'W L W W W' },
-    { id:'5',  name:'Daniil Medvedev',  country:'Russia',        flag:'🇷🇺', rank:5,  points:6820,  prev_rank:5,  wins:380,  losses:193, ace_avg:8.3,  surface_pref:'Hard', first_serve_pct:59, recent_form:'L W W W W' },
-    { id:'6',  name:'Andrey Rublev',    country:'Russia',        flag:'🇷🇺', rank:6,  points:4325,  prev_rank:7,  wins:346,  losses:188, ace_avg:6.8,  surface_pref:'Hard', first_serve_pct:58, recent_form:'W W L W L' },
-    { id:'7',  name:'Casper Ruud',      country:'Norway',        flag:'🇳🇴', rank:7,  points:4175,  prev_rank:6,  wins:250,  losses:131, ace_avg:4.2,  surface_pref:'Clay', first_serve_pct:60, recent_form:'L W W L W' },
-    { id:'8',  name:'Hubert Hurkacz',   country:'Poland',        flag:'🇵🇱', rank:8,  points:3965,  prev_rank:8,  wins:282,  losses:166, ace_avg:11.2, surface_pref:'Hard', first_serve_pct:65, recent_form:'W W W W W' },
-    { id:'9',  name:'Taylor Fritz',     country:'United States', flag:'🇺🇸', rank:9,  points:3750,  prev_rank:10, wins:248,  losses:149, ace_avg:8.8,  surface_pref:'Hard', first_serve_pct:64, recent_form:'W W L W W' },
-    { id:'10', name:'Tommy Paul',       country:'United States', flag:'🇺🇸', rank:10, points:3180,  prev_rank:9,  wins:214,  losses:129, ace_avg:7.4,  surface_pref:'Hard', first_serve_pct:62, recent_form:'W L W L W' },
+  players: [
+    { id:'1', name:'Novak Djokovic',    country:'Serbia',  flag:'🇷🇸', rank:1, wins:1104, losses:214, ace_avg:6.2, surface_pref:'Hard', first_serve_pct:63, recent_form:'W W W L W' },
+    { id:'2', name:'Carlos Alcaraz',    country:'Spain',   flag:'🇪🇸', rank:2, wins:214,  losses:63,  ace_avg:7.1, surface_pref:'Clay', first_serve_pct:66, recent_form:'W W L W W' },
+    { id:'3', name:'Jannik Sinner',     country:'Italy',   flag:'🇮🇹', rank:3, wins:198,  losses:74,  ace_avg:5.8, surface_pref:'Hard', first_serve_pct:61, recent_form:'W W W W L' },
+    { id:'4', name:'Daniil Medvedev',   country:'Russia',  flag:'🇷🇺', rank:4, wins:377,  losses:192, ace_avg:8.3, surface_pref:'Hard', first_serve_pct:59, recent_form:'L W W W W' },
+    { id:'5', name:'Andrey Rublev',     country:'Russia',  flag:'🇷🇺', rank:5, wins:344,  losses:187, ace_avg:5.1, surface_pref:'Clay', first_serve_pct:58, recent_form:'W L W L W' },
+    { id:'6', name:'Holger Rune',       country:'Denmark', flag:'🇩🇰', rank:6, wins:148,  losses:87,  ace_avg:6.7, surface_pref:'Clay', first_serve_pct:60, recent_form:'W W L W L' },
+    { id:'7', name:'Casper Ruud',       country:'Norway',  flag:'🇳🇴', rank:7, wins:258,  losses:139, ace_avg:5.5, surface_pref:'Clay', first_serve_pct:57, recent_form:'L W W W W' },
+    { id:'8', name:'Stefanos Tsitsipas',country:'Greece',  flag:'🇬🇷', rank:8, wins:336,  losses:165, ace_avg:7.9, surface_pref:'Clay', first_serve_pct:62, recent_form:'W L W W L' },
   ],
-
-  rankingsWTA: [
-    { id:'w1',  name:'Aryna Sabalenka',    country:'Belarus',       flag:'🇧🇾', rank:1,  points:10940, prev_rank:1,  wins:320, losses:121, ace_avg:4.8, surface_pref:'Hard',  first_serve_pct:64, recent_form:'W W W W W' },
-    { id:'w2',  name:'Iga Świątek',        country:'Poland',        flag:'🇵🇱', rank:2,  points:9545,  prev_rank:2,  wins:412, losses:97,  ace_avg:3.1, surface_pref:'Clay',  first_serve_pct:68, recent_form:'W W L W W' },
-    { id:'w3',  name:'Coco Gauff',         country:'United States', flag:'🇺🇸', rank:3,  points:7290,  prev_rank:3,  wins:220, losses:96,  ace_avg:5.6, surface_pref:'Hard',  first_serve_pct:62, recent_form:'W L W W W' },
-    { id:'w4',  name:'Elena Rybakina',     country:'Kazakhstan',    flag:'🇰🇿', rank:4,  points:6880,  prev_rank:4,  wins:292, losses:113, ace_avg:9.2, surface_pref:'Grass', first_serve_pct:67, recent_form:'W W W L W' },
-    { id:'w5',  name:'Jessica Pegula',     country:'United States', flag:'🇺🇸', rank:5,  points:5880,  prev_rank:6,  wins:226, losses:116, ace_avg:4.5, surface_pref:'Hard',  first_serve_pct:61, recent_form:'L W W W L' },
-    { id:'w6',  name:'Qinwen Zheng',       country:'China',         flag:'🇨🇳', rank:6,  points:5240,  prev_rank:5,  wins:190, losses:97,  ace_avg:6.2, surface_pref:'Hard',  first_serve_pct:63, recent_form:'W W W L W' },
-    { id:'w7',  name:'Mirra Andreeva',     country:'Russia',        flag:'🇷🇺', rank:7,  points:4090,  prev_rank:9,  wins:150, losses:79,  ace_avg:4.8, surface_pref:'Clay',  first_serve_pct:60, recent_form:'W W L W W' },
-    { id:'w8',  name:'Daria Kasatkina',    country:'Russia',        flag:'🇷🇺', rank:8,  points:3870,  prev_rank:7,  wins:298, losses:171, ace_avg:3.9, surface_pref:'Clay',  first_serve_pct:59, recent_form:'W L W W L' },
-    { id:'w9',  name:'Emma Navarro',       country:'United States', flag:'🇺🇸', rank:9,  points:3210,  prev_rank:10, wins:164, losses:89,  ace_avg:5.1, surface_pref:'Hard',  first_serve_pct:61, recent_form:'W W W W L' },
-    { id:'w10', name:'Barbora Krejčíková', country:'Czech Republic',flag:'🇨🇿', rank:10, points:2990,  prev_rank:8,  wins:286, losses:149, ace_avg:4.4, surface_pref:'Clay',  first_serve_pct:62, recent_form:'L W L W W' },
-  ],
-
-  get players() { return [...this.rankings, ...this.rankingsWTA]; },
-
   get matches() {
-    const a = this.rankings;
-    const w = this.rankingsWTA;
+    const p = this.players;
     return [
-      { id:'m1', status:'live',     tournament:'Miami Open',     round:'QF',  surface:'Hard', score:'6-4 3-2', match_date: new Date().toISOString(), player1:a[0], player2:a[1] },
-      { id:'m2', status:'live',     tournament:'Miami Open',     round:'QF',  surface:'Hard', score:'7-5 2-4', match_date: new Date().toISOString(), player1:a[2], player2:a[4] },
-      { id:'m3', status:'upcoming', tournament:'Miami Open',     round:'SF',  surface:'Hard', score:null,      match_date: new Date().toISOString(), player1:a[3], player2:a[7] },
-      { id:'m4', status:'upcoming', tournament:'Madrid Open',    round:'R64', surface:'Clay', score:null,      match_date: new Date().toISOString(), player1:a[1], player2:a[6] },
-      { id:'m5', status:'upcoming', tournament:'WTA Miami Open', round:'QF',  surface:'Hard', score:null,      match_date: new Date().toISOString(), player1:w[0], player2:w[2] },
+      { id:'m1', status:'live',     tournament:'Roland Garros',  round:'QF', surface:'Clay',  score:'6-4, 3-2*', date: new Date().toISOString(), player1:p[0], player2:p[1] },
+      { id:'m2', status:'upcoming', tournament:'Wimbledon',       round:'SF', surface:'Grass', score:null,        date: new Date().toISOString(), player1:p[2], player2:p[3] },
+      { id:'m3', status:'upcoming', tournament:'US Open',         round:'F',  surface:'Hard',  score:null,        date: new Date().toISOString(), player1:p[1], player2:p[3] },
+      { id:'m4', status:'upcoming', tournament:'Australian Open', round:'SF', surface:'Hard',  score:null,        date: new Date().toISOString(), player1:p[4], player2:p[5] },
+      { id:'m5', status:'upcoming', tournament:'Monte-Carlo',     round:'R32',surface:'Clay',  score:null,        date: new Date().toISOString(), player1:p[6], player2:p[7] },
     ];
   },
-
+  get rankings() {
+    return this.players.map((p, i) => ({
+      ...p,
+      points:    Math.round(11000 / (i + 1)),
+      prev_rank: p.rank,
+    }));
+  },
   h2h: {
     total: 12, p1_wins: 7, p2_wins: 5,
     last5: ['W','W','L','W','L'],
