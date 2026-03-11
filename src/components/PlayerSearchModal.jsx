@@ -1,7 +1,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // PlayerSearchModal.jsx – ⌘K-style player search command palette
 // Props: onClose (fn) | allPlayers (array) | onChatAboutPlayer (fn)
-// Triggered from Dashboard navbar search button
+//
+// MOBILE FIX: Added className="tv-search-modal" to the dialog div.
+// CSS in index.css makes this full-screen on ≤640px phones.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState, useEffect, useRef } from 'react';
 import PlayerBioModal from './PlayerBioModal';
@@ -26,7 +28,7 @@ export default function PlayerSearchModal({ onClose, allPlayers = [], onChatAbou
     return () => window.removeEventListener('keydown', handler);
   }, [onClose, selected]);
 
-  // Lock body scroll
+  // Lock body scroll while modal is open
   useEffect(() => {
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = ''; };
@@ -61,26 +63,29 @@ export default function PlayerSearchModal({ onClose, allPlayers = [], onChatAbou
           position: 'fixed', inset: 0, zIndex: 200,
           background: 'rgba(7,11,20,0.8)',
           backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
           animation: 'tv-fade-in 0.15s ease',
         }}
       />
 
-      {/* Dialog */}
-      <div style={{
-        position: 'fixed',
-        top: '10dvh',
-        left: '50%',
-        transform: 'translateX(-50%)',
-        width: 'min(560px, calc(100vw - 32px))',
-        zIndex: 201,
-        background: 'var(--bg-card)',
-        border: '1px solid var(--border-md)',
-        borderRadius: 'var(--radius-lg)',
-        overflow: 'hidden',
-        boxShadow: '0 32px 80px rgba(0,0,0,0.65)',
-        animation: 'tv-slide-up 0.25s cubic-bezier(0.4,0,0.2,1)',
-      }}>
-
+      {/* Dialog — tv-search-modal class makes this full-screen on mobile */}
+      <div
+        className="tv-search-modal"
+        style={{
+          position: 'fixed',
+          top: '10dvh',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          width: 'min(560px, calc(100vw - 32px))',
+          zIndex: 201,
+          background: 'var(--bg-card)',
+          border: '1px solid var(--border-md)',
+          borderRadius: 'var(--radius-lg)',
+          overflow: 'hidden',
+          boxShadow: '0 32px 80px rgba(0,0,0,0.65)',
+          animation: 'tv-slide-up 0.25s cubic-bezier(0.4,0,0.2,1)',
+        }}
+      >
         {/* Search input row */}
         <div style={{
           display: 'flex', alignItems: 'center', gap: 12,
@@ -107,7 +112,7 @@ export default function PlayerSearchModal({ onClose, allPlayers = [], onChatAbou
               style={{
                 background: 'none', border: 'none',
                 color: 'var(--text-faint)', cursor: 'pointer',
-                fontSize: 20, lineHeight: 1, flexShrink: 0, padding: 0,
+                fontSize: 22, lineHeight: 1, flexShrink: 0, padding: 0,
               }}
             >
               ×
@@ -128,134 +133,109 @@ export default function PlayerSearchModal({ onClose, allPlayers = [], onChatAbou
         </div>
 
         {/* Results list */}
-        <div style={{ maxHeight: 420, overflowY: 'auto' }}>
+        <div style={{ maxHeight: '60dvh', overflowY: 'auto' }}>
           {results.length === 0 ? (
-            <div style={{
-              padding: '48px 20px', textAlign: 'center',
-              color: 'var(--text-faint)', fontSize: 14,
-            }}>
-              No players found for "{query}"
+            <div style={{ padding: '32px 20px', textAlign: 'center' }}>
+              <p style={{ fontSize: '32px', marginBottom: '8px' }}>🔍</p>
+              <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>
+                No players found for "{query}"
+              </p>
             </div>
           ) : (
-            results.map((p, i) => (
-              <PlayerRow
-                key={p.id ?? i}
-                player={p}
-                onSelect={() => setSelected(p)}
-                onChat={() => { onChatAboutPlayer?.(p); onClose(); }}
-                isLast={i === results.length - 1}
-              />
-            ))
+            results.map((p, i) => {
+              const sc = surfaceColors[p.surface_pref] ?? '#94a3b8';
+              return (
+                <div
+                  key={p.id ?? i}
+                  onClick={() => setSelected(p)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '12px',
+                    padding: '14px 20px',
+                    borderBottom: i < results.length - 1 ? '1px solid var(--border)' : 'none',
+                    cursor: 'pointer',
+                    transition: 'background 0.15s',
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-glass)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  {/* Flag */}
+                  <span style={{ fontSize: '22px', flexShrink: 0 }}>{p.flag ?? '🎾'}</span>
+
+                  {/* Name + country */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{
+                      fontWeight: 600, fontSize: '14px', color: 'var(--text)',
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>
+                      {p.name}
+                    </p>
+                    <p style={{ fontSize: '12px', color: 'var(--text-faint)', marginTop: '2px' }}>
+                      {p.country}
+                      {p.surface_pref && <span style={{ color: sc, marginLeft: '8px' }}>● {p.surface_pref}</span>}
+                    </p>
+                  </div>
+
+                  {/* Rank badge */}
+                  {p.rank && (
+                    <span style={{
+                      fontFamily: 'var(--font-mono)', fontSize: '13px',
+                      fontWeight: 700, color: 'var(--text-faint)',
+                      flexShrink: 0,
+                    }}>
+                      #{p.rank}
+                    </span>
+                  )}
+
+                  {/* Chat CTA */}
+                  {onChatAboutPlayer && (
+                    <button
+                      onClick={e => {
+                        e.stopPropagation();
+                        onChatAboutPlayer(p);
+                        onClose();
+                      }}
+                      style={{
+                        flexShrink: 0,
+                        padding: '5px 10px',
+                        border: '1px solid var(--border)',
+                        borderRadius: '6px',
+                        background: 'var(--bg-glass-md)',
+                        color: 'var(--lime)',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        fontFamily: 'var(--font-body)',
+                        cursor: 'pointer',
+                        letterSpacing: '0.04em',
+                        transition: 'var(--t)',
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--lime)'}
+                      onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}
+                    >
+                      Chat ›
+                    </button>
+                  )}
+                </div>
+              );
+            })
           )}
         </div>
 
-        {/* Footer hints */}
+        {/* Footer hint */}
         <div style={{
           padding: '10px 20px',
           borderTop: '1px solid var(--border)',
-          display: 'flex', gap: 20, alignItems: 'center',
+          display: 'flex', gap: '16px',
         }}>
-          <Hint icon="↵" label="View profile" />
-          <Hint icon="🤖" label="Ask AI about player" />
+          <span style={{ fontSize: '11px', color: 'var(--text-faint)' }}>
+            <kbd style={{ padding: '1px 5px', borderRadius: '4px', background: 'var(--bg-glass-md)', border: '1px solid var(--border)', fontFamily: 'var(--font-mono)', fontSize: '10px' }}>↵</kbd>
+            {' '}to open bio
+          </span>
+          <span style={{ fontSize: '11px', color: 'var(--text-faint)' }}>
+            <kbd style={{ padding: '1px 5px', borderRadius: '4px', background: 'var(--bg-glass-md)', border: '1px solid var(--border)', fontFamily: 'var(--font-mono)', fontSize: '10px' }}>esc</kbd>
+            {' '}to close
+          </span>
         </div>
       </div>
     </>
-  );
-}
-
-// ── Individual player row ─────────────────────────────────────────────────────
-function PlayerRow({ player: p, onSelect, onChat, isLast }) {
-  const [hov, setHov] = useState(false);
-  const surfaceColor  = surfaceColors[p.surface_pref] ?? '#94a3b8';
-
-  return (
-    <div
-      onMouseEnter={() => setHov(true)}
-      onMouseLeave={() => setHov(false)}
-      onClick={onSelect}
-      style={{
-        display: 'flex', alignItems: 'center', gap: 14,
-        padding: '13px 20px',
-        background: hov ? 'rgba(159,239,102,0.05)' : 'transparent',
-        borderBottom: isLast ? 'none' : '1px solid var(--border)',
-        transition: 'background 0.15s ease',
-        cursor: 'pointer',
-      }}
-    >
-      {/* Rank */}
-      <span style={{
-        fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 13,
-        color: (p.rank ?? 999) <= 3 ? 'var(--lime)' : 'var(--text-faint)',
-        width: 30, textAlign: 'right', flexShrink: 0,
-      }}>
-        #{p.rank ?? '—'}
-      </span>
-
-      {/* Flag */}
-      <span style={{ fontSize: 22, flexShrink: 0 }}>{p.flag ?? '🏳️'}</span>
-
-      {/* Name + country */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{
-          fontWeight: 600, fontSize: 14,
-          color: hov ? 'var(--lime)' : 'var(--text)',
-          transition: 'color 0.15s',
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        }}>
-          {p.name}
-        </p>
-        <p style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 2 }}>
-          {p.country ?? '—'}
-        </p>
-      </div>
-
-      {/* Surface badge */}
-      <span style={{
-        fontSize: 11, fontWeight: 700, padding: '3px 9px',
-        borderRadius: 999,
-        background: `${surfaceColor}18`,
-        color: surfaceColor,
-        border: `1px solid ${surfaceColor}30`,
-        flexShrink: 0,
-      }}>
-        {p.surface_pref ?? '—'}
-      </span>
-
-      {/* Chat button — only visible on hover */}
-      {hov && (
-        <button
-          onClick={e => { e.stopPropagation(); onChat(); }}
-          title="Ask AI about this player"
-          style={{
-            padding: '5px 10px',
-            background: 'rgba(167,139,250,0.12)',
-            border: '1px solid rgba(167,139,250,0.3)',
-            borderRadius: 8,
-            color: '#a78bfa', fontSize: 12, cursor: 'pointer',
-            fontFamily: 'var(--font-body)', flexShrink: 0,
-            transition: 'var(--t)',
-          }}
-        >
-          🤖 Chat
-        </button>
-      )}
-    </div>
-  );
-}
-
-function Hint({ icon, label }) {
-  return (
-    <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text-faint)' }}>
-      <kbd style={{
-        padding: '2px 6px',
-        background: 'var(--bg-glass-md)',
-        border: '1px solid var(--border)',
-        borderRadius: 4,
-        fontFamily: 'var(--font-mono)', fontSize: 11,
-      }}>
-        {icon}
-      </kbd>
-      {label}
-    </span>
   );
 }

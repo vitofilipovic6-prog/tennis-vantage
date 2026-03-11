@@ -132,7 +132,6 @@ a { color: inherit; text-decoration: none; }
   70%  { transform: scale(1.04); }
   100% { transform: scale(1);    opacity: 1; }
 }
-/* Toast slides up from bottom */
 @keyframes tv-toast-in {
   from { opacity: 0; transform: translateY(20px) scale(0.95); }
   to   { opacity: 1; transform: translateY(0)    scale(1); }
@@ -140,6 +139,10 @@ a { color: inherit; text-decoration: none; }
 @keyframes tv-toast-out {
   from { opacity: 1; transform: translateY(0)    scale(1); }
   to   { opacity: 0; transform: translateY(16px) scale(0.9); }
+}
+@keyframes tv-slide-up {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 /* ── Utility animation classes ───────────────────────────────────────────── */
@@ -187,13 +190,252 @@ a { color: inherit; text-decoration: none; }
   border-radius: var(--radius-sm);
 }
 
-/* ── Responsive breakpoint helpers ───────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════════════
+   RESPONSIVE BREAKPOINT HELPERS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* sm  = 640px  (hides/shows elements at mobile/tablet boundary) */
 @media (max-width: 640px)  { .hide-sm  { display: none !important; } }
 @media (min-width: 641px)  { .show-sm  { display: none !important; } }
+
+/* md  = 900px  (hides/shows elements at tablet/desktop boundary for navbar) */
+@media (max-width: 900px)  { .hide-md  { display: none !important; } }
+@media (min-width: 901px)  { .show-md  { display: none !important; } }
+
+/* lg  = 1024px */
 @media (max-width: 1024px) { .hide-lg  { display: none !important; } }
 @media (min-width: 1025px) { .show-lg  { display: none !important; } }
 
-/* ── SofaScore-style horizontal calendar ─────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════════════
+   RANKINGS TABLE — Responsive grid
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Desktop: 4 columns — rank | player | points | W/L */
+.rankings-row {
+  display: grid;
+  grid-template-columns: 52px 1fr 100px 80px;
+  padding: 14px 20px;
+  align-items: center;
+}
+
+.rankings-header {
+  padding: 12px 20px;
+}
+
+/* Tablet (≤ 680px): drop W/L column */
+@media (max-width: 680px) {
+  .rankings-row {
+    grid-template-columns: 44px 1fr 80px;
+    padding: 12px 14px;
+  }
+  .rankings-header {
+    padding: 10px 14px;
+  }
+  .rankings-wl {
+    display: none !important;
+  }
+}
+
+/* Mobile (≤ 400px): tighter padding */
+@media (max-width: 400px) {
+  .rankings-row {
+    grid-template-columns: 40px 1fr 72px;
+    padding: 10px 12px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   BOTTOM TAB BAR — Mobile navigation
+   The most impactful mobile fix. Replaces the hamburger drawer with a native
+   app-style bottom navigation bar, visible only on ≤900px screens.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.tv-bottom-nav {
+  display: none; /* Hidden on desktop by default */
+}
+
+@media (max-width: 900px) {
+  .tv-bottom-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 150;
+    background: rgba(11, 17, 32, 0.97);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border-top: 1px solid var(--border-md);
+    /* iOS safe area — pushes content above home indicator */
+    padding-bottom: max(env(safe-area-inset-bottom), 8px);
+    padding-top: 6px;
+  }
+
+  .tv-bottom-nav__item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 4px 6px;
+    background: none;
+    border: none;
+    color: var(--text-faint);
+    font-family: var(--font-body);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: color 0.15s ease;
+    /* Large enough touch target */
+    min-height: 48px;
+    /* Prevent iOS tap flash */
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .tv-bottom-nav__item.active {
+    color: var(--lime);
+  }
+
+  .tv-bottom-nav__item.active span {
+    /* Subtle scale on active icon */
+    display: inline-block;
+    transform: scale(1.1);
+    transition: transform 0.2s var(--ease);
+  }
+
+  /* Push main content up so it's never hidden behind the bottom nav */
+  .tv-main-content {
+    padding-bottom: calc(max(env(safe-area-inset-bottom), 8px) + 66px) !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PREDICTIONS TAB — Stack to single column on mobile
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 680px) {
+  .tv-predictions-layout {
+    flex-direction: column !important;
+  }
+  .tv-predictions-sidebar {
+    flex: unset !important;
+    width: 100% !important;
+    min-width: unset !important;
+    max-width: 100% !important;
+  }
+  .tv-predictions-main {
+    flex: unset !important;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   AI CHAT TAB — Force single column on mobile
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 680px) {
+  .tv-chat-layout {
+    grid-template-columns: 1fr !important;
+  }
+  /* On mobile: show chat first, context card second */
+  .tv-chat-context-panel {
+    order: 2;
+  }
+  .tv-chat-column {
+    order: 1;
+    /* Shorter height on mobile since screen is small */
+    height: clamp(320px, 52vh, 480px) !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MATCH CARD — Player name overflow protection
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.tv-match-card-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   RANKINGS FILTER PILLS — Wrap on narrow screens
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.tv-rankings-filters {
+  flex-wrap: wrap;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PLAYER SEARCH MODAL — Full-screen on mobile
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 640px) {
+  .tv-search-modal {
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: auto !important;
+    transform: none !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg) !important;
+    border-left: none !important;
+    border-right: none !important;
+    border-top: none !important;
+    animation: tv-slide-up 0.25s cubic-bezier(0.4,0,0.2,1) !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   GREETING — Hide email on very small screens (≤380px)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 380px) {
+  .tv-greeting-email {
+    display: none;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PLAYER BIO MODAL — Hero section wraps on small screens
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 480px) {
+  .tv-bio-hero {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 16px !important;
+  }
+  .tv-bio-hero-img {
+    width: 80px !important;
+    height: 80px !important;
+    border-radius: var(--radius) !important;
+  }
+  .tv-bio-meta-chips {
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LANDING PAGE — Hero title overflow prevention on 320px devices
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.lp-title {
+  overflow-wrap: break-word;
+  word-break: break-word;
+  hyphens: auto;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   HORIZONTAL CALENDAR (SofaScore-style date strip)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 .tv-calendar-wrapper {
   width: 100%;
   background: var(--bg-card);
@@ -210,6 +452,7 @@ a { color: inherit; text-decoration: none; }
   padding: 0 16px;
   scrollbar-width: none;
   -ms-overflow-style: none;
+  -webkit-overflow-scrolling: touch;
 }
 .tv-calendar-scroll::-webkit-scrollbar { display: none; }
 
@@ -236,76 +479,28 @@ a { color: inherit; text-decoration: none; }
 .tv-date-day   { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
 .tv-date-num   { font-size: 1.3rem; font-weight: 700; font-family: var(--font-display); margin: 2px 0; }
 .tv-date-month { font-size: 0.7rem; font-weight: 500; }
-.tv-date-btn.is-today .tv-date-day       { color: var(--clay); }
+.tv-date-btn.is-today .tv-date-day { color: var(--clay); }
 .tv-date-btn.active-date.is-today .tv-date-day { color: #070B14; }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   APPEND THESE RULES TO THE BOTTOM OF src/index.css
-   (do not replace the file — just paste below the last existing rule)
-   ─────────────────────────────────────────────────────────────────────────────
-
-   FIXES:
-     #2  — hide-md / show-md breakpoint at 900px (navbar no longer squishes at tablets)
-     #3  — .rankings-row responsive grid, .rankings-wl hidden on mobile
-     #5  — .lp-title overflow-wrap for 320px devices
-   ───────────────────────────────────────────────────────────────────────────── */
-
-/* ── NEW breakpoint: md = 900px ─────────────────────────────────────────── */
-@media (max-width: 900px)  { .hide-md { display: none !important; } }
-@media (min-width: 901px)  { .show-md { display: none !important; } }
-
-/* ── Responsive Rankings table ───────────────────────────────────────────── */
-/* Default (desktop): 4 columns — rank | player | points | W/L */
-.rankings-row {
-  display: grid;
-  grid-template-columns: 52px 1fr 100px 80px;
-  padding: 14px 20px;
-  align-items: center;
-}
-
-.rankings-header {
-  padding: 12px 20px;
-}
-
-/* Mobile (≤ 520px): 3 columns — drop W/L entirely */
-@media (max-width: 520px) {
-  .rankings-row {
-    grid-template-columns: 44px 1fr 80px;
-    padding: 12px 14px;
-  }
-  .rankings-header {
-    padding: 10px 14px;
-  }
-  .rankings-wl {
-    display: none !important;
-  }
-}
-
-/* ── Landing hero title — prevent overflow on 320px devices ─────────────── */
-.lp-title {
-  overflow-wrap: break-word;
-  word-break: break-word;
-  hyphens: auto;
-}
-
-/* ── AiChatTab — stack to single column on narrow screens ────────────────── */
+/* Slightly larger touch targets on mobile */
 @media (max-width: 640px) {
-  /* The chat grid becomes single-column regardless of contextMatch */
-  .tv-fade-up > [style*="grid-template-columns"] {
+  .tv-calendar-scroll {
+    gap: 6px;
+    padding: 0 12px;
+  }
+  .tv-date-btn {
+    min-width: 58px;
+    height: 68px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MATCH CARD GRID — Responsive auto-fill
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Single column on very small screens */
+@media (max-width: 400px) {
+  .tv-matches-grid {
     grid-template-columns: 1fr !important;
   }
-}
-
-/* Rankings responsive table */
-.rankings-row {
-  display: grid;
-  grid-template-columns: 52px 1fr 100px 80px;
-  padding: 14px 20px;
-  align-items: center;
-}
-.rankings-header { padding: 10px 20px; }
-
-@media (max-width: 480px) {
-  .rankings-row { grid-template-columns: 42px 1fr 80px; }
-  .rankings-wl  { display: none; }
 }
