@@ -43,6 +43,8 @@ export default function Dashboard({ showToast }) {
 
   const { live, upcoming, loading: matchesLoading, error: matchesError, refresh } = useMatches();
   const allMatches = useMemo(() => [...live, ...upcoming], [live, upcoming]);
+  // ADD this new state near the top of your Dashboard component
+const [profileOpen, setProfileOpen] = useState(false);
 
   // Collect unique players from all matches for the search modal
   const allPlayersForSearch = useMemo(() => {
@@ -171,31 +173,64 @@ export default function Dashboard({ showToast }) {
           <Btn variant="ghost" size="sm" onClick={handleLogout}>Sign Out</Btn>
         </div>
 
-        {/* Right: Mobile — avatar + compact sign-out */}
-        <div className="show-md" style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: '0 0 auto' }}>
-          <div style={{
-            width: '34px', height: '34px', borderRadius: '50%',
-            background: 'linear-gradient(135deg,#9fef66,#6bc940)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: '13px', color: '#070B14', fontWeight: 700, flexShrink: 0,
-          }}>
-            {(firstName?.[0] ?? 'P').toUpperCase()}
-          </div>
+        {/* Right: Mobile — clickable avatar with dropdown */}
+        <div className="show-md" style={{ position: 'relative', flex: '0 0 auto' }}>
           <button
-            onClick={handleLogout}
+            onClick={() => setProfileOpen(v => !v)}
+            aria-label="Profile menu"
             style={{
-              background: 'none',
-              border: '1px solid var(--border)',
-              borderRadius: '8px',
-              color: 'var(--text-muted)',
-              padding: '5px 10px',
-              cursor: 'pointer',
-              fontFamily: 'var(--font-body)',
-              fontSize: '12px',
+              width: '36px', height: '36px', borderRadius: '50%',
+              background: 'linear-gradient(135deg,#9fef66,#6bc940)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: '13px', color: '#070B14', fontWeight: 700,
+              border: profileOpen ? '2px solid var(--lime)' : '2px solid transparent',
+              cursor: 'pointer', padding: 0,
+              boxShadow: profileOpen ? '0 0 0 3px rgba(159,239,102,0.2)' : 'none',
+              transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
+              WebkitTapHighlightColor: 'transparent',
             }}
           >
-            Out
+            {(firstName?.[0] ?? 'P').toUpperCase()}
           </button>
+
+          {/* Dropdown */}
+          {profileOpen && (
+            <>
+              {/* Invisible backdrop to close on outside tap */}
+              <div
+                onClick={() => setProfileOpen(false)}
+                style={{
+                  position: 'fixed', inset: 0, zIndex: 199,
+                }}
+              />
+              <div className="tv-profile-dropdown">
+                {/* User info row */}
+                <div style={{
+                  padding: '12px 14px 10px',
+                  borderBottom: '1px solid var(--border)',
+                }}>
+                  <p style={{ margin: 0, fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>
+                    {firstName}
+                  </p>
+                  <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '160px' }}>
+                    {user?.email}
+                  </p>
+                </div>
+                {/* Sign out button */}
+                <button
+                  onClick={() => { setProfileOpen(false); handleLogout(); }}
+                  className="tv-profile-dropdown__item tv-profile-dropdown__item--danger"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                    <polyline points="16 17 21 12 16 7"/>
+                    <line x1="21" y1="12" x2="9" y2="12"/>
+                  </svg>
+                  Sign Out
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </nav>
 
