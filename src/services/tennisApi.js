@@ -2,25 +2,13 @@
 // tennisApi.js – TennisVantage API service layer
 //
 // FIXES IN THIS VERSION:
-//  1. attachPlayers() N+1 ELIMINATED — getLiveMatches / getUpcomingMatches /
-//     getMatchesByDate now use a single Supabase join query instead of two
-//     sequential round-trips.
-//  2. sendChatMessage() now correctly accepts and forwards systemContext so
-//     the Gemini Edge Function receives the match context it needs.
-//  3. getRankings() unchanged — already clean.
-//  4. getHeadToHead() and getPlayerStats() kept for future UI use.
+//  #23 — Imports shared singleton supabase client (no more duplicate createClient)
+//  #3  — N+1 eliminated: single JOIN query instead of two round-trips
+//  #2  — sendChatMessage correctly forwards systemContext to /api/chat
 // ─────────────────────────────────────────────────────────────────────────────
-import { createClient } from '@supabase/supabase-js';
-
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY,
-);
+import { supabase } from './supabase';
 
 // ── Shared select string — single query, no N+1 ───────────────────────────────
-// Supabase resolves FK relationships in one round-trip when you name them.
-// The aliases `player1:players!player1_id` and `player2:players!player2_id`
-// tell PostgREST to join the same `players` table twice using each FK column.
 const MATCH_SELECT = `
   id, status, tournament, round, surface, score, match_date,
   player1:players!player1_id (
@@ -190,7 +178,7 @@ export async function getHeadToHead(p1Id, p2Id) {
   }
 }
 
-// ── Prediction engine (pure local calc) ───────────────────────────────────────
+// ── Prediction engine (pure local calc — no API needed) ───────────────────────
 export async function getPrediction(match) {
   const p1 = match.player1;
   const p2 = match.player2;
@@ -213,9 +201,10 @@ export async function getPrediction(match) {
   };
 }
 
-// ── AI Chat — FIX: systemContext param was silently dropped before ─────────────
-// The second argument is now forwarded to the Vercel Edge Function (/api/chat)
-// so the AI has the correct match context for each prediction query.
+// ── AI Chat — calls the Vercel Edge Function at /api/chat ─────────────────────
+// FIX #2: systemContext is now correctly forwarded so Gemini gets match context.
+// NOTE: /api/chat only runs on Vercel. For local dev, add a proxy in vite.config.js:
+//   server: { proxy: { '/api': 'https://your-project.vercel.app' } }
 export async function sendChatMessage(messages, systemContext = '') {
   try {
     const res = await fetch('/api/chat', {
@@ -232,7 +221,6 @@ export async function sendChatMessage(messages, systemContext = '') {
     return await res.json();
   } catch (e) {
     console.error('[sendChatMessage]', e.message);
-    // Graceful fallback so the UI never crashes
     return {
       content: [{ text: `⚠️ AI service unavailable: ${e.message}` }],
     };
@@ -244,23 +232,23 @@ export async function sendChatMessage(messages, systemContext = '') {
 // ─────────────────────────────────────────────────────────────────────────────
 export const MOCK_DATA = {
   players: [
-    { id:'1', name:'Novak Djokovic',    country:'Serbia',  flag:'🇷🇸', rank:1, wins:1104, losses:214, ace_avg:6.2, surface_pref:'Hard', first_serve_pct:63, recent_form:'W W W L W' },
-    { id:'2', name:'Carlos Alcaraz',    country:'Spain',   flag:'🇪🇸', rank:2, wins:214,  losses:63,  ace_avg:7.1, surface_pref:'Clay', first_serve_pct:66, recent_form:'W W L W W' },
-    { id:'3', name:'Jannik Sinner',     country:'Italy',   flag:'🇮🇹', rank:3, wins:198,  losses:74,  ace_avg:5.8, surface_pref:'Hard', first_serve_pct:61, recent_form:'W W W W L' },
-    { id:'4', name:'Daniil Medvedev',   country:'Russia',  flag:'🇷🇺', rank:4, wins:377,  losses:192, ace_avg:8.3, surface_pref:'Hard', first_serve_pct:59, recent_form:'L W W W W' },
-    { id:'5', name:'Andrey Rublev',     country:'Russia',  flag:'🇷🇺', rank:5, wins:344,  losses:187, ace_avg:5.1, surface_pref:'Clay', first_serve_pct:58, recent_form:'W L W L W' },
-    { id:'6', name:'Holger Rune',       country:'Denmark', flag:'🇩🇰', rank:6, wins:148,  losses:87,  ace_avg:6.7, surface_pref:'Clay', first_serve_pct:60, recent_form:'W W L W L' },
-    { id:'7', name:'Casper Ruud',       country:'Norway',  flag:'🇳🇴', rank:7, wins:258,  losses:139, ace_avg:5.5, surface_pref:'Clay', first_serve_pct:57, recent_form:'L W W W W' },
-    { id:'8', name:'Stefanos Tsitsipas',country:'Greece',  flag:'🇬🇷', rank:8, wins:336,  losses:165, ace_avg:7.9, surface_pref:'Clay', first_serve_pct:62, recent_form:'W L W W L' },
+    { id:'1', name:'Novak Djokovic',     country:'Serbia',  flag:'🇷🇸', rank:1, wins:1104, losses:214, ace_avg:6.2, surface_pref:'Hard', first_serve_pct:63, recent_form:'W W W L W' },
+    { id:'2', name:'Carlos Alcaraz',     country:'Spain',   flag:'🇪🇸', rank:2, wins:214,  losses:63,  ace_avg:7.1, surface_pref:'Clay', first_serve_pct:66, recent_form:'W W L W W' },
+    { id:'3', name:'Jannik Sinner',      country:'Italy',   flag:'🇮🇹', rank:3, wins:198,  losses:74,  ace_avg:5.8, surface_pref:'Hard', first_serve_pct:61, recent_form:'W W W W L' },
+    { id:'4', name:'Daniil Medvedev',    country:'Russia',  flag:'🇷🇺', rank:4, wins:377,  losses:192, ace_avg:8.3, surface_pref:'Hard', first_serve_pct:59, recent_form:'L W W W W' },
+    { id:'5', name:'Andrey Rublev',      country:'Russia',  flag:'🇷🇺', rank:5, wins:344,  losses:187, ace_avg:5.1, surface_pref:'Clay', first_serve_pct:58, recent_form:'W L W L W' },
+    { id:'6', name:'Holger Rune',        country:'Denmark', flag:'🇩🇰', rank:6, wins:148,  losses:87,  ace_avg:6.7, surface_pref:'Clay', first_serve_pct:60, recent_form:'W W L W L' },
+    { id:'7', name:'Casper Ruud',        country:'Norway',  flag:'🇳🇴', rank:7, wins:258,  losses:139, ace_avg:5.5, surface_pref:'Clay', first_serve_pct:57, recent_form:'L W W W W' },
+    { id:'8', name:'Stefanos Tsitsipas', country:'Greece',  flag:'🇬🇷', rank:8, wins:336,  losses:165, ace_avg:7.9, surface_pref:'Clay', first_serve_pct:62, recent_form:'W L W W L' },
   ],
   get matches() {
     const p = this.players;
     return [
-      { id:'m1', status:'live',     tournament:'Roland Garros',  round:'QF', surface:'Clay',  score:'6-4, 3-2*', date: new Date().toISOString(), player1:p[0], player2:p[1] },
-      { id:'m2', status:'upcoming', tournament:'Wimbledon',       round:'SF', surface:'Grass', score:null,        date: new Date().toISOString(), player1:p[2], player2:p[3] },
-      { id:'m3', status:'upcoming', tournament:'US Open',         round:'F',  surface:'Hard',  score:null,        date: new Date().toISOString(), player1:p[1], player2:p[3] },
-      { id:'m4', status:'upcoming', tournament:'Australian Open', round:'SF', surface:'Hard',  score:null,        date: new Date().toISOString(), player1:p[4], player2:p[5] },
-      { id:'m5', status:'upcoming', tournament:'Monte-Carlo',     round:'R32',surface:'Clay',  score:null,        date: new Date().toISOString(), player1:p[6], player2:p[7] },
+      { id:'m1', status:'live',     tournament:'Roland Garros',  round:'QF',  surface:'Clay',  score:'6-4, 3-2*', date: new Date().toISOString(), player1:p[0], player2:p[1] },
+      { id:'m2', status:'upcoming', tournament:'Wimbledon',       round:'SF',  surface:'Grass', score:null,        date: new Date().toISOString(), player1:p[2], player2:p[3] },
+      { id:'m3', status:'upcoming', tournament:'US Open',         round:'F',   surface:'Hard',  score:null,        date: new Date().toISOString(), player1:p[1], player2:p[3] },
+      { id:'m4', status:'upcoming', tournament:'Australian Open', round:'SF',  surface:'Hard',  score:null,        date: new Date().toISOString(), player1:p[4], player2:p[5] },
+      { id:'m5', status:'upcoming', tournament:'Monte-Carlo',     round:'R32', surface:'Clay',  score:null,        date: new Date().toISOString(), player1:p[6], player2:p[7] },
     ];
   },
   get rankings() {

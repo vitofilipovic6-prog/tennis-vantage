@@ -295,3 +295,17 @@ a { color: inherit; text-decoration: none; }
     grid-template-columns: 1fr !important;
   }
 }
+
+/* Rankings responsive table */
+.rankings-row {
+  display: grid;
+  grid-template-columns: 52px 1fr 100px 80px;
+  padding: 14px 20px;
+  align-items: center;
+}
+.rankings-header { padding: 10px 20px; }
+
+@media (max-width: 480px) {
+  .rankings-row { grid-template-columns: 42px 1fr 80px; }
+  .rankings-wl  { display: none; }
+}

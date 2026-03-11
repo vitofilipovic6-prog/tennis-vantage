@@ -1,14 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // hooks.js – TennisVantage custom React hooks
-//
-// FIXES IN THIS VERSION:
-//  1. useRankings() — rankings are now cached by tour so switching ATP ↔ WTA
-//     never re-fetches data already loaded this session.
-//  2. useMatches() — live-match poll pauses automatically when the tab/window
-//     is not visible (Page Visibility API), saving unnecessary API calls.
-//  3. useAiChat() — input is locked while the AI is typing (prevents spam),
-//     and messages are capped at 500 chars.
-//  4. usePlayerSearch() — MOCK_DATA key fixed from .atpPlayers → .players.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
@@ -16,8 +7,10 @@ import {
   getPrediction, sendChatMessage, MOCK_DATA,
 } from '../services/tennisApi';
 
-// ── useMatches ────────────────────────────────────────────────────────────────
-// FIX: poll pauses when the browser tab is hidden via Page Visibility API.
+// Exported so AiChatTab can use it for the char counter
+export const CHAT_MAX_CHARS = 500;
+
+// ── useMatches ─────────────────────────────────────────────────────────────────
 export function useMatches() {
   const [live, setLive]         = useState([]);
   const [upcoming, setUpcoming] = useState([]);
@@ -44,28 +37,26 @@ export function useMatches() {
   useEffect(() => {
     fetchAll();
 
-    // Only poll live scores — don't refetch all upcoming matches on interval
+    // Poll live matches every 30s — but only when tab is visible
     function startPoll() {
       intervalRef.current = setInterval(() => {
-        // Skip poll if user has navigated away from the tab
-        if (document.visibilityState === 'hidden') return;
-        getLiveMatches()
-          .then(setLive)
-          .catch(() => {});
+        if (!document.hidden) {
+          getLiveMatches().then(setLive).catch(() => {});
+        }
       }, 30_000);
     }
 
-    startPoll();
-
-    // Pause/resume poll on tab visibility change
     function handleVisibility() {
-      if (document.visibilityState === 'visible') {
-        // User returned — refresh immediately then restart poll
+      if (document.hidden) {
+        clearInterval(intervalRef.current);
+      } else {
         getLiveMatches().then(setLive).catch(() => {});
+        startPoll();
       }
     }
-    document.addEventListener('visibilitychange', handleVisibility);
 
+    startPoll();
+    document.addEventListener('visibilitychange', handleVisibility);
     return () => {
       clearInterval(intervalRef.current);
       document.removeEventListener('visibilitychange', handleVisibility);
@@ -75,10 +66,8 @@ export function useMatches() {
   return { live, upcoming, loading, error, refresh: fetchAll };
 }
 
-// ── useRankings ───────────────────────────────────────────────────────────────
-// FIX: In-memory cache keyed by tour. Once ATP rankings load they are NOT
-// re-fetched when the user toggles to WTA and back. Cache lives for the
-// lifetime of the session (component unmount doesn't clear it).
+// ── useRankings ────────────────────────────────────────────────────────────────
+// Session-level cache: fetched once per tour per session, not on every tab switch
 const rankingsCache = {};
 
 export function useRankings(tour = 'ATP') {
@@ -87,7 +76,7 @@ export function useRankings(tour = 'ATP') {
   const [error, setError]       = useState(null);
 
   useEffect(() => {
-    // Already cached — render immediately, no fetch needed
+    // Already cached — no fetch needed
     if (rankingsCache[tour]) {
       setRankings(rankingsCache[tour]);
       setLoading(false);
@@ -97,21 +86,16 @@ export function useRankings(tour = 'ATP') {
     let cancelled = false;
     setLoading(true);
     setRankings([]);
-
     getRankings(tour)
       .then(data => {
-        if (cancelled) return;
-        rankingsCache[tour] = data;   // cache for subsequent visits
-        setRankings(data);
-        setError(null);
+        if (!cancelled) {
+          rankingsCache[tour] = data;
+          setRankings(data);
+          setError(null);
+        }
       })
-      .catch(e => {
-        if (!cancelled) setError(e.message ?? 'Failed to load rankings');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
+      .catch(e  => { if (!cancelled) setError(e.message ?? 'Failed to load rankings'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [tour]);
 
@@ -146,17 +130,18 @@ export function usePrediction(match) {
   return { prediction, loading, error };
 }
 
-// ── usePlayerSearch ───────────────────────────────────────────────────────────
-// FIX: MOCK_DATA key corrected (.atpPlayers didn't exist → .players)
+// ── usePlayerSearch ────────────────────────────────────────────────────────────
 export function usePlayerSearch() {
   const [query, setQuery]     = useState('');
   const [results, setResults] = useState([]);
 
   useEffect(() => {
     if (!query.trim()) { setResults([]); return; }
-    const lower = query.toLowerCase();
-    // MOCK_DATA.players contains all players (ATP + WTA combined in mock)
-    const allPlayers = MOCK_DATA.players ?? [];
+    const lower      = query.toLowerCase();
+    const allPlayers = [
+      ...(MOCK_DATA.atpPlayers ?? MOCK_DATA.players ?? []),
+      ...(MOCK_DATA.wtaPlayers ?? []),
+    ];
     setResults(allPlayers.filter(p => p.name.toLowerCase().includes(lower)));
   }, [query]);
 
@@ -164,19 +149,15 @@ export function usePlayerSearch() {
 }
 
 // ── useAiChat ─────────────────────────────────────────────────────────────────
-// FIX: Input locked while typing=true to prevent message spam.
-// FIX: Messages capped at MAX_CHARS characters with counter feedback.
-export const CHAT_MAX_CHARS = 500;
-
 export function useAiChat(contextMatch = null) {
   const GREETING = "Hi! I'm your AI tennis analyst. Ask me anything about match predictions, player stats, or tournament strategies.";
 
   const [messages, setMessages] = useState([
     { role: 'assistant', content: GREETING },
   ]);
-  const [typing, setTyping]   = useState(false);
-  const bottomRef             = useRef(null);
-  const messagesRef           = useRef(messages);
+  const [typing, setTyping] = useState(false);
+  const bottomRef           = useRef(null);
+  const messagesRef         = useRef(messages);
 
   useEffect(() => { messagesRef.current = messages; }, [messages]);
 
@@ -185,16 +166,14 @@ export function useAiChat(contextMatch = null) {
   }, [messages, typing]);
 
   const sendMessage = useCallback(async (text) => {
-    const trimmed = text.trim().slice(0, CHAT_MAX_CHARS);
-    if (!trimmed) return;
-
-    const userMsg = { role: 'user', content: trimmed };
+    if (!text.trim()) return;
+    const userMsg = { role: 'user', content: text };
     setMessages(prev => [...prev, userMsg]);
     setTyping(true);
 
     try {
       const systemContext = contextMatch
-        ? `You are a professional tennis analyst. The user is asking about the match: ${contextMatch.player1.name} vs ${contextMatch.player2.name} on ${contextMatch.surface} at ${contextMatch.tournament}, ${contextMatch.round}. Provide specific, data-driven insight about this matchup.`
+        ? `You are a professional tennis analyst. Context: ${contextMatch.player1.name} vs ${contextMatch.player2.name} on ${contextMatch.surface} at ${contextMatch.tournament}, ${contextMatch.round}.`
         : 'You are a professional tennis analyst. Provide insightful, data-driven analysis.';
 
       const history = [...messagesRef.current, userMsg].map(m => ({
@@ -215,23 +194,22 @@ export function useAiChat(contextMatch = null) {
   }, [contextMatch]);
 
   const reset = useCallback(() => {
-    setMessages([{ role: 'assistant', content: GREETING }]);
+    setMessages([{ role: 'assistant', content: 'New session started. Ask me anything about tennis!' }]);
   }, []);
 
   return { messages, typing, sendMessage, reset, bottomRef };
 }
 
-// ── useToast ──────────────────────────────────────────────────────────────────
-export function useToast(duration = 4000) {
+// ── useToast ───────────────────────────────────────────────────────────────────
+export function useToast() {
   const [toasts, setToasts] = useState([]);
-  const idRef = useRef(0);
+  const idRef               = useRef(0);
 
-  const show = useCallback((message, type = 'info') => {
+  const show = useCallback((message, type = 'info', duration = 4000) => {
     const id = ++idRef.current;
     setToasts(prev => [...prev, { id, message, type }]);
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), duration);
-    return id;
-  }, [duration]);
+  }, []);
 
   const dismiss = useCallback((id) => {
     setToasts(prev => prev.filter(t => t.id !== id));
