@@ -7,7 +7,7 @@ export const config = {
   runtime: 'edge',
 };
 
-const GEMINI_MODEL = 'gemini-2.0-flash';
+const GEMINI_MODEL = 'gemini-2.5-flash';
 
 export default async function handler(req) {
   if (req.method === 'OPTIONS') {
