@@ -16,12 +16,12 @@
 //  PlayerBioModal opens when clicking any player row in Rankings
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState, useMemo, useEffect, memo } from 'react';
-import { useAuth }       from '../context/AuthContext';
+import { useAuth } from '../context/AuthContext';
 import { useMatches, useRankings, usePrediction, useAiChat, CHAT_MAX_CHARS } from '../hooks/hooks';
 import { getHeadToHead } from '../services/tennisApi';
 import { Logo, Btn, Badge, Card } from '../components/ui';
-import MatchCalendar     from '../components/MatchCalendar';
-import PlayerBioModal    from '../components/PlayerBioModal';
+import MatchCalendar from '../components/MatchCalendar';
+import PlayerBioModal from '../components/PlayerBioModal';
 import PlayerSearchModal from '../components/PlayerSearchModal';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -30,11 +30,11 @@ import PlayerSearchModal from '../components/PlayerSearchModal';
 export default function Dashboard({ showToast }) {
   const { user, firstName, logout } = useAuth();
 
-  const [activeTab,     setActiveTab]     = useState('matches');
-  const [mobileMenu,    setMobileMenu]    = useState(false);
+  const [activeTab, setActiveTab] = useState('matches');
+  const [mobileMenu, setMobileMenu] = useState(false);
   const [selectedMatch, setSelectedMatch] = useState(null);
-  const [searchOpen,    setSearchOpen]    = useState(false);
-  const [bioPlayer,     setBioPlayer]     = useState(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [bioPlayer, setBioPlayer] = useState(null);
 
   const { live, upcoming, loading: matchesLoading, error: matchesError, refresh } = useMatches();
   const allMatches = useMemo(() => [...live, ...upcoming], [live, upcoming]);
@@ -52,10 +52,10 @@ export default function Dashboard({ showToast }) {
   }, [allMatches]);
 
   const tabs = [
-    { id: 'matches',     label: 'Live & Upcoming', icon: '🎾' },
-    { id: 'predictions', label: 'Predictions',     icon: '🔮' },
-    { id: 'rankings',    label: 'Rankings',         icon: '🏆' },
-    { id: 'chat',        label: 'AI Analyst',       icon: '🤖' },
+    { id: 'matches', label: 'Live & Upcoming', icon: '🎾' },
+    { id: 'predictions', label: 'Predictions', icon: '🔮' },
+    { id: 'rankings', label: 'Rankings', icon: '🏆' },
+    { id: 'chat', label: 'AI Analyst', icon: '🤖' },
   ];
 
   async function handleLogout() {
@@ -112,7 +112,7 @@ export default function Dashboard({ showToast }) {
             onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
             <span className="hide-sm">Search players</span>
           </button>
@@ -168,9 +168,9 @@ export default function Dashboard({ showToast }) {
             aria-label={mobileMenu ? 'Close menu' : 'Open menu'}
           >
             {mobileMenu ? (
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
             ) : (
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
             )}
           </button>
         </div>
@@ -286,18 +286,18 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch }) 
   const [calendarDate, setCalendarDate] = useState(null);
 
   if (loading) return <LoadingGrid />;
-  if (error)   return <ErrorMessage msg={error} onRetry={refresh} />;
+  if (error) return <ErrorMessage msg={error} onRetry={refresh} />;
 
   const filteredUpcoming = calendarDate
     ? upcoming.filter(m => {
-        if (!m.date) return true;
-        const matchDay = new Date(m.date);
-        return (
-          matchDay.getFullYear() === calendarDate.getFullYear() &&
-          matchDay.getMonth()    === calendarDate.getMonth()    &&
-          matchDay.getDate()     === calendarDate.getDate()
-        );
-      })
+      if (!m.date) return true;
+      const matchDay = new Date(m.date);
+      return (
+        matchDay.getFullYear() === calendarDate.getFullYear() &&
+        matchDay.getMonth() === calendarDate.getMonth() &&
+        matchDay.getDate() === calendarDate.getDate()
+      );
+    })
     : upcoming;
 
   return (
@@ -318,7 +318,7 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch }) 
       <section>
         <SectionHeading label={
           calendarDate
-            ? `Matches on ${calendarDate.toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'short' })}`
+            ? `Matches on ${calendarDate.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })}`
             : 'Upcoming Matches'
         } />
         {filteredUpcoming.length === 0 ? (
@@ -340,8 +340,8 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch }) 
 // FIX #10: React.memo prevents re-renders unless match or onPredict changes
 const MatchCard = memo(function MatchCard({ match: m, onPredict }) {
   const surfaceColors = { Clay: '#f97316', Hard: '#60a5fa', Grass: '#4ade80' };
-  const surfaceColor  = surfaceColors[m.surface] ?? '#94a3b8';
-  const isLive        = m.status === 'live';
+  const surfaceColor = surfaceColors[m.surface] ?? '#94a3b8';
+  const isLive = m.status === 'live';
 
   return (
     <Card style={{ cursor: 'default' }}>
@@ -388,7 +388,7 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict }) {
       ))}
 
       <Btn variant="lime" size="sm" fullWidth style={{ marginTop: '16px' }} onClick={onPredict}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" /></svg>
         Predict this match
       </Btn>
     </Card>
@@ -402,7 +402,7 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict }) {
 // ─────────────────────────────────────────────────────────────────────────────
 function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMatch }) {
   const { prediction, loading: predLoading, error: predError } = usePrediction(selectedMatch);
-  const [h2h, setH2h]               = useState(null);
+  const [h2h, setH2h] = useState(null);
   const [h2hLoading, setH2hLoading] = useState(false);
 
   useEffect(() => {
@@ -494,8 +494,8 @@ function MatchPickerRow({ match: m, selected, onSelect }) {
 }
 
 function PredictionCard({ match: m, prediction: pred }) {
-  const p1        = m.player1;
-  const p2        = m.player2;
+  const p1 = m.player1;
+  const p2 = m.player2;
   const confColor = pred.confidence === 'High' ? 'var(--lime)' : pred.confidence === 'Medium' ? 'var(--yellow)' : 'var(--text-muted)';
 
   return (
@@ -630,7 +630,7 @@ function H2HPanel({ h2h, match }) {
 // PlayerBioModal: clicking a row fires onSelectPlayer
 // ─────────────────────────────────────────────────────────────────────────────
 function RankingsTab({ onSelectPlayer }) {
-  const [tour, setTour]     = useState('ATP');
+  const [tour, setTour] = useState('ATP');
   const [hovRow, setHovRow] = useState(null);
   const { rankings, loading, error } = useRankings(tour);
 
@@ -751,8 +751,8 @@ function AiChatTab({ contextMatch }) {
     setInput('');
   }
 
-  const charsLeft  = CHAT_MAX_CHARS - input.length;
-  const charColor  = charsLeft < 50 ? 'var(--red)' : charsLeft < 100 ? 'var(--yellow)' : 'var(--text-faint)';
+  const charsLeft = CHAT_MAX_CHARS - input.length;
+  const charColor = charsLeft < 50 ? 'var(--red)' : charsLeft < 100 ? 'var(--yellow)' : 'var(--text-faint)';
 
   const suggestions = [
     'Who is favoured to win today?',
@@ -800,19 +800,22 @@ function AiChatTab({ contextMatch }) {
           <div style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {messages.map((msg, i) => (
               <div key={i} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                import MarkdownMessage from '../components/MarkdownMessage';
+
                 <div style={{
-                  maxWidth: '80%', padding: '10px 14px', borderRadius: '14px',
+                  maxWidth: '85%', padding: '12px 16px', borderRadius: '14px',
                   background: msg.role === 'user'
                     ? 'linear-gradient(135deg,#9fef66,#6bc940)'
                     : 'var(--bg-glass-md)',
                   color: msg.role === 'user' ? '#070B14' : 'var(--text)',
                   border: msg.role === 'assistant' ? '1px solid var(--border)' : 'none',
-                  fontSize: '14px', lineHeight: 1.65,
                   borderBottomRightRadius: msg.role === 'user' ? '4px' : '14px',
                   borderBottomLeftRadius: msg.role === 'assistant' ? '4px' : '14px',
-                  whiteSpace: 'pre-wrap',
                 }}>
-                  {msg.content}
+                  {msg.role === 'user'
+                    ? <span style={{ fontSize: 14, lineHeight: 1.65 }}>{msg.content}</span>
+                    : <MarkdownMessage content={msg.content} />
+                  }
                 </div>
               </div>
             ))}
@@ -824,7 +827,7 @@ function AiChatTab({ contextMatch }) {
                   background: 'var(--bg-glass-md)', border: '1px solid var(--border)',
                   display: 'flex', gap: '5px', alignItems: 'center',
                 }}>
-                  {[0,1,2].map(d => (
+                  {[0, 1, 2].map(d => (
                     <span key={d} style={{
                       width: '6px', height: '6px', borderRadius: '50%', background: 'var(--lime)',
                       display: 'inline-block',
@@ -879,8 +882,8 @@ function AiChatTab({ contextMatch }) {
                 opacity: typing ? 0.6 : 1, lineHeight: 1.5,
                 boxSizing: 'border-box',
               }}
-              onFocus={e  => { e.target.style.borderColor = 'var(--lime)'; }}
-              onBlur={e   => { e.target.style.borderColor = 'var(--border)'; }}
+              onFocus={e => { e.target.style.borderColor = 'var(--lime)'; }}
+              onBlur={e => { e.target.style.borderColor = 'var(--border)'; }}
             />
             <span style={{
               position: 'absolute', bottom: '8px', right: '12px',
@@ -895,7 +898,7 @@ function AiChatTab({ contextMatch }) {
             disabled={!input.trim() || typing}
             style={{ height: '46px', paddingLeft: '18px', paddingRight: '18px', flexShrink: 0 }}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
           </Btn>
         </form>
       </div>
@@ -947,7 +950,7 @@ function PredictionSkeleton() {
         <div key={i} style={{ marginBottom: '14px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
             <div className="skeleton" style={{ width: '140px', height: '16px', borderRadius: '4px' }} />
-            <div className="skeleton" style={{ width: '40px',  height: '16px', borderRadius: '4px' }} />
+            <div className="skeleton" style={{ width: '40px', height: '16px', borderRadius: '4px' }} />
           </div>
           <div className="skeleton" style={{ height: '8px', borderRadius: '99px' }} />
         </div>
