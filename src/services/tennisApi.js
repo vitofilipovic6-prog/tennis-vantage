@@ -245,12 +245,18 @@ export async function getPrediction(match) {
 
   const confidence = Math.round(Math.abs(rawEdge) * 1.5 + 40);
 
+  const confLabel = confidence > 70 ? 'High' : confidence > 50 ? 'Medium' : 'Low';
+
   return {
+    // Shape PredictionCard expects
+    player1_win_pct: Math.round(p1WinPct),
+    player2_win_pct: Math.round(100 - p1WinPct),
+    confidence:      confLabel,
+    key_factors:     factors.map(f => `${f.label}: ${f.desc}`),
+    // Bonus fields available for future use
     p1WinPct:   Math.round(p1WinPct),
     p2WinPct:   Math.round(100 - p1WinPct),
-    confidence: Math.min(95, confidence),
     factors,
-    // Expose raw inputs so AI chat can explain them
     raw: { rankEdge, surfaceEdge, serveEdge, formEdge, fatigueEdge, injuryEdge },
   };
 }
