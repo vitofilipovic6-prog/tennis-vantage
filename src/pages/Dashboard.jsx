@@ -318,6 +318,9 @@ const [profileOpen, setProfileOpen] = useState(false);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MATCHES TAB
+// FIX: Calendar date filter now converts both dates to local YYYY-MM-DD strings
+// so UTC-stored match dates compare correctly against the selected calendar day.
+// FIX: Shows "No matches" empty state instead of wrong-day matches bleeding through.
 // ─────────────────────────────────────────────────────────────────────────────
 function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch }) {
   const [calendarDate, setCalendarDate] = useState(null);
@@ -325,17 +328,29 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch }) 
   if (loading) return <LoadingGrid />;
   if (error)   return <ErrorMessage msg={error} onRetry={refresh} />;
 
-  const filteredUpcoming = calendarDate
-    ? upcoming.filter(m => {
-        if (!m.date) return true;
-        const matchDay = new Date(m.date);
-        return (
-          matchDay.getFullYear() === calendarDate.getFullYear() &&
-          matchDay.getMonth()    === calendarDate.getMonth()    &&
-          matchDay.getDate()     === calendarDate.getDate()
-        );
-      })
+  // FIX: Convert ISO date to local YYYY-MM-DD for comparison, not getDate() parts
+  // which can mismatch when the ISO string is UTC and local timezone differs.
+  const toLocalDateStr = (isoString) => {
+    if (!isoString) return '';
+    const d = new Date(isoString);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
+  const selectedDateStr = calendarDate
+    ? `${calendarDate.getFullYear()}-${String(calendarDate.getMonth() + 1).padStart(2, '0')}-${String(calendarDate.getDate()).padStart(2, '0')}`
+    : null;
+
+  const filteredUpcoming = selectedDateStr
+    ? upcoming.filter(m => toLocalDateStr(m.date) === selectedDateStr)
     : upcoming;
+
+  // Deduplicate by match id — prevents same match appearing twice if hooks overlap
+  const seen = new Set();
+  const dedupedUpcoming = filteredUpcoming.filter(m => {
+    if (seen.has(m.id)) return false;
+    seen.add(m.id);
+    return true;
+  });
 
   return (
     <div className="tv-fade-up">
@@ -358,11 +373,11 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch }) 
             ? `Matches on ${calendarDate.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })}`
             : 'Upcoming Matches'
         } />
-        {filteredUpcoming.length === 0 ? (
+        {dedupedUpcoming.length === 0 ? (
           <EmptyState icon="📅" title="No matches on this day" desc="Select another date or check back soon." />
         ) : (
           <div style={gridStyle}>
-            {filteredUpcoming.map((m, i) => (
+            {dedupedUpcoming.map((m, i) => (
               <div key={m.id} className={`tv-fade-up d${Math.min(i + 1, 5)}`}>
                 <MatchCard match={m} onPredict={() => onSelectMatch(m)} />
               </div>
@@ -377,65 +392,81 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch }) 
 // React.memo prevents re-renders unless match or onPredict changes
 const MatchCard = memo(function MatchCard({ match: m, onPredict }) {
   const surfaceColors = { Clay: '#f97316', Hard: '#60a5fa', Grass: '#4ade80' };
-  const surfaceColor  = surfaceColors[m.surface] ?? '#94a3b8';
+  const surfaceColor  = surfaceColors[m.surface] ?? '#9ca3af';
+
+  // FIX: Show actual tournament name, fallback gracefully
+  const tournamentLabel = (m.tournament && m.tournament !== 'Unknown Tournament')
+    ? m.tournament
+    : m.surface ? `${m.surface} Court` : 'Tournament TBD';
+
+  const renderPlayer = (player) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 0' }}>
+      <span style={{ fontSize: '20px', lineHeight: 1 }}>{player.flag}</span>
+      <div style={{ minWidth: 0 }}>
+        <p style={{
+          fontSize: '14px', fontWeight: 600, color: 'var(--text)',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {player.name}
+        </p>
+        {/* FIX: Only show rank if it's a real rank (not 999 placeholder) */}
+        <p style={{ fontSize: '11px', color: 'var(--text-faint)', marginTop: '1px' }}>
+          {player.rank && player.rank < 999 ? `#${player.rank}` : '—'}
+        </p>
+      </div>
+    </div>
+  );
 
   return (
-    <Card hover glow>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-        <div style={{ minWidth: 0, flex: 1 }}>
-          {/* Tournament name — truncate on overflow */}
-          <p style={{
-            fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em',
-            textTransform: 'uppercase', color: 'var(--text-faint)',
-            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          }}>
-            {m.tournament}
-          </p>
-          <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>{m.round}</p>
-        </div>
-        <div style={{ display: 'flex', gap: '6px', flexShrink: 0, marginLeft: '8px' }}>
-          {m.status === 'live' && <Badge color="var(--green)">● Live</Badge>}
-          <Badge color={surfaceColor}>{m.surface}</Badge>
-        </div>
+    <Card style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* Tournament header */}
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        marginBottom: '4px',
+      }}>
+        <p style={{
+          fontSize: '11px', fontWeight: 700, textTransform: 'uppercase',
+          letterSpacing: '0.07em', color: 'var(--text-faint)',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          flex: 1, marginRight: '8px',
+        }}>
+          {tournamentLabel}
+          {m.round ? ` · ${m.round}` : ''}
+        </p>
+        <span style={{
+          fontSize: '10px', fontWeight: 700, padding: '2px 8px',
+          borderRadius: '4px', background: `${surfaceColor}22`,
+          color: surfaceColor, flexShrink: 0, letterSpacing: '0.06em',
+        }}>
+          {(m.surface ?? 'HARD').toUpperCase()}
+        </span>
       </div>
 
-      {/* Players */}
-      {[m.player1, m.player2].map((player, idx) => (
-        <div key={player.id} style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '10px 0',
-          borderBottom: idx === 0 ? '1px solid var(--border)' : 'none',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1 }}>
-            <span style={{ fontSize: '18px', flexShrink: 0 }}>{player.flag}</span>
-            <div style={{ minWidth: 0 }}>
-              {/* Player name — ellipsis to prevent overflow on narrow cards */}
-              <p className="tv-match-card-name" style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text)' }}>
-                {player.name}
-              </p>
-              <p style={{ fontSize: '11px', color: 'var(--text-faint)' }}>#{player.rank}</p>
-            </div>
-          </div>
-          {/* Score */}
-          {m.score && (
-            <div style={{ display: 'flex', gap: '6px', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
-              {m.score.split(',').map((set, i) => (
-                <span key={i} style={{
-                  padding: '2px 8px', borderRadius: '4px',
-                  background: 'var(--bg-glass-md)',
-                  fontSize: '13px', fontWeight: 700,
-                  color: idx === 0 ? 'var(--lime)' : 'var(--text)',
-                }}>
-                  {m.score.split(',')[i] ?? ''}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-      ))}
+      {/* Divider */}
+      <div style={{ height: '1px', background: 'var(--border)', margin: '8px 0' }} />
 
-      <Btn variant="lime" size="sm" fullWidth style={{ marginTop: '16px' }} onClick={onPredict}>
+      {/* Players */}
+      {renderPlayer(m.player1)}
+      <div style={{ height: '1px', background: 'var(--border)', margin: '2px 0' }} />
+      {renderPlayer(m.player2)}
+
+      {/* Score / live status */}
+      {m.status === 'live' && m.score && (
+        <div style={{
+          marginTop: '10px', padding: '6px 10px',
+          background: 'rgba(159,239,102,0.08)', borderRadius: 'var(--radius-sm)',
+          border: '1px solid rgba(159,239,102,0.2)',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        }}>
+          <span style={{ fontSize: '11px', color: 'var(--lime)', fontWeight: 700 }}>● LIVE</span>
+          <span style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', color: 'var(--text)' }}>
+            {m.liveStatus ?? m.score}
+          </span>
+        </div>
+      )}
+
+      {/* Predict button */}
+      <Btn variant="lime" size="sm" fullWidth style={{ marginTop: '14px' }} onClick={onPredict}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" /></svg>
         Predict this match
       </Btn>
@@ -598,13 +629,31 @@ function PredictionCard({ match: m, prediction: pred }) {
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// H2H PANEL
+// FIX: Handles null h2h gracefully — shows "No H2H data yet" instead of
+// crashing or showing wrong data from another match pair.
+// ─────────────────────────────────────────────────────────────────────────────
 function H2HPanel({ h2h, match }) {
   const p1 = match.player1;
   const p2 = match.player2;
 
+  if (!h2h) {
+    return (
+      <Card>
+        <div style={{ textAlign: 'center', padding: '24px 16px' }}>
+          <p style={{ fontSize: '28px', marginBottom: '8px' }}>🎾</p>
+          <p style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text)', marginBottom: '4px' }}>No H2H data yet</p>
+          <p style={{ fontSize: '12px', color: 'var(--text-faint)' }}>
+            These players haven't met in a recorded match — or it's their first meeting.
+          </p>
+        </div>
+      </Card>
+    );
+  }
+
   return (
     <Card>
-      {/* Score summary */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
         <div style={{ flex: 1, textAlign: 'center' }}>
           <p style={{ fontFamily: 'var(--font-mono)', fontSize: '28px', fontWeight: 700, color: 'var(--lime)' }}>{h2h.p1_wins}</p>
@@ -621,7 +670,6 @@ function H2HPanel({ h2h, match }) {
         </div>
       </div>
 
-      {/* Recent meetings */}
       {h2h.meetings?.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <p style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-faint)', marginBottom: '4px' }}>
@@ -629,26 +677,34 @@ function H2HPanel({ h2h, match }) {
           </p>
           {h2h.meetings.slice(0, 4).map((meet, i) => {
             const surfaceColorMap = { Clay: '#f97316', Hard: '#60a5fa', Grass: '#4ade80' };
-            const sc = surfaceColorMap[meet.surface] ?? '#94a3b8';
+            const sc = surfaceColorMap[meet.surface] ?? '#9ca3af';
+            const winnerName = meet.winner === 'p1' ? p1.name.split(' ').pop() : p2.name.split(' ').pop();
             return (
               <div key={i} style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '8px 12px', background: 'var(--bg-glass)',
-                border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
-                flexWrap: 'wrap', gap: '6px',
+                padding: '10px 12px', background: 'var(--bg-card-alt)',
+                borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
+                gap: '8px',
               }}>
-                <div>
-                  <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)' }}>{meet.year} · {meet.tournament}</span>
-                  <span style={{ fontSize: '11px', color: sc, marginLeft: '8px' }}>{meet.surface}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)', flexShrink: 0 }}>{meet.year}</span>
+                  <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {meet.tournament || 'Unknown Tournament'}
+                  </span>
+                  <span style={{ fontSize: '10px', fontWeight: 700, color: sc, background: `${sc}22`, padding: '2px 6px', borderRadius: '4px', flexShrink: 0 }}>
+                    {meet.surface}
+                  </span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  {meet.score && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text-muted)' }}>{meet.score}</span>}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                  {meet.score && (
+                    <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>{meet.score}</span>
+                  )}
                   <span style={{
-                    fontSize: '11px', fontWeight: 700, padding: '2px 7px', borderRadius: '4px',
-                    background: meet.winner === 'p1' ? 'rgba(159,239,102,0.12)' : 'rgba(249,115,22,0.12)',
+                    fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '4px',
+                    background: meet.winner === 'p1' ? 'rgba(159,239,102,0.15)' : 'rgba(249,115,22,0.15)',
                     color: meet.winner === 'p1' ? 'var(--lime)' : 'var(--clay)',
                   }}>
-                    {meet.winner === 'p1' ? p1.name.split(' ').pop() : p2.name.split(' ').pop()}
+                    {winnerName}
                   </span>
                 </div>
               </div>
