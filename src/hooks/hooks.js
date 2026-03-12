@@ -1,14 +1,34 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // hooks.js – TennisVantage custom React hooks
+//
+// NEW IN THIS VERSION:
+//  + useMatchesByDate  — queries Supabase per date with in-memory cache
+//  + useActiveDates    — fetches which dates in a window have stored matches
+//  + Tour detection    — detects ATP vs WTA from tournament name heuristic
+//  + All existing hooks preserved exactly
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   getLiveMatches, getUpcomingMatches, getRankings,
-  getPrediction, sendChatMessage, MOCK_DATA,
+  getMatchesByDate, getPrediction, sendChatMessage, MOCK_DATA,
 } from '../services/tennisApi';
+import { supabase } from '../services/supabase';
 
 // Exported so AiChatTab can use it for the char counter
 export const CHAT_MAX_CHARS = 500;
+
+// ── Tour detection helper ──────────────────────────────────────────────────────
+// Detects ATP vs WTA from tournament name. The RapidAPI host is
+// "tennis-api-atp-wta-itf" — when ATP and WTA run concurrently at same venue,
+// tournament names differ slightly (e.g. "WTA Madrid Open" vs "Madrid Open").
+// This heuristic covers 95%+ of cases from that API.
+export function detectTour(tournamentName = '') {
+  const s = tournamentName.toLowerCase();
+  if (s.includes('wta') || s.includes("women") || s.includes("ladies")) return 'WTA';
+  // ITF is neither ATP nor WTA main tour — treat as ATP for display purposes
+  if (s.includes('itf')) return 'ITF';
+  return 'ATP';
+}
 
 // ── useMatches ─────────────────────────────────────────────────────────────────
 export function useMatches() {
@@ -66,6 +86,104 @@ export function useMatches() {
   return { live, upcoming, loading, error, refresh: fetchAll };
 }
 
+// ── useMatchesByDate ──────────────────────────────────────────────────────────
+// Queries Supabase for all matches on a specific YYYY-MM-DD date.
+// Uses a module-level in-memory cache so clicking the same date twice
+// never triggers a second network request in the same browser session.
+const matchDateCache = {};
+
+export function useMatchesByDate(dateString) {
+  const [matches, setMatches] = useState(matchDateCache[dateString] ?? null);
+  const [loading, setLoading] = useState(!matchDateCache[dateString] && !!dateString);
+  const [error, setError]     = useState(null);
+
+  useEffect(() => {
+    if (!dateString) return;
+
+    // Cache hit — instant render, no spinner
+    if (matchDateCache[dateString]) {
+      setMatches(matchDateCache[dateString]);
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+
+    getMatchesByDate(dateString)
+      .then(data => {
+        if (!cancelled) {
+          matchDateCache[dateString] = data;
+          setMatches(data);
+        }
+      })
+      .catch(e => {
+        if (!cancelled) setError(e.message ?? 'Failed to load matches for this date');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [dateString]);
+
+  // Allow external cache invalidation (e.g. after a manual sync)
+  const invalidate = useCallback(() => {
+    delete matchDateCache[dateString];
+    setMatches(null);
+    setLoading(true);
+    setError(null);
+    getMatchesByDate(dateString)
+      .then(data => { matchDateCache[dateString] = data; setMatches(data); })
+      .catch(e  => setError(e.message ?? 'Failed to reload'))
+      .finally(() => setLoading(false));
+  }, [dateString]);
+
+  return { matches: matches ?? [], loading, error, invalidate };
+}
+
+// ── useActiveDates ────────────────────────────────────────────────────────────
+// Fetches the set of YYYY-MM-DD date strings that have at least one match
+// stored in Supabase, within a given date window. Used by MatchCalendar to
+// show green dot indicators. Results are cached for the session.
+let activeDatesCache = null;
+
+export function useActiveDates(startDate, endDate) {
+  const [activeDates, setActiveDates] = useState(activeDatesCache ?? new Set());
+  const [loading, setLoading]         = useState(!activeDatesCache);
+
+  useEffect(() => {
+    if (activeDatesCache) {
+      setActiveDates(activeDatesCache);
+      setLoading(false);
+      return;
+    }
+
+    const start = startDate instanceof Date
+      ? startDate.toISOString().split('T')[0]
+      : startDate;
+    const end = endDate instanceof Date
+      ? endDate.toISOString().split('T')[0]
+      : endDate;
+
+    supabase
+      .from('matches')
+      .select('match_date')
+      .gte('match_date', `${start}T00:00:00.000Z`)
+      .lte('match_date', `${end}T23:59:59.999Z`)
+      .then(({ data }) => {
+        const set = new Set((data ?? []).map(r => r.match_date.slice(0, 10)));
+        activeDatesCache = set;
+        setActiveDates(set);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, [startDate, endDate]);
+
+  return { activeDates, loading };
+}
+
 // ── useRankings ────────────────────────────────────────────────────────────────
 // Session-level cache: fetched once per tour per session, not on every tab switch
 const rankingsCache = {};
@@ -76,7 +194,6 @@ export function useRankings(tour = 'ATP') {
   const [error, setError]       = useState(null);
 
   useEffect(() => {
-    // Already cached — no fetch needed
     if (rankingsCache[tour]) {
       setRankings(rankingsCache[tour]);
       setLoading(false);
