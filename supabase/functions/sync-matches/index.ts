@@ -1,57 +1,66 @@
 // supabase/functions/sync-matches/index.ts
 // ─────────────────────────────────────────────────────────────────────────────
-// Fetches ATP + WTA fixtures for today + 7 days ahead from RapidAPI.
-// Keeps all historical matches (never deletes).
-// Marks stale "upcoming" rows as "finished" so past calendar dates show results.
-// Includes tour field on match rows for ATP/WTA filtering in the UI.
+// Syncs live and upcoming tennis matches into Supabase.
+//
+// ENDPOINTS USED:
+//
+// 1. liveTennisMatches
+//    GET https://tennisapi1.p.rapidapi.com/api/tennis/matches/live
+//    No params. Returns { events: [...] } — 28 items confirmed from screenshot.
+//    status.type = "inprogress", groundType present (e.g. "Hardcourt outdoor")
+//
+// 2. tennisEventsByDate
+//    GET https://tennisapi1.p.rapidapi.com/api/tennis/events/{day}/{month}/{year}
+//    Confirmed URL: /api/tennis/events/22/7/2025
+//    Returns { events: [...] } — 827 items on a busy day.
+//    Covers ALL tours (ATP, WTA, ITF, Challenger) — we filter to ATP+WTA only.
+//
+// STRATEGY:
+//   - Fetch live matches (1 call)
+//   - Fetch today + next 3 days by date (4 calls, parallel)
+//   - Deduplicate by event ID (live matches also appear in date results)
+//   - Filter ATP + WTA only (skip ITF/Challenger to save DB space)
+//   - Upsert players first, then matches (FK constraint order)
+//   - Store finished matches from today for H2H history (winner_id confirmed)
 // ─────────────────────────────────────────────────────────────────────────────
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import {
+  normalizeEvent,
+  extractArray,
+  resolveTour,
+} from '../_shared/normalize.ts';
 
 const RAPIDAPI_KEY     = Deno.env.get('RAPIDAPI_KEY')!;
-const RAPIDAPI_HOST    = 'tennis-api-atp-wta-itf.p.rapidapi.com';
+const RAPIDAPI_HOST    = 'tennisapi1.p.rapidapi.com';
 const SUPABASE_URL     = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SVC_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SVC_KEY);
 
-function detectSurface(name: string): string {
-  const s = (name ?? '').toLowerCase();
-  if (s.includes('clay') || s.includes('roland') || s.includes('monte') ||
-      s.includes('madrid') || s.includes('rome') || s.includes('barcelona') ||
-      s.includes('hamburg') || s.includes('estoril')) return 'Clay';
-  if (s.includes('grass') || s.includes('wimbledon') || s.includes('halle') ||
-      s.includes('queen') || s.includes('eastbourne')) return 'Grass';
-  return 'Hard';
-}
+async function rapidGet(path: string): Promise<any | null> {
+  const url = `https://${RAPIDAPI_HOST}${path}`;
+  console.log('[GET]', url);
 
-function fmt(d: Date): string {
-  return d.toISOString().split('T')[0];
-}
-
-async function rapidGet(path: string) {
-  const url = `https://${RAPIDAPI_HOST}/tennis/v2/${path}`;
-  console.log('GET', url);
   const res = await fetch(url, {
     headers: {
-      'x-rapidapi-key':  RAPIDAPI_KEY,
+      'Content-Type':    'application/json',
       'x-rapidapi-host': RAPIDAPI_HOST,
+      'x-rapidapi-key':  RAPIDAPI_KEY,
     },
   });
-  const text = await res.text();
-  console.log('RESPONSE:', text.slice(0, 800));
-  if (!res.ok) throw new Error(`${res.status}: ${text.slice(0, 300)}`);
-  return JSON.parse(text);
-}
 
-function extractArray(data: any): any[] {
-  if (Array.isArray(data))           return data;
-  if (Array.isArray(data?.result))   return data.result;
-  if (Array.isArray(data?.results))  return data.results;
-  if (Array.isArray(data?.data))     return data.data;
-  if (Array.isArray(data?.fixtures)) return data.fixtures;
-  if (Array.isArray(data?.matches))  return data.matches;
-  console.log('UNKNOWN SHAPE:', JSON.stringify(data).slice(0, 500));
-  return [];
+  const text = await res.text();
+  if (!res.ok) {
+    // Non-fatal — log and return null so other fetches continue
+    console.warn(`[SKIP ${res.status}] ${url} — ${text.slice(0, 150)}`);
+    return null;
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    console.warn(`[PARSE ERROR] ${url}`);
+    return null;
+  }
 }
 
 Deno.serve(async (req: Request) => {
@@ -67,157 +76,130 @@ Deno.serve(async (req: Request) => {
   const log: string[]    = [];
   const errors: string[] = [];
 
+  // ── Collect all raw events — deduplicated by ID ────────────────────────────
+  const rawEventsMap = new Map<string, any>();
+
+  // ── 1. Live matches (single call, all tours) ───────────────────────────────
   try {
-    const today = new Date();
-    const future = new Date(today);
-    future.setDate(today.getDate() + 7); // 7-day lookahead
-    const start = fmt(today);
-    const end   = fmt(future);
+    log.push('[LIVE] Fetching /api/tennis/matches/live ...');
+    const liveRaw    = await rapidGet('/api/tennis/matches/live');
+    const liveEvents = extractArray(liveRaw);
+    log.push(`[LIVE] ${liveEvents.length} events`);
+    liveEvents.forEach((e: any) => {
+      if (e?.id) rawEventsMap.set(String(e.id), e);
+    });
+  } catch (err: unknown) {
+    errors.push(`[LIVE] ${err instanceof Error ? err.message : String(err)}`);
+  }
 
-    // ── Step 1: Mark stale "upcoming" matches as "finished" ────────────────
-    // Any match_date before yesterday at midnight that is still "upcoming"
-    // is stale — flip to "finished" so it stays visible in the calendar.
-    const cutoff = new Date(today);
-    cutoff.setDate(today.getDate() - 1);
-    cutoff.setHours(0, 0, 0, 0);
+  // ── 2. Events by date: today + next 3 days (parallel) ─────────────────────
+  // Confirmed URL pattern: /api/tennis/events/{day}/{month}/{year}
+  // day/month are plain numbers (not zero-padded) — confirmed from screenshot:
+  // https://tennisapi1.p.rapidapi.com/api/tennis/events/22/7/2025
+  const today = new Date();
+  const dateParams = Array.from({ length: 4 }, (_, offset) => {
+    const d = new Date(today);
+    d.setUTCDate(today.getUTCDate() + offset);
+    return {
+      day:   d.getUTCDate(),       // plain number, NOT zero-padded
+      month: d.getUTCMonth() + 1,  // 1-12
+      year:  d.getUTCFullYear(),
+    };
+  });
 
-    const { error: staleErr, count } = await supabase
-      .from('matches')
-      .update({ status: 'finished' })
-      .eq('status', 'upcoming')
-      .lt('match_date', cutoff.toISOString())
-      .select('id', { count: 'exact', head: true });
+  const dateFetches = dateParams.map(({ day, month, year }) =>
+    rapidGet(`/api/tennis/events/${day}/${month}/${year}`)
+      .then(raw => ({ raw, label: `${day}/${month}/${year}` }))
+  );
 
-    if (staleErr) errors.push(`Stale update error: ${staleErr.message}`);
-    else log.push(`✓ Marked ${count ?? 0} stale upcoming → finished`);
+  const dateResults = await Promise.allSettled(dateFetches);
 
-    // ── Step 2: Fetch fresh fixtures from RapidAPI ─────────────────────────
-    for (const tour of ['atp', 'wta'] as const) {
-      log.push(`[${tour.toUpperCase()}] Fetching fixtures ${start} → ${end}...`);
+  for (const result of dateResults) {
+    if (result.status !== 'fulfilled' || !result.value.raw) continue;
+    const { raw, label } = result.value;
+    const events = extractArray(raw);
+    log.push(`[DATE ${label}] ${events.length} events`);
+    events.forEach((e: any) => {
+      if (e?.id) rawEventsMap.set(String(e.id), e);
+    });
+  }
 
-      let fixtures: any[] = [];
-      try {
-        const raw = await rapidGet(`${tour}/fixtures/${start}/${end}`);
-        fixtures  = extractArray(raw);
-      } catch (e: any) {
-        errors.push(`[${tour.toUpperCase()}] API fetch failed: ${e.message}`);
-        continue;
-      }
+  log.push(`[DEDUP] ${rawEventsMap.size} unique events total`);
 
-      log.push(`[${tour.toUpperCase()}] Got ${fixtures.length} fixtures`);
-      if (fixtures.length > 0) {
-        log.push(`[${tour.toUpperCase()}] Sample: ${JSON.stringify(fixtures[0]).slice(0, 300)}`);
-      }
+  // ── 3. Normalize + separate live/upcoming from finished ────────────────────
+  const playersMap              = new Map<string, object>();
+  const liveAndUpcomingRows:    object[] = [];
+  const finishedTodayRows:      object[] = [];
+  let   skippedNonATPWTA        = 0;
+  let   skippedMissingFields    = 0;
 
-      const playersMap = new Map<string, object>();
-      const matchRows: object[] = [];
-
-      for (const r of fixtures) {
-        const matchId = String(r.id ?? r.fixture_id ?? r.match_id ?? '');
-        const p1Name  = String(r.player1?.name ?? r.homeTeam?.name ?? '');
-        const p2Name  = String(r.player2?.name ?? r.awayTeam?.name ?? '');
-        const p1Id    = String(r.player1Id ?? r.player1?.id ?? p1Name.replace(/\s+/g, '-').toLowerCase());
-        const p2Id    = String(r.player2Id ?? r.player2?.id ?? p2Name.replace(/\s+/g, '-').toLowerCase());
-
-        if (!matchId || !p1Name || !p2Name) continue;
-
-        const statusRaw = String(
-          r.status?.short ?? r.status?.name ?? r.status ?? r.state ?? ''
-        ).toLowerCase();
-
-        let status: 'live' | 'upcoming' | 'finished' = 'upcoming';
-        if (['1p','2p','live','in_play','inprogress','playing'].some(s => statusRaw.includes(s))) status = 'live';
-        if (['fin','ft','finished','complete','ended','aet','retired'].some(s => statusRaw.includes(s))) status = 'finished';
-
-        const tournament = String(
-          r.tournament?.name ?? r.league?.name ??
-          r.competition?.name ?? r.tournamentName ?? 'Unknown Tournament'
-        );
-        const round   = String(r.round?.name ?? r.round ?? r.stage ?? '');
-        const surface = detectSurface(tournament);
-
-        // Score — prefer set-by-set format
-        let score: string | null = null;
-        if (r.sets && Array.isArray(r.sets)) {
-          score = r.sets.map((s: any) => `${s.home ?? s.player1 ?? 0}-${s.away ?? s.player2 ?? 0}`).join(', ');
-        } else if (r.scores?.home != null && r.scores?.away != null) {
-          score = `${r.scores.home}-${r.scores.away}`;
-        } else if (r.score) {
-          score = String(r.score);
-        }
-
-        const rawDate    = String(r.date ?? r.startTime ?? r.fixture_date ?? r.match_date ?? '');
-        const match_date = rawDate ? new Date(rawDate).toISOString() : new Date().toISOString();
-
-        matchRows.push({
-          id: matchId,
-          status,
-          tournament,
-          round,
-          surface,
-          score,
-          match_date,
-          player1_id: p1Id,
-          player2_id: p2Id,
-          // tour column — lets the UI filter without string heuristics
-          tour: tour.toUpperCase(),
-        });
-
-        if (!playersMap.has(p1Id)) {
-          playersMap.set(p1Id, {
-            id: p1Id, name: p1Name,
-            country: String(r.player1?.countryAcr ?? r.player1?.country?.code ?? ''),
-            flag: '🏳️', rank: 999, wins: 0, losses: 0,
-            ace_avg: 5.5,
-            surface_pref: detectSurface(String(r.tournament?.name ?? '')),
-            first_serve_pct: 60, recent_form: '- - - - -',
-            injury_notes: null, fatigue_score: 0,
-          });
-        }
-        if (!playersMap.has(p2Id)) {
-          playersMap.set(p2Id, {
-            id: p2Id, name: p2Name,
-            country: String(r.player2?.countryAcr ?? r.player2?.country?.code ?? ''),
-            flag: '🏳️', rank: 999, wins: 0, losses: 0,
-            ace_avg: 5.5,
-            surface_pref: detectSurface(String(r.tournament?.name ?? '')),
-            first_serve_pct: 60, recent_form: '- - - - -',
-            injury_notes: null, fatigue_score: 0,
-          });
-        }
-      }
-
-      // Upsert players first (FK constraint safety)
-      if (playersMap.size > 0) {
-        const { error } = await supabase
-          .from('players')
-          .upsert([...playersMap.values()], { onConflict: 'id', ignoreDuplicates: true });
-        if (error) errors.push(`[${tour.toUpperCase()}] Players upsert: ${error.message}`);
-        else log.push(`[${tour.toUpperCase()}] ✓ Upserted ${playersMap.size} players`);
-      }
-
-      // Upsert matches — ignoreDuplicates: false so status/score get updated
-      if (matchRows.length > 0) {
-        const { error } = await supabase
-          .from('matches')
-          .upsert(matchRows, { onConflict: 'id', ignoreDuplicates: false });
-        if (error) errors.push(`[${tour.toUpperCase()}] Matches upsert: ${error.message}`);
-        else log.push(`[${tour.toUpperCase()}] ✓ Upserted ${matchRows.length} matches`);
-      } else {
-        log.push(`[${tour.toUpperCase()}] No fixtures in this window`);
-      }
+  for (const rawEvent of rawEventsMap.values()) {
+    // Filter: ATP and WTA only — skip ITF, Challenger, etc.
+    const tour = resolveTour(rawEvent);
+    if (!tour) {
+      skippedNonATPWTA++;
+      continue;
     }
 
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    errors.push(`FATAL: ${msg}`);
+    const normalized = normalizeEvent(rawEvent);
+    if (!normalized) {
+      skippedMissingFields++;
+      continue;
+    }
+
+    const { match, player1, player2 } = normalized;
+
+    // Separate finished (for H2H history) from active
+    if (match.status === 'finished') {
+      finishedTodayRows.push(match);
+    } else {
+      liveAndUpcomingRows.push(match);
+    }
+
+    // Collect unique players
+    if (!playersMap.has(player1.id)) playersMap.set(player1.id, player1);
+    if (!playersMap.has(player2.id)) playersMap.set(player2.id, player2);
+  }
+
+  log.push(
+    `[NORMALIZE] live+upcoming: ${liveAndUpcomingRows.length} | ` +
+    `finished: ${finishedTodayRows.length} | ` +
+    `skipped (non-ATP/WTA): ${skippedNonATPWTA} | ` +
+    `skipped (bad data): ${skippedMissingFields}`
+  );
+
+  // ── 4. Upsert players FIRST (FK safety) ───────────────────────────────────
+  if (playersMap.size > 0) {
+    const { error } = await supabase
+      .from('players')
+      .upsert([...playersMap.values()], { onConflict: 'id', ignoreDuplicates: true });
+    if (error) errors.push(`[DB] players: ${error.message}`);
+    else log.push(`[DB] ✓ Upserted ${playersMap.size} players`);
+  }
+
+  // ── 5. Upsert live + upcoming matches ─────────────────────────────────────
+  if (liveAndUpcomingRows.length > 0) {
+    const { error } = await supabase
+      .from('matches')
+      .upsert(liveAndUpcomingRows, { onConflict: 'id', ignoreDuplicates: false });
+    if (error) errors.push(`[DB] live/upcoming matches: ${error.message}`);
+    else log.push(`[DB] ✓ Upserted ${liveAndUpcomingRows.length} live/upcoming matches`);
+  }
+
+  // ── 6. Upsert finished matches from today (H2H history, don't overwrite) ──
+  if (finishedTodayRows.length > 0) {
+    const { error } = await supabase
+      .from('matches')
+      .upsert(finishedTodayRows, { onConflict: 'id', ignoreDuplicates: true });
+    if (error) errors.push(`[DB] finished matches: ${error.message}`);
+    else log.push(`[DB] ✓ Upserted ${finishedTodayRows.length} finished matches`);
   }
 
   return new Response(
     JSON.stringify({ ok: errors.length === 0, log, errors }),
     {
-      status: errors.length ? 207 : 200,
+      status:  errors.length ? 207 : 200,
       headers: { 'Content-Type': 'application/json' },
-    }
+    },
   );
 });
