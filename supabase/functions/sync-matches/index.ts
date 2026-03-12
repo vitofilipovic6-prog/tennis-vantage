@@ -1,16 +1,8 @@
 // supabase/functions/sync-matches/index.ts
 // ─────────────────────────────────────────────────────────────────────────────
 // Syncs live, upcoming, AND recent past matches into Supabase.
-//
-// CHANGE vs old version:
-//   - Now fetches 2 days BEFORE today in addition to today + 3 days ahead
-//     (so the calendar's past dates have real data, not stale old-API records)
-//   - Adds a "stale cleanup" step: deletes upcoming/live rows older than 2 days
-//     (these are leftover from the old API and will never transition to finished)
-//
-// ENDPOINTS USED:
-//   GET /api/tennis/matches/live           — all live matches
-//   GET /api/tennis/events/{d}/{m}/{y}     — all events on a given date
+// KEY CHANGE: normalizeEvent now receives `tour` so every match row has the
+// correct tour column. Filter works from DB, not from name-string guessing.
 // ─────────────────────────────────────────────────────────────────────────────
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import {
@@ -65,9 +57,7 @@ Deno.serve(async (req: Request) => {
   const errors: string[] = [];
 
   // ── 0. STALE CLEANUP ──────────────────────────────────────────────────────
-  // Delete any rows stuck as "upcoming" or "live" from 3+ days ago.
-  // These are guaranteed to be old-API ghosts — real matches either
-  // finished (status='finished') or got re-synced with correct IDs.
+  // Delete any rows stuck as upcoming/live from 3+ days ago (old API ghosts).
   try {
     const cutoff = new Date();
     cutoff.setUTCDate(cutoff.getUTCDate() - 3);
@@ -104,8 +94,7 @@ Deno.serve(async (req: Request) => {
     errors.push(`[LIVE] ${err instanceof Error ? err.message : String(err)}`);
   }
 
-  // ── 2. Events by date: 2 days ago → today + 3 days ahead (6 calls total) ──
-  // CHANGED: offsets now start at -2 so past calendar dates have real data
+  // ── 2. Events by date: 2 days ago → today + 3 days ahead ──────────────────
   const today = new Date();
   const dateParams = Array.from({ length: 6 }, (_, i) => {
     const offset = i - 2; // -2, -1, 0, +1, +2, +3
@@ -115,13 +104,13 @@ Deno.serve(async (req: Request) => {
       day:    d.getUTCDate(),
       month:  d.getUTCMonth() + 1,
       year:   d.getUTCFullYear(),
-      offset, // keep for logging
+      offset,
     };
   });
 
   const dateFetches = dateParams.map(({ day, month, year, offset }) =>
     rapidGet(`/api/tennis/events/${day}/${month}/${year}`)
-      .then(raw => ({ raw, label: `${day}/${month}/${year} (offset ${offset > 0 ? '+' : ''}${offset})` }))
+      .then(raw => ({ raw, label: `${day}/${month}/${year} (offset ${offset >= 0 ? '+' : ''}${offset})` }))
   );
 
   const dateResults = await Promise.allSettled(dateFetches);
@@ -139,20 +128,22 @@ Deno.serve(async (req: Request) => {
   log.push(`[DEDUP] ${rawEventsMap.size} unique events total`);
 
   // ── 3. Normalize + separate live/upcoming from finished ────────────────────
-  const playersMap              = new Map<string, object>();
-  const liveAndUpcomingRows:    object[] = [];
-  const finishedRows:           object[] = [];
-  let   skippedNonATPWTA        = 0;
-  let   skippedMissingFields    = 0;
+  const playersMap           = new Map<string, object>();
+  const liveAndUpcomingRows: object[] = [];
+  const finishedRows:        object[] = [];
+  let   skippedNonATPWTA    = 0;
+  let   skippedMissingFields = 0;
 
   for (const rawEvent of rawEventsMap.values()) {
+    // resolveTour reads category.slug from the API — authoritative, not guessed
     const tour = resolveTour(rawEvent);
     if (!tour) {
       skippedNonATPWTA++;
       continue;
     }
 
-    const normalized = normalizeEvent(rawEvent);
+    // Pass tour directly into normalizeEvent — it gets stored in the DB row
+    const normalized = normalizeEvent(rawEvent, tour);
     if (!normalized) {
       skippedMissingFields++;
       continue;
@@ -196,7 +187,6 @@ Deno.serve(async (req: Request) => {
   }
 
   // ── 6. Upsert finished matches (H2H history) ──────────────────────────────
-  // ignoreDuplicates: false — allow score/winner updates if re-synced
   if (finishedRows.length > 0) {
     const { error } = await supabase
       .from('matches')

@@ -1,6 +1,6 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// hooks.js – TennisVantage custom React hooks
-// ─────────────────────────────────────────────────────────────────────────────
+// src/hooks/hooks.js
+// KEY CHANGE: detectTour now reads match.tour directly from the DB field.
+// The old name-string heuristic is kept only as a last-resort fallback.
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   getLiveMatches, getUpcomingMatches, getRankings,
@@ -10,9 +10,20 @@ import { supabase } from '../services/supabase';
 
 export const CHAT_MAX_CHARS = 500;
 
-// ── Tour detection helper ─────────────────────────────────────────────────────
-export function detectTour(tournamentName = '') {
-  const s = tournamentName.toLowerCase();
+// ── Tour detection ────────────────────────────────────────────────────────────
+// PRIMARY: read the `tour` field that sync-matches stores in the DB.
+// FALLBACK: name heuristic for any rows that predate the migration.
+export function detectTour(tournamentNameOrMatch) {
+  // If called with a full match object, prefer the DB field
+  if (tournamentNameOrMatch && typeof tournamentNameOrMatch === 'object') {
+    if (tournamentNameOrMatch.tour === 'WTA') return 'WTA';
+    if (tournamentNameOrMatch.tour === 'ATP') return 'ATP';
+    // Fall through to name heuristic using the tournament string
+    return detectTour(tournamentNameOrMatch.tournament ?? '');
+  }
+
+  // String fallback (legacy / defensive)
+  const s = String(tournamentNameOrMatch ?? '').toLowerCase();
   if (s.includes('wta') || s.includes('women') || s.includes('ladies')) return 'WTA';
   if (s.includes('itf')) return 'ITF';
   return 'ATP';
@@ -72,7 +83,6 @@ export function useMatches() {
 }
 
 // ── useMatchesByDate ──────────────────────────────────────────────────────────
-// In-memory cache so clicking the same date twice never re-fetches
 const matchDateCache = {};
 
 export function useMatchesByDate(dateString) {
@@ -125,16 +135,23 @@ export function useMatchesByDate(dateString) {
 }
 
 // ── useActiveDates ────────────────────────────────────────────────────────────
-// Returns a Set of YYYY-MM-DD strings that have matches in Supabase.
-// Used by MatchCalendar to show green dot indicators.
 let activeDatesCache = null;
+let activeDatesCacheTime = 0;
+const ACTIVE_DATES_TTL = 5 * 60 * 1000; // 5 minutes
 
 export function useActiveDates(startDate, endDate) {
-  const [activeDates, setActiveDates] = useState(activeDatesCache ?? new Set());
-  const [loading, setLoading]         = useState(!activeDatesCache);
+  const isStale = Date.now() - activeDatesCacheTime > ACTIVE_DATES_TTL;
+
+  const [activeDates, setActiveDates] = useState(
+    (activeDatesCache && !isStale) ? activeDatesCache : new Set()
+  );
+  const [loading, setLoading] = useState(!activeDatesCache || isStale);
 
   useEffect(() => {
-    if (activeDatesCache) {
+    const now = Date.now();
+    const stale = now - activeDatesCacheTime > ACTIVE_DATES_TTL;
+
+    if (activeDatesCache && !stale) {
       setActiveDates(activeDatesCache);
       setLoading(false);
       return;
@@ -154,7 +171,8 @@ export function useActiveDates(startDate, endDate) {
       .lte('match_date', `${end}T23:59:59.999Z`)
       .then(({ data }) => {
         const set = new Set((data ?? []).map(r => r.match_date.slice(0, 10)));
-        activeDatesCache = set;
+        activeDatesCache     = set;
+        activeDatesCacheTime = Date.now();
         setActiveDates(set);
         setLoading(false);
       })
@@ -231,7 +249,7 @@ export function usePlayerSearch() {
     if (!query.trim()) { setResults([]); return; }
     const lower      = query.toLowerCase();
     const allPlayers = [
-      ...(MOCK_DATA.atpPlayers ?? MOCK_DATA.players ?? []),
+      ...(MOCK_DATA.players ?? []),
       ...(MOCK_DATA.wtaPlayers ?? []),
     ];
     setResults(allPlayers.filter(p => p.name.toLowerCase().includes(lower)));
