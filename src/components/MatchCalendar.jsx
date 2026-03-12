@@ -1,19 +1,19 @@
+// src/components/MatchCalendar.jsx
 // ─────────────────────────────────────────────────────────────────────────────
-// MatchCalendar.jsx – Horizontal date strip + ATP/WTA tour filter pills
-//
-// NEW IN THIS VERSION:
-//  + 30-day window (14 past, today, 15 future)
-//  + Green dot indicators on dates that have stored matches in Supabase
-//  + ATP / WTA / All filter pills — emits tourFilter to parent
-//  + Fires today's date on mount so the parent loads data immediately
-//  + Past dates dimmed slightly; today always highlighted
-//  + Timezone-safe: uses local date comparison, not UTC
+// FIXES vs original:
+//  + 30-day window (14 past, today, 15 future) instead of 15 days
+//  + Removed overflow:hidden from wrapper — was clipping the scroll strip
+//  + Green dot on dates that have matches in Supabase (useActiveDates)
+//  + ATP / WTA / All tour filter pills — emits choice via onTourFilter prop
+//  + Fires today's date on mount so parent loads immediately (no blank screen)
+//  + Past dates dimmed at 50% opacity
+//  + Timezone-safe date comparison (local midnight, not UTC)
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { useActiveDates } from '../hooks/hooks';
 
 export default function MatchCalendar({ onSelectDate, onTourFilter }) {
-  // Build today at midnight local time — avoids UTC off-by-one issues
+  // Build today at local midnight — avoids UTC off-by-one on the date strip
   const todayRef = useRef((() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -32,13 +32,12 @@ export default function MatchCalendar({ onSelectDate, onTourFilter }) {
   const windowEnd   = dates[dates.length - 1];
 
   const [selectedDate, setSelectedDate] = useState(today);
-  const [tourFilter, setTourFilter]     = useState('All'); // 'All' | 'ATP' | 'WTA'
+  const [tourFilter, setTourFilter]     = useState('All');
   const scrollRef = useRef(null);
 
-  // Fetch which dates have stored matches (for dot indicators)
   const { activeDates } = useActiveDates(windowStart, windowEnd);
 
-  // Scroll "today" into center on mount
+  // Scroll today into centre of strip on mount
   useEffect(() => {
     if (scrollRef.current) {
       const el = scrollRef.current.querySelector('[data-today="true"]');
@@ -46,15 +45,13 @@ export default function MatchCalendar({ onSelectDate, onTourFilter }) {
     }
   }, []);
 
-  // Fire today on mount so the parent immediately loads today's matches
+  // Fire today immediately on mount so MatchesTab loads without waiting for a click
   useEffect(() => {
-    const str = toDateStr(today);
-    onSelectDate?.(today, str);
+    onSelectDate?.(today, toDateStr(today));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function toDateStr(d) {
-    // Local YYYY-MM-DD — avoids UTC shift
     const y  = d.getFullYear();
     const mo = String(d.getMonth() + 1).padStart(2, '0');
     const dy = String(d.getDate()).padStart(2, '0');
@@ -67,10 +64,6 @@ export default function MatchCalendar({ onSelectDate, onTourFilter }) {
       a.getMonth()    === b.getMonth()    &&
       a.getDate()     === b.getDate()
     );
-  }
-
-  function isPast(d) {
-    return d < today;
   }
 
   function handleDateSelect(date) {
@@ -86,11 +79,8 @@ export default function MatchCalendar({ onSelectDate, onTourFilter }) {
   return (
     <div style={{ width: '100%', marginBottom: '28px' }}>
 
-      {/* ── ATP / WTA / All filter pills ─────────────────────────────────── */}
-      <div style={{
-        display: 'flex', gap: '8px', marginBottom: '14px',
-        flexWrap: 'wrap', alignItems: 'center',
-      }}>
+      {/* ── Tour filter pills ─────────────────────────────────────────────── */}
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '14px', flexWrap: 'wrap', alignItems: 'center' }}>
         <span style={{
           fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em',
           textTransform: 'uppercase', color: 'var(--text-faint)',
@@ -107,7 +97,7 @@ export default function MatchCalendar({ onSelectDate, onTourFilter }) {
               borderRadius: '999px',
               border: tourFilter === t ? 'none' : '1px solid var(--border)',
               background: tourFilter === t
-                ? t === 'WTA' ? '#f472b6' : t === 'ATP' ? 'var(--lime)' : 'var(--lime)'
+                ? t === 'WTA' ? '#f472b6' : 'var(--lime)'
                 : 'var(--bg-glass-md)',
               color: tourFilter === t ? '#070B14' : 'var(--text-muted)',
               fontFamily: 'var(--font-body)',
@@ -116,6 +106,7 @@ export default function MatchCalendar({ onSelectDate, onTourFilter }) {
               cursor: 'pointer',
               transition: 'var(--t)',
               letterSpacing: '0.04em',
+              WebkitTapHighlightColor: 'transparent',
             }}
           >
             {t}
@@ -124,14 +115,18 @@ export default function MatchCalendar({ onSelectDate, onTourFilter }) {
       </div>
 
       {/* ── Date strip ───────────────────────────────────────────────────── */}
-      <div style={{ width: '100%', overflowX: 'hidden' }}>
+      {/* NOTE: outer div must NOT have overflow:hidden — it clips the scroll */}
+      <div style={{ width: '100%' }}>
+        <style>{`.tv-cal-strip::-webkit-scrollbar { display: none; }`}</style>
         <div
           ref={scrollRef}
+          className="tv-cal-strip"
           style={{
             display: 'flex',
             gap: '8px',
             overflowX: 'auto',
             paddingBottom: '6px',
+            paddingTop: '2px',
             scrollbarWidth: 'none',
             msOverflowStyle: 'none',
             WebkitOverflowScrolling: 'touch',
@@ -140,12 +135,12 @@ export default function MatchCalendar({ onSelectDate, onTourFilter }) {
           {dates.map((date, i) => {
             const isSelected = isSameDay(date, selectedDate);
             const isToday    = isSameDay(date, today);
-            const past       = isPast(date) && !isToday;
+            const isPast     = date < today && !isToday;
             const dateStr    = toDateStr(date);
             const hasMatches = activeDates.has(dateStr);
-            const dayName    = date.toLocaleDateString('en-US', { weekday: 'short' });
+            const dayName    = date.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
             const dayNum     = date.getDate();
-            const monthName  = date.toLocaleDateString('en-US', { month: 'short' });
+            const monthName  = date.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
 
             return (
               <button
@@ -159,7 +154,7 @@ export default function MatchCalendar({ onSelectDate, onTourFilter }) {
                   justifyContent: 'center',
                   gap:            '3px',
                   flexShrink:     0,
-                  minWidth:       '60px',
+                  minWidth:       '64px',
                   padding:        '10px 8px',
                   border: `1px solid ${
                     isSelected
@@ -174,14 +169,14 @@ export default function MatchCalendar({ onSelectDate, onTourFilter }) {
                     : isToday
                       ? 'rgba(159,239,102,0.05)'
                       : 'var(--bg-card)',
-                  cursor:         'pointer',
-                  transition:     'var(--t)',
-                  outline:        'none',
-                  opacity:        past && !isSelected ? 0.5 : 1,
-                  fontFamily:     'var(--font-body)',
+                  cursor:     'pointer',
+                  transition: 'var(--t)',
+                  outline:    'none',
+                  opacity:    isPast && !isSelected ? 0.5 : 1,
+                  fontFamily: 'var(--font-body)',
+                  WebkitTapHighlightColor: 'transparent',
                 }}
               >
-                {/* Day name */}
                 <span style={{
                   fontSize: '10px', fontWeight: 700,
                   letterSpacing: '0.07em', textTransform: 'uppercase',
@@ -190,7 +185,6 @@ export default function MatchCalendar({ onSelectDate, onTourFilter }) {
                   {isToday ? 'TODAY' : dayName}
                 </span>
 
-                {/* Day number */}
                 <span style={{
                   fontSize: '20px', fontWeight: 700,
                   fontFamily: 'var(--font-display)',
@@ -200,7 +194,6 @@ export default function MatchCalendar({ onSelectDate, onTourFilter }) {
                   {dayNum}
                 </span>
 
-                {/* Month */}
                 <span style={{
                   fontSize: '10px', fontWeight: 500,
                   letterSpacing: '0.05em', textTransform: 'uppercase',
@@ -209,13 +202,11 @@ export default function MatchCalendar({ onSelectDate, onTourFilter }) {
                   {monthName}
                 </span>
 
-                {/* Dot indicator — green if matches exist, faint dot placeholder otherwise */}
+                {/* Green dot if matches stored for this date, faint placeholder otherwise */}
                 <span style={{
                   width: '5px', height: '5px',
                   borderRadius: '50%',
-                  background: hasMatches
-                    ? 'var(--lime)'
-                    : 'rgba(255,255,255,0.08)',
+                  background: hasMatches ? 'var(--lime)' : 'rgba(255,255,255,0.08)',
                   marginTop: '2px',
                   transition: 'background 0.25s',
                   flexShrink: 0,
@@ -224,7 +215,6 @@ export default function MatchCalendar({ onSelectDate, onTourFilter }) {
             );
           })}
         </div>
-        <style>{`div::-webkit-scrollbar { display: none; }`}</style>
       </div>
     </div>
   );

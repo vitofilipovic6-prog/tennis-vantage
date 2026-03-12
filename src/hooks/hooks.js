@@ -1,11 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // hooks.js – TennisVantage custom React hooks
-//
-// NEW IN THIS VERSION:
-//  + useMatchesByDate  — queries Supabase per date with in-memory cache
-//  + useActiveDates    — fetches which dates in a window have stored matches
-//  + Tour detection    — detects ATP vs WTA from tournament name heuristic
-//  + All existing hooks preserved exactly
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
@@ -14,23 +8,17 @@ import {
 } from '../services/tennisApi';
 import { supabase } from '../services/supabase';
 
-// Exported so AiChatTab can use it for the char counter
 export const CHAT_MAX_CHARS = 500;
 
-// ── Tour detection helper ──────────────────────────────────────────────────────
-// Detects ATP vs WTA from tournament name. The RapidAPI host is
-// "tennis-api-atp-wta-itf" — when ATP and WTA run concurrently at same venue,
-// tournament names differ slightly (e.g. "WTA Madrid Open" vs "Madrid Open").
-// This heuristic covers 95%+ of cases from that API.
+// ── Tour detection helper ─────────────────────────────────────────────────────
 export function detectTour(tournamentName = '') {
   const s = tournamentName.toLowerCase();
-  if (s.includes('wta') || s.includes("women") || s.includes("ladies")) return 'WTA';
-  // ITF is neither ATP nor WTA main tour — treat as ATP for display purposes
+  if (s.includes('wta') || s.includes('women') || s.includes('ladies')) return 'WTA';
   if (s.includes('itf')) return 'ITF';
   return 'ATP';
 }
 
-// ── useMatches ─────────────────────────────────────────────────────────────────
+// ── useMatches ────────────────────────────────────────────────────────────────
 export function useMatches() {
   const [live, setLive]         = useState([]);
   const [upcoming, setUpcoming] = useState([]);
@@ -57,12 +45,9 @@ export function useMatches() {
   useEffect(() => {
     fetchAll();
 
-    // Poll live matches every 30s — but only when tab is visible
     function startPoll() {
       intervalRef.current = setInterval(() => {
-        if (!document.hidden) {
-          getLiveMatches().then(setLive).catch(() => {});
-        }
+        if (!document.hidden) getLiveMatches().then(setLive).catch(() => {});
       }, 30_000);
     }
 
@@ -87,9 +72,7 @@ export function useMatches() {
 }
 
 // ── useMatchesByDate ──────────────────────────────────────────────────────────
-// Queries Supabase for all matches on a specific YYYY-MM-DD date.
-// Uses a module-level in-memory cache so clicking the same date twice
-// never triggers a second network request in the same browser session.
+// In-memory cache so clicking the same date twice never re-fetches
 const matchDateCache = {};
 
 export function useMatchesByDate(dateString) {
@@ -100,7 +83,6 @@ export function useMatchesByDate(dateString) {
   useEffect(() => {
     if (!dateString) return;
 
-    // Cache hit — instant render, no spinner
     if (matchDateCache[dateString]) {
       setMatches(matchDateCache[dateString]);
       setLoading(false);
@@ -128,7 +110,6 @@ export function useMatchesByDate(dateString) {
     return () => { cancelled = true; };
   }, [dateString]);
 
-  // Allow external cache invalidation (e.g. after a manual sync)
   const invalidate = useCallback(() => {
     delete matchDateCache[dateString];
     setMatches(null);
@@ -144,9 +125,8 @@ export function useMatchesByDate(dateString) {
 }
 
 // ── useActiveDates ────────────────────────────────────────────────────────────
-// Fetches the set of YYYY-MM-DD date strings that have at least one match
-// stored in Supabase, within a given date window. Used by MatchCalendar to
-// show green dot indicators. Results are cached for the session.
+// Returns a Set of YYYY-MM-DD strings that have matches in Supabase.
+// Used by MatchCalendar to show green dot indicators.
 let activeDatesCache = null;
 
 export function useActiveDates(startDate, endDate) {
@@ -184,8 +164,7 @@ export function useActiveDates(startDate, endDate) {
   return { activeDates, loading };
 }
 
-// ── useRankings ────────────────────────────────────────────────────────────────
-// Session-level cache: fetched once per tour per session, not on every tab switch
+// ── useRankings ───────────────────────────────────────────────────────────────
 const rankingsCache = {};
 
 export function useRankings(tour = 'ATP') {
@@ -228,11 +207,7 @@ export function usePrediction(match) {
   const matchId = match?.id ?? null;
 
   useEffect(() => {
-    if (!matchId) {
-      setPrediction(null);
-      setError(null);
-      return;
-    }
+    if (!matchId) { setPrediction(null); setError(null); return; }
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -247,7 +222,7 @@ export function usePrediction(match) {
   return { prediction, loading, error };
 }
 
-// ── usePlayerSearch ────────────────────────────────────────────────────────────
+// ── usePlayerSearch ───────────────────────────────────────────────────────────
 export function usePlayerSearch() {
   const [query, setQuery]     = useState('');
   const [results, setResults] = useState([]);
@@ -269,15 +244,12 @@ export function usePlayerSearch() {
 export function useAiChat(contextMatch = null) {
   const GREETING = "Hi! I'm your AI tennis analyst. Ask me anything about match predictions, player stats, or tournament strategies.";
 
-  const [messages, setMessages] = useState([
-    { role: 'assistant', content: GREETING },
-  ]);
-  const [typing, setTyping] = useState(false);
-  const bottomRef           = useRef(null);
-  const messagesRef         = useRef(messages);
+  const [messages, setMessages] = useState([{ role: 'assistant', content: GREETING }]);
+  const [typing, setTyping]     = useState(false);
+  const bottomRef               = useRef(null);
+  const messagesRef             = useRef(messages);
 
   useEffect(() => { messagesRef.current = messages; }, [messages]);
-
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, typing]);
@@ -293,18 +265,12 @@ export function useAiChat(contextMatch = null) {
         ? `You are a professional tennis analyst. Context: ${contextMatch.player1.name} vs ${contextMatch.player2.name} on ${contextMatch.surface} at ${contextMatch.tournament}, ${contextMatch.round}.`
         : 'You are a professional tennis analyst. Provide insightful, data-driven analysis.';
 
-      const history = [...messagesRef.current, userMsg].map(m => ({
-        role: m.role, content: m.content,
-      }));
-
+      const history  = [...messagesRef.current, userMsg].map(m => ({ role: m.role, content: m.content }));
       const response = await sendChatMessage(history, systemContext);
       const aiText   = response?.content?.[0]?.text ?? "Sorry, I couldn't process that.";
       setMessages(prev => [...prev, { role: 'assistant', content: aiText }]);
     } catch {
-      setMessages(prev => [
-        ...prev,
-        { role: 'assistant', content: '⚠️ Connection error. Please try again.' },
-      ]);
+      setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ Connection error. Please try again.' }]);
     } finally {
       setTyping(false);
     }
@@ -317,7 +283,7 @@ export function useAiChat(contextMatch = null) {
   return { messages, typing, sendMessage, reset, bottomRef };
 }
 
-// ── useToast ───────────────────────────────────────────────────────────────────
+// ── useToast ──────────────────────────────────────────────────────────────────
 export function useToast() {
   const [toasts, setToasts] = useState([]);
   const idRef               = useRef(0);
