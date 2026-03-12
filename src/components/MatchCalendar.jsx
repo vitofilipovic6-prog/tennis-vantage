@@ -1,19 +1,8 @@
 // src/components/MatchCalendar.jsx
-// ─────────────────────────────────────────────────────────────────────────────
-// FIXES vs original:
-//  + 30-day window (14 past, today, 15 future) instead of 15 days
-//  + Removed overflow:hidden from wrapper — was clipping the scroll strip
-//  + Green dot on dates that have matches in Supabase (useActiveDates)
-//  + ATP / WTA / All tour filter pills — emits choice via onTourFilter prop
-//  + Fires today's date on mount so parent loads immediately (no blank screen)
-//  + Past dates dimmed at 50% opacity
-//  + Timezone-safe date comparison (local midnight, not UTC)
-// ─────────────────────────────────────────────────────────────────────────────
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { useActiveDates } from '../hooks/hooks';
 
-export default function MatchCalendar({ onSelectDate, onTourFilter }) {
-  // Build today at local midnight — avoids UTC off-by-one on the date strip
+export default function MatchCalendar({ onSelectDate, onTourFilter, tourFilter = 'All' }) {
   const todayRef = useRef((() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -21,7 +10,6 @@ export default function MatchCalendar({ onSelectDate, onTourFilter }) {
   })());
   const today = todayRef.current;
 
-  // 30-day window: 14 days before today through 15 days after
   const dates = useMemo(() => Array.from({ length: 30 }, (_, i) => {
     const d = new Date(today);
     d.setDate(today.getDate() - 14 + i);
@@ -32,20 +20,21 @@ export default function MatchCalendar({ onSelectDate, onTourFilter }) {
   const windowEnd   = dates[dates.length - 1];
 
   const [selectedDate, setSelectedDate] = useState(today);
-  const [tourFilter, setTourFilter]     = useState('All');
   const scrollRef = useRef(null);
-
   const { activeDates } = useActiveDates(windowStart, windowEnd);
 
-  // Scroll today into centre of strip on mount
+  // Scroll today into centre on mount
   useEffect(() => {
-    if (scrollRef.current) {
-      const el = scrollRef.current.querySelector('[data-today="true"]');
-      el?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-    }
+    const frame = requestAnimationFrame(() => {
+      if (scrollRef.current) {
+        const el = scrollRef.current.querySelector('[data-today="true"]');
+        if (el) el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+      }
+    });
+    return () => cancelAnimationFrame(frame);
   }, []);
 
-  // Fire today immediately on mount so MatchesTab loads without waiting for a click
+  // Fire today immediately on mount
   useEffect(() => {
     onSelectDate?.(today, toDateStr(today));
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -71,16 +60,14 @@ export default function MatchCalendar({ onSelectDate, onTourFilter }) {
     onSelectDate?.(date, toDateStr(date));
   }
 
-  function handleTourFilter(tour) {
-    setTourFilter(tour);
-    onTourFilter?.(tour);
-  }
-
   return (
     <div style={{ width: '100%', marginBottom: '28px' }}>
 
-      {/* ── Tour filter pills ─────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '14px', flexWrap: 'wrap', alignItems: 'center' }}>
+      {/* ── Tour filter pills ── */}
+      <div style={{
+        display: 'flex', gap: '8px', marginBottom: '14px',
+        flexWrap: 'wrap', alignItems: 'center',
+      }}>
         <span style={{
           fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em',
           textTransform: 'uppercase', color: 'var(--text-faint)',
@@ -91,13 +78,13 @@ export default function MatchCalendar({ onSelectDate, onTourFilter }) {
         {['All', 'ATP', 'WTA'].map(t => (
           <button
             key={t}
-            onClick={() => handleTourFilter(t)}
+            onClick={() => onTourFilter?.(t)}
             style={{
               padding: '5px 16px',
               borderRadius: '999px',
               border: tourFilter === t ? 'none' : '1px solid var(--border)',
               background: tourFilter === t
-                ? t === 'WTA' ? '#f472b6' : 'var(--lime)'
+                ? t === 'WTA' ? '#f472b6' : t === 'All' ? 'var(--lime)' : 'var(--lime)'
                 : 'var(--bg-glass-md)',
               color: tourFilter === t ? '#070B14' : 'var(--text-muted)',
               fontFamily: 'var(--font-body)',
@@ -114,22 +101,49 @@ export default function MatchCalendar({ onSelectDate, onTourFilter }) {
         ))}
       </div>
 
-      {/* ── Date strip ───────────────────────────────────────────────────── */}
-      {/* NOTE: outer div must NOT have overflow:hidden — it clips the scroll */}
-      <div style={{ width: '100%' }}>
-        <style>{`.tv-cal-strip::-webkit-scrollbar { display: none; }`}</style>
+      {/* ── Date strip ── */}
+      {/* 
+        KEY FIX for laptop scroll:
+        - position: relative + overflow: visible on wrapper ensures no clipping
+        - The scrollable div uses overflow-x: scroll (not auto) for reliable desktop behaviour
+        - min-width: 0 prevents flex parent from squashing it
+      */}
+      <div style={{ position: 'relative', overflow: 'visible', minWidth: 0 }}>
+        <style>{`
+          .tv-cal-strip { -ms-overflow-style: none; scrollbar-width: none; }
+          .tv-cal-strip::-webkit-scrollbar { display: none; }
+          .tv-cal-btn:hover { border-color: rgba(159,239,102,0.4) !important; opacity: 1 !important; }
+        `}</style>
         <div
           ref={scrollRef}
           className="tv-cal-strip"
           style={{
             display: 'flex',
             gap: '8px',
-            overflowX: 'auto',
-            paddingBottom: '6px',
+            overflowX: 'scroll',       /* scroll not auto — more reliable on desktop */
+            paddingBottom: '8px',
             paddingTop: '2px',
-            scrollbarWidth: 'none',
-            msOverflowStyle: 'none',
+            paddingLeft: '2px',
+            paddingRight: '2px',
             WebkitOverflowScrolling: 'touch',
+            cursor: 'grab',            /* visual hint on desktop that it's scrollable */
+          }}
+          /* Drag-to-scroll on desktop */
+          onMouseDown={e => {
+            const el = e.currentTarget;
+            el.style.cursor = 'grabbing';
+            el.style.userSelect = 'none';
+            const startX = e.pageX - el.offsetLeft;
+            const scrollLeft = el.scrollLeft;
+            const onMove = ev => { el.scrollLeft = scrollLeft - (ev.pageX - el.offsetLeft - startX); };
+            const onUp   = ()  => {
+              el.style.cursor = 'grab';
+              el.style.userSelect = '';
+              window.removeEventListener('mousemove', onMove);
+              window.removeEventListener('mouseup', onUp);
+            };
+            window.addEventListener('mousemove', onMove);
+            window.addEventListener('mouseup', onUp);
           }}
         >
           {dates.map((date, i) => {
@@ -145,6 +159,7 @@ export default function MatchCalendar({ onSelectDate, onTourFilter }) {
             return (
               <button
                 key={i}
+                className="tv-cal-btn"
                 data-today={isToday ? 'true' : 'false'}
                 onClick={() => handleDateSelect(date)}
                 style={{
@@ -175,12 +190,14 @@ export default function MatchCalendar({ onSelectDate, onTourFilter }) {
                   opacity:    isPast && !isSelected ? 0.5 : 1,
                   fontFamily: 'var(--font-body)',
                   WebkitTapHighlightColor: 'transparent',
+                  userSelect: 'none',
                 }}
               >
                 <span style={{
                   fontSize: '10px', fontWeight: 700,
                   letterSpacing: '0.07em', textTransform: 'uppercase',
                   color: isSelected || isToday ? 'var(--lime)' : 'var(--text-faint)',
+                  pointerEvents: 'none',
                 }}>
                   {isToday ? 'TODAY' : dayName}
                 </span>
@@ -190,6 +207,7 @@ export default function MatchCalendar({ onSelectDate, onTourFilter }) {
                   fontFamily: 'var(--font-display)',
                   color: isSelected ? 'var(--lime)' : 'var(--text)',
                   lineHeight: 1,
+                  pointerEvents: 'none',
                 }}>
                   {dayNum}
                 </span>
@@ -198,11 +216,11 @@ export default function MatchCalendar({ onSelectDate, onTourFilter }) {
                   fontSize: '10px', fontWeight: 500,
                   letterSpacing: '0.05em', textTransform: 'uppercase',
                   color: 'var(--text-faint)',
+                  pointerEvents: 'none',
                 }}>
                   {monthName}
                 </span>
 
-                {/* Green dot if matches stored for this date, faint placeholder otherwise */}
                 <span style={{
                   width: '5px', height: '5px',
                   borderRadius: '50%',
@@ -210,6 +228,7 @@ export default function MatchCalendar({ onSelectDate, onTourFilter }) {
                   marginTop: '2px',
                   transition: 'background 0.25s',
                   flexShrink: 0,
+                  pointerEvents: 'none',
                 }} />
               </button>
             );

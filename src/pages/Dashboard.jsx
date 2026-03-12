@@ -1,20 +1,4 @@
 // src/pages/Dashboard.jsx
-// ─────────────────────────────────────────────────────────────────────────────
-// ALL FIXES INCLUDED:
-//  + WTA filter works on Matches tab (MatchCalendar emits onTourFilter)
-//  + WTA filter works on Predictions tab (local tour pills in sidebar)
-//  + MatchesTab queries Supabase per-date via useMatchesByDate hook
-//  + MatchCardSkeleton shown while date loads (not a full page spinner)
-//  + Finished matches show score + "Finished" badge; Predict button hidden
-//  + PredictionsTab only shows upcoming/live — past matches excluded
-//  + Calendar scroll fixed (MatchCalendar no longer has overflow:hidden wrapper)
-//  + AI Chat: messages fill space, input always visible above bottom nav
-//  + Chat send error caught → toast instead of crash
-//  + Mobile navbar: profile avatar + dropdown with Sign Out always visible
-//  + Mobile search icon button in navbar
-//  + isMatchPast guard stops past matches opening the predictor
-//  + detectTour used for ATP/WTA badge colour on every MatchCard
-// ─────────────────────────────────────────────────────────────────────────────
 import { useState, useMemo, useEffect, useCallback, memo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -54,9 +38,45 @@ function isMatchPast(match) {
   return matchDay < today;
 }
 
+// ── FIXED filterByTour ────────────────────────────────────────────────────────
+// 'All' shows everything. 'ATP' shows only ATP. 'WTA' shows only WTA.
+// detectTour already returns 'ATP'|'WTA'|'ITF' — we just match exactly.
 function filterByTour(matches, tourFilter) {
   if (tourFilter === 'All') return matches;
   return matches.filter(m => detectTour(m.tournament) === tourFilter);
+}
+
+// ── Shared Tour Filter Pills component ───────────────────────────────────────
+function TourPills({ value, onChange, style }) {
+  return (
+    <div style={{ display: 'flex', gap: '6px', ...style }}>
+      {['All', 'ATP', 'WTA'].map(t => (
+        <button
+          key={t}
+          onClick={() => onChange(t)}
+          style={{
+            padding: '5px 14px',
+            borderRadius: '999px',
+            border: value === t ? 'none' : '1px solid var(--border)',
+            background: value === t
+              ? t === 'WTA' ? '#f472b6' : 'var(--lime)'
+              : 'var(--bg-glass-md)',
+            color: value === t ? '#070B14' : 'var(--text-muted)',
+            fontFamily: 'var(--font-body)',
+            fontWeight: 700,
+            fontSize: '12px',
+            cursor: 'pointer',
+            transition: 'var(--t)',
+            letterSpacing: '0.04em',
+            WebkitTapHighlightColor: 'transparent',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {t}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -73,7 +93,6 @@ export default function Dashboard({ showToast }) {
 
   const { live, upcoming, loading: matchesLoading, error: matchesError, refresh } = useMatches();
 
-  // Only upcoming + live go to the predictions tab (no past matches)
   const predictableMatches = useMemo(
     () => [...live, ...upcoming].filter(m => !isMatchPast(m)),
     [live, upcoming]
@@ -103,7 +122,7 @@ export default function Dashboard({ showToast }) {
   }
 
   function handleSelectMatch(match) {
-    if (isMatchPast(match)) return; // guard: never open past match in predictor
+    if (isMatchPast(match)) return;
     setSelectedMatch(match);
     switchTab('predictions');
   }
@@ -124,7 +143,7 @@ export default function Dashboard({ showToast }) {
   return (
     <div style={{ minHeight: '100dvh', background: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
 
-      {/* ── Top Navbar ──────────────────────────────────────────────────── */}
+      {/* ── Top Navbar ── */}
       <nav style={{
         background: 'rgba(7,11,20,0.92)',
         backdropFilter: 'blur(20px)',
@@ -140,8 +159,6 @@ export default function Dashboard({ showToast }) {
         zIndex: 100,
         gap: '12px',
       }}>
-
-        {/* Left: Logo + desktop search */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: '0 0 auto' }}>
           <Logo size="sm" />
           <button
@@ -167,7 +184,6 @@ export default function Dashboard({ showToast }) {
           </button>
         </div>
 
-        {/* Centre: Desktop tab pills */}
         <div className="hide-md" style={{ display: 'flex', gap: '4px', flex: 1, justifyContent: 'center' }}>
           {tabs.map(t => (
             <button
@@ -188,7 +204,6 @@ export default function Dashboard({ showToast }) {
           ))}
         </div>
 
-        {/* Right desktop: user chip + sign out */}
         <div className="hide-md" style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: '0 0 auto' }}>
           <div style={{
             display: 'flex', alignItems: 'center', gap: '10px',
@@ -208,7 +223,6 @@ export default function Dashboard({ showToast }) {
           <Btn variant="ghost" size="sm" onClick={handleLogout}>Sign Out</Btn>
         </div>
 
-        {/* Right mobile: search icon + profile avatar */}
         <div className="show-md" style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: '0 0 auto', position: 'relative' }}>
           <button
             onClick={() => setSearchOpen(true)}
@@ -225,7 +239,6 @@ export default function Dashboard({ showToast }) {
             </svg>
           </button>
 
-          {/* Profile avatar button */}
           <button
             onClick={() => setProfileOpen(v => !v)}
             aria-label="Profile menu"
@@ -244,7 +257,6 @@ export default function Dashboard({ showToast }) {
             {initials}
           </button>
 
-          {/* Profile dropdown */}
           {profileOpen && (
             <>
               <div onClick={() => setProfileOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 199 }} />
@@ -273,11 +285,13 @@ export default function Dashboard({ showToast }) {
         </div>
       </nav>
 
-      {/* ── Main content ─────────────────────────────────────────────────── */}
+      {/* ── Main content ── */}
       <main className="tv-main-content" style={{
         flex: 1, maxWidth: '1200px', width: '100%',
         margin: '0 auto',
         padding: 'clamp(20px,3vh,40px) clamp(16px,3vw,40px)',
+        // CRITICAL: never clip children — the calendar strip scrolls horizontally
+        overflow: 'visible',
       }}>
         <div className="tv-fade-up" style={{ marginBottom: 'clamp(24px,4vh,40px)' }}>
           <h1 style={{
@@ -316,7 +330,7 @@ export default function Dashboard({ showToast }) {
         )}
       </main>
 
-      {/* ── Bottom tab bar (mobile only) ─────────────────────────────────── */}
+      {/* ── Bottom tab bar (mobile only) ── */}
       <nav className="tv-bottom-nav" aria-label="Main navigation">
         {tabs.map(t => (
           <button
@@ -331,7 +345,6 @@ export default function Dashboard({ showToast }) {
         ))}
       </nav>
 
-      {/* ── Modals ───────────────────────────────────────────────────────── */}
       {searchOpen && (
         <PlayerSearchModal
           allPlayers={allPlayersForSearch}
@@ -348,8 +361,7 @@ export default function Dashboard({ showToast }) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MATCHES TAB
-// Queries Supabase per-date. Merges live matches on today's view.
-// Splits into Live / Upcoming / Finished sections.
+// tourFilter is owned here and passed down to MatchCalendar as a controlled prop
 // ─────────────────────────────────────────────────────────────────────────────
 function MatchesTab({ live, loading: liveLoading, error, refresh, onSelectMatch }) {
   const today = useMemo(() => {
@@ -358,6 +370,7 @@ function MatchesTab({ live, loading: liveLoading, error, refresh, onSelectMatch 
 
   const [selectedDate, setSelectedDate]       = useState(today);
   const [selectedDateStr, setSelectedDateStr] = useState(toLocalDateStr(today));
+  // tourFilter lives HERE — single source of truth, passed to both calendar pills and filter logic
   const [tourFilter, setTourFilter]           = useState('All');
 
   const { matches: dateMatches, loading: dateLoading, error: dateError } = useMatchesByDate(selectedDateStr);
@@ -367,7 +380,6 @@ function MatchesTab({ live, loading: liveLoading, error, refresh, onSelectMatch 
     return sel.getTime() === today.getTime();
   }, [selectedDate, today]);
 
-  // On today: merge live matches (fresher status) with stored ones
   const mergedMatches = useMemo(() => {
     if (!isToday) return dateMatches;
     const liveIds = new Set(live.map(m => m.id));
@@ -396,13 +408,13 @@ function MatchesTab({ live, loading: liveLoading, error, refresh, onSelectMatch 
 
   return (
     <div className="tv-fade-up">
-      {/* Calendar owns the tour pills and fires both date + tour changes */}
+      {/* Calendar receives tourFilter as controlled prop so pills stay in sync */}
       <MatchCalendar
         onSelectDate={handleDateSelect}
         onTourFilter={setTourFilter}
+        tourFilter={tourFilter}
       />
 
-      {/* Live section */}
       {isToday && liveSection.length > 0 && !liveLoading && (
         <section style={{ marginBottom: '40px' }}>
           <SectionHeading label="Live Now" dot />
@@ -414,19 +426,16 @@ function MatchesTab({ live, loading: liveLoading, error, refresh, onSelectMatch 
         </section>
       )}
 
-      {/* Skeleton while date loads */}
       {dateLoading && (
         <div style={gridStyle}>
           {[1, 2, 3, 4].map(n => <MatchCardSkeleton key={n} />)}
         </div>
       )}
 
-      {/* Date error */}
       {!dateLoading && dateError && (
         <EmptyState icon="⚠️" title="Couldn't load matches" desc={dateError} />
       )}
 
-      {/* Upcoming section */}
       {!dateLoading && !dateError && upcomingSection.length > 0 && (
         <section style={{ marginBottom: '40px' }}>
           <SectionHeading label={isToday ? 'Upcoming Today' : `Upcoming · ${dateLabel}`} />
@@ -440,7 +449,6 @@ function MatchesTab({ live, loading: liveLoading, error, refresh, onSelectMatch 
         </section>
       )}
 
-      {/* Finished / Results section */}
       {!dateLoading && !dateError && finishedSection.length > 0 && (
         <section style={{ marginBottom: '40px' }}>
           <SectionHeading label="Results" />
@@ -454,7 +462,6 @@ function MatchesTab({ live, loading: liveLoading, error, refresh, onSelectMatch 
         </section>
       )}
 
-      {/* Empty state */}
       {!dateLoading && !dateError && visibleMatches.length === 0 && (
         <EmptyState
           icon="📅"
@@ -481,7 +488,6 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, isPast }) {
 
   return (
     <Card>
-      {/* Header row */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '16px', gap: '8px' }}>
         <div style={{ minWidth: 0, flex: 1 }}>
           <p style={{
@@ -501,7 +507,6 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, isPast }) {
         </div>
       </div>
 
-      {/* Players */}
       {[m.player1, m.player2].map((player, idx) => {
         const sets = m.score ? m.score.split(',').map(s => s.trim()) : [];
         return (
@@ -513,7 +518,7 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, isPast }) {
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1 }}>
               <span style={{ fontSize: '18px', flexShrink: 0 }}>{player?.flag ?? '🏳️'}</span>
               <div style={{ minWidth: 0 }}>
-                <p className="tv-match-card-name" style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text)' }}>
+                <p className="tv-match-card-name" style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {player?.name ?? 'TBD'}
                 </p>
                 <p style={{ fontSize: '11px', color: 'var(--text-faint)' }}>#{player?.rank ?? '—'}</p>
@@ -543,7 +548,6 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, isPast }) {
         );
       })}
 
-      {/* Time */}
       {m.date && (
         <p style={{ fontSize: '11px', color: 'var(--text-faint)', marginTop: '10px' }}>
           {new Date(m.date).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
@@ -552,7 +556,6 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, isPast }) {
         </p>
       )}
 
-      {/* Predict button — hidden for past/finished */}
       {!isPast && m.status !== 'finished' && (
         <Btn variant="lime" size="sm" fullWidth style={{ marginTop: '16px' }} onClick={onPredict}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -562,7 +565,6 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, isPast }) {
         </Btn>
       )}
 
-      {/* Finished footer */}
       {(isPast || m.status === 'finished') && (
         <div style={{
           marginTop: '14px', padding: '8px 12px',
@@ -601,7 +603,6 @@ function MatchCardSkeleton() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PREDICTIONS TAB
-// Only upcoming/live matches shown. Has its own ATP/WTA pills in the sidebar.
 // ─────────────────────────────────────────────────────────────────────────────
 function PredictionsTab({ predictableMatches, matchesLoading, selectedMatch, onSelectMatch }) {
   const { prediction, loading: predLoading, error: predError } = usePrediction(selectedMatch);
@@ -633,28 +634,7 @@ function PredictionsTab({ predictableMatches, matchesLoading, selectedMatch, onS
         <div className="tv-predictions-sidebar" style={{ flex: '0 0 clamp(200px,30%,340px)', minWidth: '200px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
             <SectionHeading label="Select a Match" style={{ marginBottom: 0 }} />
-            {/* Tour pills */}
-            <div style={{ display: 'flex', gap: '4px' }}>
-              {['All', 'ATP', 'WTA'].map(t => (
-                <button
-                  key={t}
-                  onClick={() => setTourFilter(t)}
-                  style={{
-                    padding: '4px 10px', borderRadius: '999px',
-                    border: tourFilter === t ? 'none' : '1px solid var(--border)',
-                    background: tourFilter === t
-                      ? t === 'WTA' ? '#f472b6' : 'var(--lime)'
-                      : 'var(--bg-glass-md)',
-                    color: tourFilter === t ? '#070B14' : 'var(--text-muted)',
-                    fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: '11px',
-                    cursor: 'pointer', transition: 'var(--t)',
-                    WebkitTapHighlightColor: 'transparent',
-                  }}
-                >
-                  {t}
-                </button>
-              ))}
-            </div>
+            <TourPills value={tourFilter} onChange={setTourFilter} />
           </div>
 
           {matchesLoading ? (
@@ -876,7 +856,7 @@ function H2HPanel({ h2h, match }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// RANKINGS TAB
+// RANKINGS TAB — FIXED layout for mobile + all viewports
 // ─────────────────────────────────────────────────────────────────────────────
 function RankingsTab({ onSelectPlayer }) {
   const [tour, setTour]     = useState('ATP');
@@ -885,9 +865,18 @@ function RankingsTab({ onSelectPlayer }) {
 
   return (
     <div className="tv-fade-up">
+      <style>{`
+        @media (max-width: 500px) {
+          .tv-rankings-row  { grid-template-columns: 36px 1fr 72px !important; }
+          .tv-rankings-head { grid-template-columns: 36px 1fr 72px !important; }
+          .tv-rankings-wl   { display: none !important; }
+          .tv-rankings-pts-head { text-align: right !important; }
+        }
+      `}</style>
+
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px', flexWrap: 'wrap' }}>
         <SectionHeading label={`${tour} Live Rankings`} />
-        <div className="tv-rankings-filters" style={{ display: 'flex', gap: '6px', marginLeft: 'auto' }}>
+        <div style={{ display: 'flex', gap: '6px', marginLeft: 'auto' }}>
           {['ATP', 'WTA'].map(t => (
             <button key={t} onClick={() => setTour(t)} style={{
               padding: '6px 18px', borderRadius: '999px',
@@ -918,41 +907,110 @@ function RankingsTab({ onSelectPlayer }) {
       ) : rankings.length === 0 ? (
         <EmptyState icon="🏆" title="No rankings data" desc="Rankings sync daily. Check back soon." />
       ) : (
-        <Card>
-          <div style={{ display: 'grid', gridTemplateColumns: '48px 1fr 100px 80px', gap: '8px', padding: '0 12px 10px', borderBottom: '1px solid var(--border)' }}>
-            {['Rank', 'Player', 'Points', 'W/L'].map((h, i) => (
-              <span key={h} style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-faint)', textAlign: i > 1 ? 'right' : 'left' }}>{h}</span>
+        <Card style={{ padding: 0, overflow: 'hidden' }}>
+          {/* Header */}
+          <div className="tv-rankings-head" style={{
+            display: 'grid',
+            gridTemplateColumns: '48px 1fr 90px 72px',
+            gap: '8px',
+            padding: '10px 16px',
+            borderBottom: '1px solid var(--border)',
+            background: 'rgba(255,255,255,0.02)',
+          }}>
+            {[
+              { label: '#',      align: 'left'  },
+              { label: 'Player', align: 'left'  },
+              { label: 'Points', align: 'right', className: 'tv-rankings-pts-head' },
+              { label: 'W/L',    align: 'right', className: 'tv-rankings-wl' },
+            ].map(h => (
+              <span
+                key={h.label}
+                className={h.className}
+                style={{
+                  fontSize: '11px', fontWeight: 700,
+                  textTransform: 'uppercase', letterSpacing: '0.07em',
+                  color: 'var(--text-faint)', textAlign: h.align,
+                }}
+              >
+                {h.label}
+              </span>
             ))}
           </div>
+
+          {/* Rows */}
           {rankings.map((p, i) => (
             <div
               key={p.id}
+              className="tv-rankings-row"
               onClick={() => onSelectPlayer(p)}
               onMouseEnter={() => setHovRow(p.id)}
               onMouseLeave={() => setHovRow(null)}
               style={{
-                display: 'grid', gridTemplateColumns: '48px 1fr 100px 80px', gap: '8px', padding: '14px 12px',
+                display: 'grid',
+                gridTemplateColumns: '48px 1fr 90px 72px',
+                gap: '8px',
+                padding: '13px 16px',
                 borderBottom: i < rankings.length - 1 ? '1px solid var(--border)' : 'none',
-                cursor: 'pointer', transition: 'background 0.15s',
+                cursor: 'pointer',
+                transition: 'background 0.15s',
                 background: hovRow === p.id ? 'rgba(255,255,255,0.02)' : 'transparent',
+                alignItems: 'center',
               }}
             >
-              <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '15px', alignSelf: 'center', color: i === 0 ? 'var(--lime)' : i === 1 ? 'var(--yellow)' : i === 2 ? 'var(--clay)' : 'var(--text-faint)' }}>
+              {/* Rank */}
+              <span style={{
+                fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '14px',
+                color: i === 0 ? 'var(--lime)' : i === 1 ? 'var(--yellow)' : i === 2 ? 'var(--clay)' : 'var(--text-faint)',
+              }}>
                 {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : p.rank}
               </span>
+
+              {/* Player — name + country */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
-                <span style={{ fontSize: '20px', flexShrink: 0 }}>{p.flag}</span>
-                <div style={{ minWidth: 0 }}>
-                  <p style={{ fontWeight: 600, fontSize: '14.5px', color: hovRow === p.id ? 'var(--lime)' : 'var(--text)', transition: 'color 0.15s', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</p>
-                  <p style={{ fontSize: '11px', color: 'var(--text-faint)' }}>{p.country} · {p.surface_pref}</p>
+                <span style={{ fontSize: '18px', flexShrink: 0, lineHeight: 1 }}>{p.flag}</span>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <p style={{
+                    fontWeight: 600,
+                    fontSize: '14px',
+                    color: hovRow === p.id ? 'var(--lime)' : 'var(--text)',
+                    transition: 'color 0.15s',
+                    // Critical: prevent name from overflowing into points column
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    maxWidth: '100%',
+                  }}>
+                    {p.name}
+                  </p>
+                  <p style={{
+                    fontSize: '11px', color: 'var(--text-faint)',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
+                    {p.country}{p.surface_pref ? ` · ${p.surface_pref}` : ''}
+                  </p>
                 </div>
               </div>
-              <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: hovRow === p.id ? 'var(--lime)' : 'var(--text)', fontSize: '14px', textAlign: 'right', alignSelf: 'center' }}>
-                {p.points?.toLocaleString()}
+
+              {/* Points */}
+              <span style={{
+                fontFamily: 'var(--font-mono)', fontWeight: 600,
+                color: hovRow === p.id ? 'var(--lime)' : 'var(--text)',
+                fontSize: '13px', textAlign: 'right',
+                // Ensure points never wraps
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}>
+                {p.points?.toLocaleString() ?? '—'}
               </span>
-              <span className="rankings-wl" style={{ fontSize: '13px', color: 'var(--text-muted)', textAlign: 'right', alignSelf: 'center' }}>
-                <span style={{ color: 'var(--green)' }}>{p.wins}</span>
-                <span style={{ color: 'var(--text-faint)' }}>/{p.losses}</span>
+
+              {/* W/L — hidden on very small screens via CSS above */}
+              <span className="tv-rankings-wl" style={{
+                fontSize: '13px', color: 'var(--text-muted)',
+                textAlign: 'right', whiteSpace: 'nowrap',
+              }}>
+                <span style={{ color: 'var(--green)' }}>{p.wins ?? '—'}</span>
+                <span style={{ color: 'var(--text-faint)' }}>/{p.losses ?? '—'}</span>
               </span>
             </div>
           ))}
@@ -964,7 +1022,6 @@ function RankingsTab({ onSelectPlayer }) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AI CHAT TAB
-// Chat window fills available height. Input always visible above bottom nav.
 // ─────────────────────────────────────────────────────────────────────────────
 function AiChatTab({ contextMatch, showToast }) {
   const { messages, typing, sendMessage, reset, bottomRef } = useAiChat(contextMatch);
@@ -999,7 +1056,6 @@ function AiChatTab({ contextMatch, showToast }) {
       gap: '20px',
       alignItems: 'start',
     }}>
-      {/* Chat column */}
       <div
         className="tv-chat-column"
         style={{
@@ -1013,7 +1069,6 @@ function AiChatTab({ contextMatch, showToast }) {
           <Btn variant="ghost" size="sm" onClick={reset}>New chat</Btn>
         </div>
 
-        {/* Messages — scrollable */}
         <Card style={{
           flex: 1, overflowY: 'auto',
           display: 'flex', flexDirection: 'column', gap: '12px',
@@ -1046,7 +1101,6 @@ function AiChatTab({ contextMatch, showToast }) {
           <div ref={bottomRef} />
         </Card>
 
-        {/* Suggestions */}
         {messages.length <= 1 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', flexShrink: 0 }}>
             {suggestions.map(s => (
@@ -1061,7 +1115,6 @@ function AiChatTab({ contextMatch, showToast }) {
           </div>
         )}
 
-        {/* Input bar — flexShrink:0 keeps it always visible */}
         <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: '6px', flexShrink: 0 }}>
           <div style={{ display: 'flex', gap: '8px' }}>
             <textarea
@@ -1097,7 +1150,6 @@ function AiChatTab({ contextMatch, showToast }) {
         </form>
       </div>
 
-      {/* Context panel — only when a match is selected */}
       {contextMatch && (
         <div className="tv-chat-context-panel" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <SectionHeading label="Match Context" />
