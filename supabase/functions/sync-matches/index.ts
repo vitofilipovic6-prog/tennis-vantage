@@ -1,27 +1,16 @@
 // supabase/functions/sync-matches/index.ts
 // ─────────────────────────────────────────────────────────────────────────────
-// Syncs live and upcoming tennis matches into Supabase.
+// Syncs live, upcoming, AND recent past matches into Supabase.
+//
+// CHANGE vs old version:
+//   - Now fetches 2 days BEFORE today in addition to today + 3 days ahead
+//     (so the calendar's past dates have real data, not stale old-API records)
+//   - Adds a "stale cleanup" step: deletes upcoming/live rows older than 2 days
+//     (these are leftover from the old API and will never transition to finished)
 //
 // ENDPOINTS USED:
-//
-// 1. liveTennisMatches
-//    GET https://tennisapi1.p.rapidapi.com/api/tennis/matches/live
-//    No params. Returns { events: [...] } — 28 items confirmed from screenshot.
-//    status.type = "inprogress", groundType present (e.g. "Hardcourt outdoor")
-//
-// 2. tennisEventsByDate
-//    GET https://tennisapi1.p.rapidapi.com/api/tennis/events/{day}/{month}/{year}
-//    Confirmed URL: /api/tennis/events/22/7/2025
-//    Returns { events: [...] } — 827 items on a busy day.
-//    Covers ALL tours (ATP, WTA, ITF, Challenger) — we filter to ATP+WTA only.
-//
-// STRATEGY:
-//   - Fetch live matches (1 call)
-//   - Fetch today + next 3 days by date (4 calls, parallel)
-//   - Deduplicate by event ID (live matches also appear in date results)
-//   - Filter ATP + WTA only (skip ITF/Challenger to save DB space)
-//   - Upsert players first, then matches (FK constraint order)
-//   - Store finished matches from today for H2H history (winner_id confirmed)
+//   GET /api/tennis/matches/live           — all live matches
+//   GET /api/tennis/events/{d}/{m}/{y}     — all events on a given date
 // ─────────────────────────────────────────────────────────────────────────────
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import {
@@ -51,7 +40,6 @@ async function rapidGet(path: string): Promise<any | null> {
 
   const text = await res.text();
   if (!res.ok) {
-    // Non-fatal — log and return null so other fetches continue
     console.warn(`[SKIP ${res.status}] ${url} — ${text.slice(0, 150)}`);
     return null;
   }
@@ -76,10 +64,34 @@ Deno.serve(async (req: Request) => {
   const log: string[]    = [];
   const errors: string[] = [];
 
+  // ── 0. STALE CLEANUP ──────────────────────────────────────────────────────
+  // Delete any rows stuck as "upcoming" or "live" from 3+ days ago.
+  // These are guaranteed to be old-API ghosts — real matches either
+  // finished (status='finished') or got re-synced with correct IDs.
+  try {
+    const cutoff = new Date();
+    cutoff.setUTCDate(cutoff.getUTCDate() - 3);
+    const cutoffISO = cutoff.toISOString();
+
+    const { count, error: delErr } = await supabase
+      .from('matches')
+      .delete({ count: 'exact' })
+      .in('status', ['upcoming', 'live'])
+      .lt('match_date', cutoffISO);
+
+    if (delErr) {
+      errors.push(`[CLEANUP] ${delErr.message}`);
+    } else {
+      log.push(`[CLEANUP] Deleted ${count ?? 0} stale upcoming/live rows older than ${cutoffISO}`);
+    }
+  } catch (err: unknown) {
+    errors.push(`[CLEANUP] ${err instanceof Error ? err.message : String(err)}`);
+  }
+
   // ── Collect all raw events — deduplicated by ID ────────────────────────────
   const rawEventsMap = new Map<string, any>();
 
-  // ── 1. Live matches (single call, all tours) ───────────────────────────────
+  // ── 1. Live matches ────────────────────────────────────────────────────────
   try {
     log.push('[LIVE] Fetching /api/tennis/matches/live ...');
     const liveRaw    = await rapidGet('/api/tennis/matches/live');
@@ -92,24 +104,24 @@ Deno.serve(async (req: Request) => {
     errors.push(`[LIVE] ${err instanceof Error ? err.message : String(err)}`);
   }
 
-  // ── 2. Events by date: today + next 3 days (parallel) ─────────────────────
-  // Confirmed URL pattern: /api/tennis/events/{day}/{month}/{year}
-  // day/month are plain numbers (not zero-padded) — confirmed from screenshot:
-  // https://tennisapi1.p.rapidapi.com/api/tennis/events/22/7/2025
+  // ── 2. Events by date: 2 days ago → today + 3 days ahead (6 calls total) ──
+  // CHANGED: offsets now start at -2 so past calendar dates have real data
   const today = new Date();
-  const dateParams = Array.from({ length: 4 }, (_, offset) => {
+  const dateParams = Array.from({ length: 6 }, (_, i) => {
+    const offset = i - 2; // -2, -1, 0, +1, +2, +3
     const d = new Date(today);
     d.setUTCDate(today.getUTCDate() + offset);
     return {
-      day:   d.getUTCDate(),       // plain number, NOT zero-padded
-      month: d.getUTCMonth() + 1,  // 1-12
-      year:  d.getUTCFullYear(),
+      day:    d.getUTCDate(),
+      month:  d.getUTCMonth() + 1,
+      year:   d.getUTCFullYear(),
+      offset, // keep for logging
     };
   });
 
-  const dateFetches = dateParams.map(({ day, month, year }) =>
+  const dateFetches = dateParams.map(({ day, month, year, offset }) =>
     rapidGet(`/api/tennis/events/${day}/${month}/${year}`)
-      .then(raw => ({ raw, label: `${day}/${month}/${year}` }))
+      .then(raw => ({ raw, label: `${day}/${month}/${year} (offset ${offset > 0 ? '+' : ''}${offset})` }))
   );
 
   const dateResults = await Promise.allSettled(dateFetches);
@@ -129,12 +141,11 @@ Deno.serve(async (req: Request) => {
   // ── 3. Normalize + separate live/upcoming from finished ────────────────────
   const playersMap              = new Map<string, object>();
   const liveAndUpcomingRows:    object[] = [];
-  const finishedTodayRows:      object[] = [];
+  const finishedRows:           object[] = [];
   let   skippedNonATPWTA        = 0;
   let   skippedMissingFields    = 0;
 
   for (const rawEvent of rawEventsMap.values()) {
-    // Filter: ATP and WTA only — skip ITF, Challenger, etc.
     const tour = resolveTour(rawEvent);
     if (!tour) {
       skippedNonATPWTA++;
@@ -149,21 +160,19 @@ Deno.serve(async (req: Request) => {
 
     const { match, player1, player2 } = normalized;
 
-    // Separate finished (for H2H history) from active
     if (match.status === 'finished') {
-      finishedTodayRows.push(match);
+      finishedRows.push(match);
     } else {
       liveAndUpcomingRows.push(match);
     }
 
-    // Collect unique players
     if (!playersMap.has(player1.id)) playersMap.set(player1.id, player1);
     if (!playersMap.has(player2.id)) playersMap.set(player2.id, player2);
   }
 
   log.push(
     `[NORMALIZE] live+upcoming: ${liveAndUpcomingRows.length} | ` +
-    `finished: ${finishedTodayRows.length} | ` +
+    `finished: ${finishedRows.length} | ` +
     `skipped (non-ATP/WTA): ${skippedNonATPWTA} | ` +
     `skipped (bad data): ${skippedMissingFields}`
   );
@@ -186,13 +195,14 @@ Deno.serve(async (req: Request) => {
     else log.push(`[DB] ✓ Upserted ${liveAndUpcomingRows.length} live/upcoming matches`);
   }
 
-  // ── 6. Upsert finished matches from today (H2H history, don't overwrite) ──
-  if (finishedTodayRows.length > 0) {
+  // ── 6. Upsert finished matches (H2H history) ──────────────────────────────
+  // ignoreDuplicates: false — allow score/winner updates if re-synced
+  if (finishedRows.length > 0) {
     const { error } = await supabase
       .from('matches')
-      .upsert(finishedTodayRows, { onConflict: 'id', ignoreDuplicates: true });
+      .upsert(finishedRows, { onConflict: 'id', ignoreDuplicates: false });
     if (error) errors.push(`[DB] finished matches: ${error.message}`);
-    else log.push(`[DB] ✓ Upserted ${finishedTodayRows.length} finished matches`);
+    else log.push(`[DB] ✓ Upserted ${finishedRows.length} finished matches`);
   }
 
   return new Response(
