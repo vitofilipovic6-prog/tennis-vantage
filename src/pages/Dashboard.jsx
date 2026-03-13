@@ -21,11 +21,11 @@ import PlayerSearchModal from '../components/PlayerSearchModal';
 // MATCH TYPE FILTER DEFINITIONS
 // ─────────────────────────────────────────────────────────────────────────────
 const MATCH_FILTERS = [
-  { id: 'atp_singles',   label: 'ATP',           shortLabel: 'ATP',    color: '#60a5fa' },
-  { id: 'wta_singles',   label: 'WTA',           shortLabel: 'WTA',    color: '#f472b6' },
-  { id: 'atp_doubles',   label: 'ATP Doubles',   shortLabel: 'ATP 2×', color: '#818cf8' },
-  { id: 'wta_doubles',   label: 'WTA Doubles',   shortLabel: 'WTA 2×', color: '#fb7185' },
-  { id: 'mixed_doubles', label: 'Mixed Doubles', shortLabel: 'Mixed',  color: '#34d399' },
+  { id: 'atp_singles', label: 'ATP', shortLabel: 'ATP', color: '#60a5fa' },
+  { id: 'wta_singles', label: 'WTA', shortLabel: 'WTA', color: '#f472b6' },
+  { id: 'atp_doubles', label: 'ATP Doubles', shortLabel: 'ATP 2×', color: '#818cf8' },
+  { id: 'wta_doubles', label: 'WTA Doubles', shortLabel: 'WTA 2×', color: '#fb7185' },
+  { id: 'mixed_doubles', label: 'Mixed Doubles', shortLabel: 'Mixed', color: '#34d399' },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -34,10 +34,10 @@ const MATCH_FILTERS = [
 export default function Dashboard({ showToast }) {
   const { user, firstName, logout } = useAuth();
 
-  const [activeTab, setActiveTab]         = useState('matches');
+  const [activeTab, setActiveTab] = useState('matches');
   const [selectedMatch, setSelectedMatch] = useState(null);
-  const [searchOpen, setSearchOpen]       = useState(false);
-  const [bioPlayer, setBioPlayer]         = useState(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [bioPlayer, setBioPlayer] = useState(null);
 
   const { live, upcoming, loading: matchesLoading, error: matchesError, refresh } = useMatches();
   const allMatches = useMemo(() => [...live, ...upcoming], [live, upcoming]);
@@ -51,7 +51,7 @@ export default function Dashboard({ showToast }) {
 
   // Collect unique players from all matches for the search modal
   const allPlayersForSearch = useMemo(() => {
-    const seen    = new Set();
+    const seen = new Set();
     const players = [];
     allMatches.forEach(m => {
       [m.player1, m.player2].forEach(p => {
@@ -62,10 +62,10 @@ export default function Dashboard({ showToast }) {
   }, [allMatches]);
 
   const tabs = [
-    { id: 'matches',     label: 'Matches',  icon: '🎾' },
-    { id: 'predictions', label: 'Predict',  icon: '🔮' },
-    { id: 'rankings',    label: 'Rankings', icon: '🏆' },
-    { id: 'chat',        label: 'AI Chat',  icon: '🤖' },
+    { id: 'matches', label: 'Matches', icon: '🎾' },
+    { id: 'predictions', label: 'Predict', icon: '🔮' },
+    { id: 'rankings', label: 'Rankings', icon: '🏆' },
+    { id: 'chat', label: 'AI Chat', icon: '🤖' },
   ];
 
   async function handleLogout() {
@@ -124,7 +124,7 @@ export default function Dashboard({ showToast }) {
             }}
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
             Search players
           </button>
@@ -311,8 +311,8 @@ function FilterPills({ activeFilter, onSelect, size = 'normal' }) {
 function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wtaPlayerIds }) {
   const [calendarDate, setCalendarDate] = useState(null);
   const [activeFilter, setActiveFilter] = useState('atp_singles');
-  const [pastMatches,  setPastMatches]  = useState([]);
-  const [pastLoading,  setPastLoading]  = useState(false);
+  const [pastMatches, setPastMatches] = useState([]);
+  const [pastLoading, setPastLoading] = useState(false);
 
   const today = useMemo(() => {
     const d = new Date();
@@ -327,7 +327,7 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
     return d;
   }, [calendarDate]);
 
-  const isPastDay       = selectedDay && selectedDay < today;
+  const isPastDay = selectedDay && selectedDay < today;
   const isTodayOrFuture = !selectedDay || selectedDay >= today;
 
   useEffect(() => {
@@ -337,13 +337,13 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
     const dateStr = calendarDate.toISOString().split('T')[0];
     getMatchesByDate(dateStr, wtaPlayerIds)
       .then(data => { if (!cancelled) setPastMatches(data ?? []); })
-      .catch(()  => { if (!cancelled) setPastMatches([]); })
+      .catch(() => { if (!cancelled) setPastMatches([]); })
       .finally(() => { if (!cancelled) setPastLoading(false); });
     return () => { cancelled = true; };
   }, [calendarDate?.toDateString(), isPastDay, wtaPlayerIds]);
 
   if (loading) return <LoadingGrid />;
-  if (error)   return <ErrorMessage msg={error} onRetry={refresh} />;
+  if (error) return <ErrorMessage msg={error} onRetry={refresh} />;
 
   // ── The key filter function — uses deriveMatchType with WTA ids ───────────
   const byType = (arr) =>
@@ -353,16 +353,16 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
 
   const calendarFiltered = selectedDay && isTodayOrFuture
     ? upcoming.filter(m => {
-        if (!m.date) return false;
-        const d = new Date(m.date);
-        d.setHours(0, 0, 0, 0);
-        return d.getTime() === selectedDay.getTime();
-      })
+      if (!m.date) return false;
+      const d = new Date(m.date);
+      d.setHours(0, 0, 0, 0);
+      return d.getTime() === selectedDay.getTime();
+    })
     : upcoming;
 
   const filteredUpcoming = byType(calendarFiltered);
-  const filteredPast     = byType(pastMatches);
-  const activeFilterDef  = MATCH_FILTERS.find(f => f.id === activeFilter);
+  const filteredPast = byType(pastMatches);
+  const activeFilterDef = MATCH_FILTERS.find(f => f.id === activeFilter);
 
   return (
     <div className="tv-fade-up">
@@ -440,14 +440,14 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
 // ─────────────────────────────────────────────────────────────────────────────
 const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = new Set() }) {
   const surfaceColors = { Clay: '#f97316', Hard: '#60a5fa', Grass: '#4ade80' };
-  const surfaceColor  = surfaceColors[m.surface] ?? '#94a3b8';
+  const surfaceColor = surfaceColors[m.surface] ?? '#94a3b8';
 
   // Always derive the effective type — never trust DB blindly
   const effectiveType = deriveMatchType(m, wtaPlayerIds);
-  const matchTypeDef  = MATCH_FILTERS.find(f => f.id === effectiveType) ?? null;
+  const matchTypeDef = MATCH_FILTERS.find(f => f.id === effectiveType) ?? null;
 
   const isFinished = m.status === 'finished';
-  const isLive     = m.status === 'live';
+  const isLive = m.status === 'live';
 
   return (
     <Card>
@@ -539,22 +539,29 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = 
       })}
 
       {/* Footer */}
-      <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px solid var(--border)' }}>
-        {isFinished ? (
-          <div style={{
-            textAlign: 'center', padding: '8px',
-            background: 'var(--bg-glass)',
-            borderRadius: '8px',
-            fontSize: '12px', color: 'var(--text-faint)', fontWeight: 600,
-          }}>
-            Match Complete
-          </div>
-        ) : (
-          <Btn size="sm" variant="ghost" fullWidth onClick={onPredict}>
-            {isLive ? '⚡ Predict winner' : 'Predict this match'}
-          </Btn>
-        )}
-      </div>
+      {isFinished ? (
+        <div style={{
+          marginTop: '14px',
+          padding: '9px 14px',
+          borderRadius: 'var(--radius-sm)',
+          background: 'rgba(255,255,255,0.03)',
+          border: '1px solid var(--border)',
+          textAlign: 'center',
+          fontSize: '12px',
+          color: 'var(--text-faint)',
+          fontWeight: 600,
+          letterSpacing: '0.04em',
+        }}>
+          Match Complete
+        </div>
+      ) : (
+        <Btn variant="lime" size="sm" fullWidth style={{ marginTop: '16px' }} onClick={onPredict}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+          </svg>
+          {isLive ? 'Predict winner' : 'Predict this match'}
+        </Btn>
+      )}
     </Card>
   );
 });
@@ -565,7 +572,7 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = 
 function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMatch, wtaPlayerIds }) {
   const [predFilter, setPredFilter] = useState('atp_singles');
   const { prediction, loading: predLoading, error: predError } = usePrediction(selectedMatch);
-  const [h2h, setH2h]             = useState(null);
+  const [h2h, setH2h] = useState(null);
   const [h2hLoading, setH2hLoading] = useState(false);
 
   // Only today + future matches are predictable
@@ -573,7 +580,7 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
     const now = new Date();
     now.setHours(0, 0, 0, 0);
     return allMatches.filter(m => {
-      if (m.status === 'live')     return true;
+      if (m.status === 'live') return true;
       if (m.status === 'finished') return false;
       if (m.date) {
         const d = new Date(m.date);
@@ -594,8 +601,8 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
     let cancelled = false;
     setH2hLoading(true);
     getHeadToHead(selectedMatch.player1.id, selectedMatch.player2.id)
-      .then(data  => { if (!cancelled) setH2h(data); })
-      .catch(()   => { if (!cancelled) setH2h(null); })
+      .then(data => { if (!cancelled) setH2h(data); })
+      .catch(() => { if (!cancelled) setH2h(null); })
       .finally(() => { if (!cancelled) setH2hLoading(false); });
     return () => { cancelled = true; };
   }, [selectedMatch?.player1?.id, selectedMatch?.player2?.id]);
@@ -683,8 +690,8 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
 // ─────────────────────────────────────────────────────────────────────────────
 function MatchPickerRow({ match: m, selected, onSelect, wtaPlayerIds = new Set() }) {
   const effectiveType = deriveMatchType(m, wtaPlayerIds);
-  const matchTypeDef  = MATCH_FILTERS.find(f => f.id === effectiveType) ?? null;
-  const isLive        = m.status === 'live';
+  const matchTypeDef = MATCH_FILTERS.find(f => f.id === effectiveType) ?? null;
+  const isLive = m.status === 'live';
 
   return (
     <button
@@ -736,11 +743,11 @@ function MatchPickerRow({ match: m, selected, onSelect, wtaPlayerIds = new Set()
 // PREDICTION CARD
 // ─────────────────────────────────────────────────────────────────────────────
 function PredictionCard({ match: m, prediction: pred }) {
-  const p1        = m.player1;
-  const p2        = m.player2;
+  const p1 = m.player1;
+  const p2 = m.player2;
   const confColor = pred.confidence === 'High' ? 'var(--lime)'
-                  : pred.confidence === 'Medium' ? 'var(--yellow)'
-                  : 'var(--clay)';
+    : pred.confidence === 'Medium' ? 'var(--yellow)'
+      : 'var(--clay)';
 
   return (
     <Card>
@@ -874,7 +881,7 @@ function H2HPanel({ h2h, match }) {
 // RANKINGS TAB
 // ─────────────────────────────────────────────────────────────────────────────
 function RankingsTab({ onSelectPlayer }) {
-  const [tour, setTour]   = useState('ATP');
+  const [tour, setTour] = useState('ATP');
   const [hovRow, setHovRow] = useState(null);
   const { rankings, loading, error } = useRankings(tour);
 
