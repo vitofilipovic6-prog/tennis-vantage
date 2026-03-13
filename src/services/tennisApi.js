@@ -2,12 +2,12 @@
 // src/services/tennisApi.js – TennisVantage API service layer
 //
 // CHANGES IN THIS VERSION:
-//  + match_type added to MATCH_SELECT and normaliseMatch
-//  + getHeadToHead returns null (not mock) when no finished matches found
-//  All prior fixes preserved:
-//  #23 — Imports shared singleton supabase client (no more duplicate createClient)
-//  #3  — N+1 eliminated: single JOIN query instead of two round-trips
-//  #2  — sendChatMessage correctly forwards systemContext to /api/chat
+//  + deriveMatchType() — client-side safety net that re-derives match_type
+//    from actual player names + tournament, overriding any DB mistakes.
+//    Slash in name = doubles. WTA player id in wtaPlayerIds set = WTA.
+//  + normaliseMatch() — calls deriveMatchType so every match leaving this
+//    file has the correct type regardless of what the DB stored.
+//  + getLiveMatches / getUpcomingMatches — AbortError guard added
 // ─────────────────────────────────────────────────────────────────────────────
 import { supabase } from './supabase';
 
@@ -24,9 +24,59 @@ const MATCH_SELECT = `
   )
 `;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// deriveMatchType — CLIENT-SIDE safety net
+//
+// Runs on every match that comes out of Supabase. Uses real player name data
+// (slash = doubles) and an optional Set of WTA player IDs from rankings to
+// correctly classify any match the DB got wrong.
+//
+// Priority order:
+//  1. Slash in player name  → doubles branch
+//  2. wtaPlayerIds Set      → WTA (most reliable for combined events)
+//  3. Tournament name       → WTA keyword check
+//  4. stored match_type     → trust the DB as final fallback
+// ─────────────────────────────────────────────────────────────────────────────
+export function deriveMatchType(m, wtaPlayerIds = new Set()) {
+  const p1Name     = m.player1?.name ?? '';
+  const p2Name     = m.player2?.name ?? '';
+  const tournament = (m.tournament ?? '').toLowerCase();
+  const stored     = m.match_type ?? 'atp_singles';
+
+  // ── Doubles detection (slash in name is 100% reliable) ────────────────────
+  const isDoubles = p1Name.includes('/') || p2Name.includes('/');
+
+  // ── WTA detection ──────────────────────────────────────────────────────────
+  const p1IsWta = wtaPlayerIds.size > 0 && wtaPlayerIds.has(m.player1?.id);
+  const p2IsWta = wtaPlayerIds.size > 0 && wtaPlayerIds.has(m.player2?.id);
+  const isWtaByRankings = p1IsWta || p2IsWta;
+
+  const isWtaByTournament =
+    tournament.includes('wta') ||
+    tournament.includes('women') ||
+    tournament.includes('ladies');
+
+  const isWtaByStored =
+    stored === 'wta_singles' || stored === 'wta_doubles';
+
+  const isMixedByStored = stored === 'mixed_doubles';
+
+  const isWta = isWtaByRankings || isWtaByTournament || isWtaByStored;
+
+  // ── Resolve final type ─────────────────────────────────────────────────────
+  if (isDoubles) {
+    if (isMixedByStored) return 'mixed_doubles';
+    if (isWta)           return 'wta_doubles';
+    return 'atp_doubles';
+  }
+
+  if (isWta) return 'wta_singles';
+  return stored; // trust DB for ATP singles / mixed that aren't doubles
+}
+
 // ── Normalise a raw Supabase match row into the shape the UI expects ──────────
-function normaliseMatch(m) {
-  return {
+function normaliseMatch(m, wtaPlayerIds = new Set()) {
+  const base = {
     id:         m.id,
     status:     m.status,
     tournament: m.tournament,
@@ -38,10 +88,14 @@ function normaliseMatch(m) {
     player1:    m.player1 ?? { id: 'p1', name: 'TBD', flag: '🏳️', rank: 999 },
     player2:    m.player2 ?? { id: 'p2', name: 'TBD', flag: '🏳️', rank: 999 },
   };
+
+  // Re-derive match_type as a safety net over whatever the DB stored
+  base.match_type = deriveMatchType(base, wtaPlayerIds);
+  return base;
 }
 
 // ── Live matches ──────────────────────────────────────────────────────────────
-export async function getLiveMatches() {
+export async function getLiveMatches(wtaPlayerIds = new Set()) {
   try {
     const { data, error } = await supabase
       .from('matches')
@@ -50,15 +104,16 @@ export async function getLiveMatches() {
       .order('match_date', { ascending: true });
 
     if (error) throw error;
-    return (data ?? []).map(normaliseMatch);
+    return (data ?? []).map(m => normaliseMatch(m, wtaPlayerIds));
   } catch (e) {
+    if (e?.name === 'AbortError') return [];
     console.error('[getLiveMatches]', e.message);
     return MOCK_DATA.matches.filter(m => m.status === 'live');
   }
 }
 
 // ── Upcoming matches ──────────────────────────────────────────────────────────
-export async function getUpcomingMatches() {
+export async function getUpcomingMatches(wtaPlayerIds = new Set()) {
   try {
     const { data, error } = await supabase
       .from('matches')
@@ -68,15 +123,16 @@ export async function getUpcomingMatches() {
       .limit(50);
 
     if (error) throw error;
-    return (data ?? []).map(normaliseMatch);
+    return (data ?? []).map(m => normaliseMatch(m, wtaPlayerIds));
   } catch (e) {
+    if (e?.name === 'AbortError') return [];
     console.error('[getUpcomingMatches]', e.message);
     return MOCK_DATA.matches.filter(m => m.status === 'upcoming');
   }
 }
 
 // ── Matches by date ───────────────────────────────────────────────────────────
-export async function getMatchesByDate(dateString) {
+export async function getMatchesByDate(dateString, wtaPlayerIds = new Set()) {
   try {
     const start = `${dateString}T00:00:00.000Z`;
     const end   = `${dateString}T23:59:59.999Z`;
@@ -89,8 +145,9 @@ export async function getMatchesByDate(dateString) {
       .order('match_date', { ascending: true });
 
     if (error) throw error;
-    return (data ?? []).map(normaliseMatch);
+    return (data ?? []).map(m => normaliseMatch(m, wtaPlayerIds));
   } catch (e) {
+    if (e?.name === 'AbortError') return [];
     console.error('[getMatchesByDate]', e.message);
     return MOCK_DATA.matches;
   }
@@ -147,7 +204,6 @@ export async function getPlayerStats(playerId) {
 }
 
 // ── Head to head ──────────────────────────────────────────────────────────────
-// Returns null if no finished matches found — UI handles the empty state gracefully
 export async function getHeadToHead(p1Id, p2Id) {
   try {
     const { data, error } = await supabase
@@ -183,7 +239,7 @@ export async function getHeadToHead(p1Id, p2Id) {
   }
 }
 
-// ── Prediction engine (pure local calc — no API needed) ───────────────────────
+// ── Prediction engine ─────────────────────────────────────────────────────────
 export async function getPrediction(match) {
   const p1 = match.player1;
   const p2 = match.player2;
@@ -206,7 +262,7 @@ export async function getPrediction(match) {
   };
 }
 
-// ── AI Chat — calls the Vercel Edge Function at /api/chat ─────────────────────
+// ── AI Chat ───────────────────────────────────────────────────────────────────
 export async function sendChatMessage(messages, systemContext = '') {
   try {
     const res = await fetch('/api/chat', {
@@ -215,7 +271,6 @@ export async function sendChatMessage(messages, systemContext = '') {
       body: JSON.stringify({ messages, systemContext }),
     });
 
-    // ── Friendly rate-limit message ─────────────────────────────────────────
     if (res.status === 429) {
       const err = await res.json().catch(() => ({}));
       return {
@@ -256,10 +311,10 @@ export const MOCK_DATA = {
   get matches() {
     const p = this.players;
     return [
-      { id:'m1', status:'live',     tournament:'Roland Garros', round:'QF', surface:'Clay',  score:'6-4, 3-2*', date: new Date().toISOString(), match_type:'atp_singles', player1:p[0], player2:p[1] },
-      { id:'m2', status:'upcoming', tournament:'Wimbledon',      round:'SF', surface:'Grass', score:null,        date: new Date().toISOString(), match_type:'atp_singles', player1:p[2], player2:p[3] },
-      { id:'m3', status:'upcoming', tournament:'US Open',        round:'F',  surface:'Hard',  score:null,        date: new Date().toISOString(), match_type:'atp_singles', player1:p[4], player2:p[5] },
-      { id:'m4', status:'upcoming', tournament:'Australian Open',round:'QF', surface:'Hard',  score:null,        date: new Date().toISOString(), match_type:'atp_singles', player1:p[6], player2:p[7] },
+      { id:'m1', status:'live',     tournament:'Roland Garros',   round:'QF', surface:'Clay',  score:'6-4, 3-2*', date: new Date().toISOString(), match_type:'atp_singles', player1:p[0], player2:p[1] },
+      { id:'m2', status:'upcoming', tournament:'Wimbledon',        round:'SF', surface:'Grass', score:null,        date: new Date().toISOString(), match_type:'atp_singles', player1:p[2], player2:p[3] },
+      { id:'m3', status:'upcoming', tournament:'US Open',          round:'F',  surface:'Hard',  score:null,        date: new Date().toISOString(), match_type:'atp_singles', player1:p[4], player2:p[5] },
+      { id:'m4', status:'upcoming', tournament:'Australian Open',  round:'QF', surface:'Hard',  score:null,        date: new Date().toISOString(), match_type:'atp_singles', player1:p[6], player2:p[7] },
     ];
   },
   rankings: [
