@@ -158,7 +158,7 @@ export default function LandingPage({ nav }) {
           <div className="lp-hero__court" aria-hidden="true"><CourtSVG opacity={0.045} /></div>
           <div className="lp-hero__inner">
             <div className="lp-hero__copy">
-              <div className="lp-f1"><Badge color="var(--lime)"><span className="lp-dot" />Live ATP Tour coverage</Badge></div>
+              <div className="lp-f1"><Badge color="var(--lime)"><span className="lp-dot" />Live ATP and WTA Tour coverage</Badge></div>
               <h1 className="lp-hero__h1 lp-f2">Predict Every<br /><span className="lp-hero__grad">Match Winner.</span></h1>
               <p className="lp-hero__sub lp-f3">TennisVantage combines live tour data with AI analysis to deliver win probabilities, surface breakdowns and player deep-dives — before the first serve.</p>
               <div className="lp-hero__cta lp-f4">
