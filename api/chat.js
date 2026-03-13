@@ -1,30 +1,18 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// api/chat.js  ← PROJECT ROOT (same level as /src)
+// api/chat.js  ← PROJECT ROOT (same level as /src and /api)
 //
-// Vercel Edge Function — proxies requests to the Google Gemini API.
+// Vercel Serverless Function (Node.js runtime) — proxies to Google Gemini API.
 // Your GEMINI_API_KEY never touches the browser.
 //
-// ⚠️  ONE-TIME SETUP:
-//     Vercel Dashboard → Project → Settings → Environment Variables
-//     Name:  GEMINI_API_KEY
-//     Value: your key from Google AI Studio (aistudio.google.com)
-//     Apply to: Production ✓  Preview ✓  Development ✓
-//     → Save, then Redeploy.
+// ⚠️  REQUIRED ENV VAR — add to BOTH places:
+//     1. Local: your .env file → GEMINI_API_KEY=your_key_here
+//     2. Vercel Dashboard → Project → Settings → Environment Variables
+//        Name: GEMINI_API_KEY | Value: your key from aistudio.google.com
+//        Apply to: Production ✓  Preview ✓  Development ✓  → Save → Redeploy
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const config = { runtime: 'edge' };
+const GEMINI_MODEL = 'gemini-2.5-flash';
 
-const GEMINI_MODEL = 'gemini-2.0-flash';
-
-// ─────────────────────────────────────────────────────────────────────────────
-// SYSTEM PROMPT
-// This is the single biggest lever for answer quality.
-// Key changes vs the old version:
-//   • Explicitly asks for structured, multi-paragraph responses
-//   • Instructs Gemini to use stats, historical context, and comparisons
-//   • Tells it to cover multiple angles (form, surface, H2H, pressure)
-//   • Markdown formatting enabled so bold/bullet answers render in the UI
-// ─────────────────────────────────────────────────────────────────────────────
 const DEFAULT_SYSTEM_PROMPT = `You are an elite tennis analyst with deep expertise in ATP and WTA tours, match statistics, player psychology, and tactical analysis. You work for TennisVantage, a premium tennis prediction platform.
 
 RESPONSE STYLE:
@@ -52,73 +40,54 @@ FORMAT RULES:
 - Keep paragraphs short (3-4 sentences max).
 - Always write at least 3 substantive paragraphs unless the question is a simple factual lookup.`;
 
-export default async function handler(req) {
-  // ── CORS preflight ─────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Node.js-style export — no "export const config" needed for Node runtime
+// ─────────────────────────────────────────────────────────────────────────────
+module.exports = async function handler(req, res) {
+  // ── CORS preflight ──────────────────────────────────────────────────────────
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
   if (req.method === 'OPTIONS') {
-    return new Response(null, {
-      status: 204,
-      headers: {
-        'Access-Control-Allow-Origin':  '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
-      },
-    });
+    return res.status(204).end();
   }
 
   if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-      status: 405, headers: { 'Content-Type': 'application/json' },
-    });
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  // ── Parse body ─────────────────────────────────────────────────────────────
-  let body;
-  try {
-    body = await req.json();
-  } catch {
-    return new Response(JSON.stringify({ error: 'Invalid JSON body' }), {
-      status: 400, headers: { 'Content-Type': 'application/json' },
-    });
-  }
-
-  const { messages, systemContext } = body;
-
-  if (!Array.isArray(messages) || messages.length === 0) {
-    return new Response(JSON.stringify({ error: 'messages array is required' }), {
-      status: 400, headers: { 'Content-Type': 'application/json' },
-    });
-  }
-
-  // ── Validate API key ───────────────────────────────────────────────────────
+  // ── Validate API key ────────────────────────────────────────────────────────
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    console.error('GEMINI_API_KEY is not set');
-    return new Response(JSON.stringify({ error: 'AI service is not configured' }), {
-      status: 503, headers: { 'Content-Type': 'application/json' },
-    });
+    console.error('[/api/chat] GEMINI_API_KEY is not set');
+    return res.status(503).json({ error: 'AI service is not configured' });
   }
 
-  // ── Build the system instruction ───────────────────────────────────────────
-  // If a match context is passed from the frontend, append it to the base prompt
-  // so Gemini knows exactly which match is being discussed.
+  // ── Parse body ──────────────────────────────────────────────────────────────
+  const { messages, systemContext } = req.body ?? {};
+
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return res.status(400).json({ error: 'messages array is required' });
+  }
+
+  // ── Build system instruction ────────────────────────────────────────────────
   const systemInstruction = systemContext?.trim()
     ? `${DEFAULT_SYSTEM_PROMPT}\n\nMATCH CONTEXT FOR THIS CONVERSATION:\n${systemContext}`
     : DEFAULT_SYSTEM_PROMPT;
 
-  // ── Convert message format: Anthropic/OpenAI → Gemini ─────────────────────
+  // ── Convert to Gemini format ────────────────────────────────────────────────
   // Frontend sends: [{ role: 'user'|'assistant', content: '...' }]
   // Gemini expects: [{ role: 'user'|'model',     parts: [{ text: '...' }] }]
-  //
-  // Gemini also requires the conversation to START with a 'user' turn and
-  // ALTERNATE strictly. Filter out any leading assistant messages to be safe.
+  // Gemini requires conversation starts with 'user' — strip any leading assistant msg
   const geminiContents = messages
-    .filter((m, i) => !(i === 0 && m.role === 'assistant')) // strip greeting if first
+    .filter((m, i) => !(i === 0 && m.role === 'assistant'))
     .map(m => ({
       role:  m.role === 'assistant' ? 'model' : 'user',
       parts: [{ text: m.content }],
     }));
 
-  // ── Call Gemini ────────────────────────────────────────────────────────────
+  // ── Call Gemini ─────────────────────────────────────────────────────────────
   try {
     const geminiRes = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
@@ -131,8 +100,8 @@ export default async function handler(req) {
           },
           contents: geminiContents,
           generationConfig: {
-            temperature:     0.8,  // slightly more creative/varied than 0.7
-            maxOutputTokens: 2048, // was 1024 — doubled for detailed answers
+            temperature:     0.8,
+            maxOutputTokens: 2048,
             topP:            0.95,
           },
         }),
@@ -141,40 +110,22 @@ export default async function handler(req) {
 
     if (!geminiRes.ok) {
       const errText = await geminiRes.text();
-      console.error('Gemini API error:', geminiRes.status, errText);
-      return new Response(
-        JSON.stringify({ error: 'Gemini API error', detail: geminiRes.status }),
-        { status: 502, headers: { 'Content-Type': 'application/json' } }
-      );
+      console.error('[/api/chat] Gemini error:', geminiRes.status, errText);
+      return res.status(502).json({ error: 'Gemini API error', detail: geminiRes.status });
     }
 
     const geminiData = await geminiRes.json();
     const text = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text;
 
     if (!text) {
-      console.error('Unexpected Gemini response:', JSON.stringify(geminiData));
-      return new Response(
-        JSON.stringify({ error: 'Unexpected response from Gemini' }),
-        { status: 502, headers: { 'Content-Type': 'application/json' } }
-      );
+      console.error('[/api/chat] Unexpected Gemini response:', JSON.stringify(geminiData));
+      return res.status(502).json({ error: 'Unexpected response from Gemini' });
     }
 
-    return new Response(
-      JSON.stringify({ content: [{ text }] }),
-      {
-        status: 200,
-        headers: {
-          'Content-Type':                'application/json',
-          'Access-Control-Allow-Origin': '*',
-        },
-      }
-    );
+    return res.status(200).json({ content: [{ text }] });
 
   } catch (err) {
-    console.error('Unexpected error in /api/chat:', err);
-    return new Response(
-      JSON.stringify({ error: 'Internal server error' }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
-    );
+    console.error('[/api/chat] Unexpected error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
   }
-}
+};
