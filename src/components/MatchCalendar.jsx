@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { useActiveDates } from '../hooks/hooks';
 
-export default function MatchCalendar({ onSelectDate, onTourFilter, tourFilter = 'All' }) {
+export default function MatchCalendar({ onSelectDate }) {
   const todayRef = useRef((() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -23,7 +23,6 @@ export default function MatchCalendar({ onSelectDate, onTourFilter, tourFilter =
   const scrollRef = useRef(null);
   const { activeDates } = useActiveDates(windowStart, windowEnd);
 
-  // Scroll today into centre on mount
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
       if (scrollRef.current) {
@@ -34,7 +33,6 @@ export default function MatchCalendar({ onSelectDate, onTourFilter, tourFilter =
     return () => cancelAnimationFrame(frame);
   }, []);
 
-  // Fire today immediately on mount
   useEffect(() => {
     onSelectDate?.(today, toDateStr(today));
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -61,53 +59,8 @@ export default function MatchCalendar({ onSelectDate, onTourFilter, tourFilter =
   }
 
   return (
-    <div style={{ width: '100%', marginBottom: '28px' }}>
-
-      {/* ── Tour filter pills ── */}
-      <div style={{
-        display: 'flex', gap: '8px', marginBottom: '14px',
-        flexWrap: 'wrap', alignItems: 'center',
-      }}>
-        <span style={{
-          fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em',
-          textTransform: 'uppercase', color: 'var(--text-faint)',
-          alignSelf: 'center', marginRight: '4px',
-        }}>
-          Tour
-        </span>
-        {['All', 'ATP', 'WTA'].map(t => (
-          <button
-            key={t}
-            onClick={() => onTourFilter?.(t)}
-            style={{
-              padding: '5px 16px',
-              borderRadius: '999px',
-              border: tourFilter === t ? 'none' : '1px solid var(--border)',
-              background: tourFilter === t
-                ? t === 'WTA' ? '#f472b6' : t === 'All' ? 'var(--lime)' : 'var(--lime)'
-                : 'var(--bg-glass-md)',
-              color: tourFilter === t ? '#070B14' : 'var(--text-muted)',
-              fontFamily: 'var(--font-body)',
-              fontWeight: 700,
-              fontSize: '12px',
-              cursor: 'pointer',
-              transition: 'var(--t)',
-              letterSpacing: '0.04em',
-              WebkitTapHighlightColor: 'transparent',
-            }}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
-
-      {/* ── Date strip ── */}
-      {/* 
-        KEY FIX for laptop scroll:
-        - position: relative + overflow: visible on wrapper ensures no clipping
-        - The scrollable div uses overflow-x: scroll (not auto) for reliable desktop behaviour
-        - min-width: 0 prevents flex parent from squashing it
-      */}
+    <div style={{ width: '100%', marginBottom: '16px' }}>
+      {/* ── Date strip only — Tour/type filter pills live in MatchesTab ── */}
       <div style={{ position: 'relative', overflow: 'visible', minWidth: 0 }}>
         <style>{`
           .tv-cal-strip { -ms-overflow-style: none; scrollbar-width: none; }
@@ -120,15 +73,14 @@ export default function MatchCalendar({ onSelectDate, onTourFilter, tourFilter =
           style={{
             display: 'flex',
             gap: '8px',
-            overflowX: 'scroll',       /* scroll not auto — more reliable on desktop */
+            overflowX: 'scroll',
             paddingBottom: '8px',
             paddingTop: '2px',
             paddingLeft: '2px',
             paddingRight: '2px',
             WebkitOverflowScrolling: 'touch',
-            cursor: 'grab',            /* visual hint on desktop that it's scrollable */
+            cursor: 'grab',
           }}
-          /* Drag-to-scroll on desktop */
           onMouseDown={e => {
             const el = e.currentTarget;
             el.style.cursor = 'grabbing';
@@ -136,7 +88,7 @@ export default function MatchCalendar({ onSelectDate, onTourFilter, tourFilter =
             const startX = e.pageX - el.offsetLeft;
             const scrollLeft = el.scrollLeft;
             const onMove = ev => { el.scrollLeft = scrollLeft - (ev.pageX - el.offsetLeft - startX); };
-            const onUp   = ()  => {
+            const onUp = () => {
               el.style.cursor = 'grab';
               el.style.userSelect = '';
               window.removeEventListener('mousemove', onMove);
@@ -201,7 +153,6 @@ export default function MatchCalendar({ onSelectDate, onTourFilter, tourFilter =
                 }}>
                   {isToday ? 'TODAY' : dayName}
                 </span>
-
                 <span style={{
                   fontSize: '20px', fontWeight: 700,
                   fontFamily: 'var(--font-display)',
@@ -211,7 +162,6 @@ export default function MatchCalendar({ onSelectDate, onTourFilter, tourFilter =
                 }}>
                   {dayNum}
                 </span>
-
                 <span style={{
                   fontSize: '10px', fontWeight: 500,
                   letterSpacing: '0.05em', textTransform: 'uppercase',
@@ -220,7 +170,6 @@ export default function MatchCalendar({ onSelectDate, onTourFilter, tourFilter =
                 }}>
                   {monthName}
                 </span>
-
                 <span style={{
                   width: '5px', height: '5px',
                   borderRadius: '50%',

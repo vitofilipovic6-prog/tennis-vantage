@@ -323,7 +323,6 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch }) 
   const [pastMatches,  setPastMatches]  = useState([]);
   const [pastLoading,  setPastLoading]  = useState(false);
 
-  // Determine if selected date is in the past vs today/future
   const today = useMemo(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -340,7 +339,6 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch }) 
   const isPastDay       = selectedDay && selectedDay < today;
   const isTodayOrFuture = !selectedDay || selectedDay >= today;
 
-  // Fetch finished matches when a past date is selected
   useEffect(() => {
     if (!isPastDay) { setPastMatches([]); return; }
     let cancelled = false;
@@ -356,11 +354,9 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch }) 
   if (loading) return <LoadingGrid />;
   if (error)   return <ErrorMessage msg={error} onRetry={refresh} />;
 
-  // Filter helpers
   const byType = (arr) => arr.filter(m => (m.match_type ?? 'atp_singles') === activeFilter);
 
   const filteredLive = byType(live);
-
   const filteredUpcoming = byType(
     selectedDay && isTodayOrFuture
       ? upcoming.filter(m => {
@@ -371,19 +367,19 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch }) 
         })
       : upcoming
   );
-
   const filteredPast = byType(pastMatches);
-
   const activeFilterDef = MATCH_FILTERS.find(f => f.id === activeFilter);
 
   return (
     <div className="tv-fade-up">
-      <MatchCalendar onSelectDate={setCalendarDate} />
 
-      {/* ── Filter pills ───────────────────────────────────────────────── */}
+      {/* ── 1. Filter pills FIRST (single row, single source of truth) ── */}
       <FilterPills activeFilter={activeFilter} onSelect={setActiveFilter} />
 
-      {/* ── PAST DAY ───────────────────────────────────────────────────── */}
+      {/* ── 2. Calendar date strip SECOND ───────────────────────────── */}
+      <MatchCalendar onSelectDate={setCalendarDate} />
+
+      {/* ── PAST DAY ─────────────────────────────────────────────────── */}
       {isPastDay ? (
         <section>
           <SectionHeading label={`${activeFilterDef?.label} — ${calendarDate.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })}`} />
@@ -405,10 +401,8 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch }) 
             </div>
           )}
         </section>
-
       ) : (
         <>
-          {/* ── LIVE ─────────────────────────────────────────────────── */}
           {filteredLive.length > 0 && (
             <section style={{ marginBottom: '40px' }}>
               <SectionHeading label="Live Now" dot />
@@ -419,19 +413,17 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch }) 
               </div>
             </section>
           )}
-
-          {/* ── UPCOMING ─────────────────────────────────────────────── */}
           <section>
             <SectionHeading label={
               selectedDay
-                ? `${activeFilterDef?.label} — ${calendarDate.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })}`
-                : `${activeFilterDef?.label} Matches`
+                ? `Upcoming — ${selectedDay.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })}`
+                : `${activeFilterDef?.label} — Upcoming`
             } />
             {filteredUpcoming.length === 0 ? (
               <EmptyState
                 icon="🎾"
                 title={`No ${activeFilterDef?.label} matches`}
-                desc="Try a different filter or check back soon."
+                desc="Try a different filter or check another date."
               />
             ) : (
               <div style={gridStyle}>
@@ -975,6 +967,65 @@ function AiChatTab({ contextMatch }) {
       {/* Chat column */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         <Card padding="0" style={{ overflow: 'hidden' }}>
+
+          {/* ── Chat header with Clear button ───────────────────────── */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '12px 16px',
+            borderBottom: '1px solid var(--border)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '16px' }}>🤖</span>
+              <span style={{
+                fontFamily: 'var(--font-display)',
+                fontWeight: 700,
+                fontSize: '14px',
+                color: 'var(--text)',
+              }}>
+                AI Analyst
+              </span>
+            </div>
+            <button
+              onClick={reset}
+              title="Clear chat"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px',
+                padding: '5px 10px',
+                background: 'transparent',
+                border: '1px solid var(--border)',
+                borderRadius: '7px',
+                color: 'var(--text-faint)',
+                fontSize: '11px',
+                fontWeight: 600,
+                fontFamily: 'var(--font-body)',
+                cursor: 'pointer',
+                transition: 'var(--t)',
+                letterSpacing: '0.03em',
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.borderColor = 'var(--red)';
+                e.currentTarget.style.color = 'var(--red)';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.borderColor = 'var(--border)';
+                e.currentTarget.style.color = 'var(--text-faint)';
+              }}
+            >
+              {/* Trash icon */}
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <polyline points="3 6 5 6 21 6"/>
+                <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
+                <path d="M10 11v6M14 11v6"/>
+                <path d="M9 6V4h6v2"/>
+              </svg>
+              Clear
+            </button>
+          </div>
+
           {/* Message list */}
           <div className="tv-chat-column" style={{
             height: 'clamp(340px,52vh,520px)',
@@ -1025,7 +1076,7 @@ function AiChatTab({ contextMatch }) {
           {messages.length <= 1 && (
             <div style={{ padding: '0 20px 16px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
               {suggestions.map(s => (
-                <button key={s} onClick={() => { sendMessage(s); }} style={{
+                <button key={s} onClick={() => sendMessage(s)} style={{
                   padding: '6px 12px', borderRadius: '999px',
                   background: 'var(--bg-glass)', border: '1px solid var(--border)',
                   color: 'var(--text-muted)', fontSize: '12px', cursor: 'pointer',
@@ -1081,7 +1132,7 @@ function AiChatTab({ contextMatch }) {
         </form>
       </div>
 
-      {/* Context panel (desktop only when a match is selected) */}
+      {/* Context panel */}
       {contextMatch && (
         <div className="tv-chat-context-panel">
           <SectionHeading label="Match Context" />
@@ -1100,7 +1151,7 @@ function AiChatTab({ contextMatch }) {
               </span>
               {contextMatch.status === 'live' && (
                 <span style={{ fontSize: '12px', padding: '3px 8px', borderRadius: '6px', background: 'rgba(159,239,102,0.1)', border: '1px solid rgba(159,239,102,0.3)', color: 'var(--lime)' }}>
-                  🔴 Live
+                  LIVE
                 </span>
               )}
             </div>
