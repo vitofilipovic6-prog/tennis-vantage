@@ -210,10 +210,20 @@ export async function getPrediction(match) {
 export async function sendChatMessage(messages, systemContext = '') {
   try {
     const res = await fetch('/api/chat', {
-      method:  'POST',
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ messages, systemContext }),
     });
+
+    // ── Friendly rate-limit message ─────────────────────────────────────────
+    if (res.status === 429) {
+      const err = await res.json().catch(() => ({}));
+      return {
+        content: [{
+          text: `⏱️ **AI Analyst Busy**\n\n${err.message ?? 'Too many requests — please wait 30 seconds and try again.'}`,
+        }],
+      };
+    }
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
