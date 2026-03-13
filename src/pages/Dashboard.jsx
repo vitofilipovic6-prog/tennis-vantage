@@ -777,6 +777,65 @@ function PredictionCard({ match: m, prediction: pred }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// MATCH PICKER ROW (inside Predictions sidebar)
+// ─────────────────────────────────────────────────────────────────────────────
+function MatchPickerRow({ match: m, selected, onSelect }) {
+  // No fallback to 'atp_singles' — only show badge if type is actually known
+  const matchTypeDef = m.match_type
+    ? MATCH_FILTERS.find(f => f.id === m.match_type)
+    : null;
+
+  const isLive = m.status === 'live';
+
+  return (
+    <button
+      onClick={onSelect}
+      style={{
+        width: '100%', textAlign: 'left', padding: '12px 14px',
+        background: selected ? 'rgba(159,239,102,0.08)' : 'var(--bg-card)',
+        border: `1px solid ${selected ? 'var(--lime)' : 'var(--border)'}`,
+        borderRadius: 'var(--radius-sm)', cursor: 'pointer', transition: 'var(--t)',
+        fontFamily: 'var(--font-body)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px', gap: '6px' }}>
+        <p style={{
+          fontSize: '11px', color: 'var(--text-faint)', fontWeight: 700,
+          textTransform: 'uppercase', letterSpacing: '0.07em',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          flex: 1, minWidth: 0,
+        }}>
+          {m.tournament} · {m.round}
+        </p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+          {isLive && (
+            <span style={{
+              display: 'flex', alignItems: 'center', gap: '3px',
+              fontSize: '9px', fontWeight: 700, color: 'var(--lime)',
+              textTransform: 'uppercase', letterSpacing: '0.06em',
+            }}>
+              <span className="live-dot" style={{ width: '5px', height: '5px' }} />
+              Live
+            </span>
+          )}
+          {matchTypeDef && (
+            <span style={{
+              fontSize: '9px', fontWeight: 700, padding: '1px 5px', borderRadius: '3px',
+              background: `${matchTypeDef.color}22`, color: matchTypeDef.color,
+            }}>
+              {matchTypeDef.shortLabel}
+            </span>
+          )}
+        </div>
+      </div>
+      <p style={{ fontSize: '13px', fontWeight: 600, color: selected ? 'var(--lime)' : 'var(--text)', lineHeight: 1.5 }}>
+        {m.player1?.name} <span style={{ color: 'var(--text-faint)', fontWeight: 400 }}>vs</span> {m.player2?.name}
+      </p>
+    </button>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // H2H PANEL
 // ─────────────────────────────────────────────────────────────────────────────
 function H2HPanel({ h2h, match }) {
