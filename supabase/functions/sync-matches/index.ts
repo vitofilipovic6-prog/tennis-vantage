@@ -1,15 +1,17 @@
-// supabase/functions/sync-matches/index.ts
 // ─────────────────────────────────────────────────────────────────────────────
-// Syncs live, upcoming, AND recent past matches into Supabase.
-// KEY CHANGE: normalizeEvent now receives `tour` so every match row has the
-// correct tour column. Filter works from DB, not from name-string guessing.
+// supabase/functions/sync-matches/index.ts
+//
+// CHANGES IN THIS VERSION:
+//  + Migrated to tennisapi1.p.rapidapi.com (new API)
+//  + Uses normalizeEvent() from _shared/normalize.ts
+//  + Stores match_type and winner_id on every match row
+//  + Does NOT skip doubles — they are stored with correct match_type
+//    (atp_doubles / wta_doubles / mixed_doubles)
+//  + Fetches today + 3 days ahead using per-day endpoints
+//  + Also fetches live matches from /matches/live
 // ─────────────────────────────────────────────────────────────────────────────
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import {
-  normalizeEvent,
-  extractArray,
-  resolveTour,
-} from '../_shared/normalize.ts';
+import { normalizeEvent, resolveTour } from '../_shared/normalize.ts';
 
 const RAPIDAPI_KEY     = Deno.env.get('RAPIDAPI_KEY')!;
 const RAPIDAPI_HOST    = 'tennisapi1.p.rapidapi.com';
@@ -18,29 +20,43 @@ const SUPABASE_SVC_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SVC_KEY);
 
-async function rapidGet(path: string): Promise<any | null> {
-  const url = `https://${RAPIDAPI_HOST}${path}`;
-  console.log('[GET]', url);
-
+// ── Fetch from tennisapi1 ─────────────────────────────────────────────────────
+async function rapidGet(path: string) {
+  const url = `https://${RAPIDAPI_HOST}/api/tennis/${path}`;
+  console.log('GET', url);
   const res = await fetch(url, {
     headers: {
       'Content-Type':    'application/json',
-      'x-rapidapi-host': RAPIDAPI_HOST,
       'x-rapidapi-key':  RAPIDAPI_KEY,
+      'x-rapidapi-host': RAPIDAPI_HOST,
     },
   });
-
   const text = await res.text();
-  if (!res.ok) {
-    console.warn(`[SKIP ${res.status}] ${url} — ${text.slice(0, 150)}`);
-    return null;
+  console.log('RESPONSE:', text.slice(0, 600));
+  if (!res.ok) throw new Error(`${res.status}: ${text.slice(0, 300)}`);
+  return JSON.parse(text);
+}
+
+// ── Extract events array from any response shape ──────────────────────────────
+function extractEvents(data: any): any[] {
+  if (Array.isArray(data))            return data;
+  if (Array.isArray(data?.events))    return data.events;
+  if (Array.isArray(data?.result))    return data.result;
+  if (Array.isArray(data?.results))   return data.results;
+  if (Array.isArray(data?.matches))   return data.matches;
+  console.log('UNKNOWN SHAPE:', JSON.stringify(data).slice(0, 400));
+  return [];
+}
+
+// ── Generate date range as {day, month, year} tuples ─────────────────────────
+function dateRange(daysAhead: number): Array<{ day: number; month: number; year: number }> {
+  const result = [];
+  for (let i = 0; i <= daysAhead; i++) {
+    const d = new Date();
+    d.setDate(d.getDate() + i);
+    result.push({ day: d.getDate(), month: d.getMonth() + 1, year: d.getFullYear() });
   }
-  try {
-    return JSON.parse(text);
-  } catch {
-    console.warn(`[PARSE ERROR] ${url}`);
-    return null;
-  }
+  return result;
 }
 
 Deno.serve(async (req: Request) => {
@@ -56,143 +72,98 @@ Deno.serve(async (req: Request) => {
   const log: string[]    = [];
   const errors: string[] = [];
 
-  // ── 0. STALE CLEANUP ──────────────────────────────────────────────────────
-  // Delete any rows stuck as upcoming/live from 3+ days ago (old API ghosts).
+  // Accumulated maps for deduplication across multiple day fetches
+  const playersMap  = new Map<string, object>();
+  const matchesMap  = new Map<string, object>();
+
   try {
-    const cutoff = new Date();
-    cutoff.setUTCDate(cutoff.getUTCDate() - 3);
-    const cutoffISO = cutoff.toISOString();
+    // ── 1. Live matches ───────────────────────────────────────────────────────
+    try {
+      log.push('[LIVE] Fetching live matches...');
+      const raw    = await rapidGet('matches/live');
+      const events = extractEvents(raw);
+      log.push(`[LIVE] Got ${events.length} events`);
 
-    const { count, error: delErr } = await supabase
-      .from('matches')
-      .delete({ count: 'exact' })
-      .in('status', ['upcoming', 'live'])
-      .lt('match_date', cutoffISO);
+      for (const ev of events) {
+        const tour = resolveTour(ev);
+        if (!tour) continue; // skip ITF / Challenger / non-ATP-WTA
 
-    if (delErr) {
-      errors.push(`[CLEANUP] ${delErr.message}`);
+        const result = normalizeEvent(ev, 'live');
+        if (!result) continue;
+
+        const { match, p1, p2 } = result;
+        matchesMap.set(match.id, match);
+        if (!playersMap.has(p1.id)) playersMap.set(p1.id, p1);
+        if (!playersMap.has(p2.id)) playersMap.set(p2.id, p2);
+      }
+      log.push(`[LIVE] Parsed ${matchesMap.size} live matches`);
+    } catch (e: unknown) {
+      errors.push(`[LIVE] ${e instanceof Error ? e.message : String(e)}`);
+    }
+
+    // ── 2. Upcoming matches — today + 3 days ──────────────────────────────────
+    const dates = dateRange(3);
+    for (const { day, month, year } of dates) {
+      const label = `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+      try {
+        log.push(`[UPCOMING] Fetching ${label}...`);
+        const raw    = await rapidGet(`events/${day}/${month}/${year}`);
+        const events = extractEvents(raw);
+        log.push(`[UPCOMING] ${label}: ${events.length} events`);
+
+        for (const ev of events) {
+          const tour = resolveTour(ev);
+          if (!tour) continue; // skip ITF / Challenger
+
+          // Skip if already captured as live
+          if (matchesMap.has(String(ev?.id ?? ''))) continue;
+
+          const result = normalizeEvent(ev);
+          if (!result) continue;
+
+          // Skip genuinely finished matches (don't pollute upcoming list)
+          if (result.match.status === 'finished') continue;
+
+          const { match, p1, p2 } = result;
+          matchesMap.set(match.id, match);
+          if (!playersMap.has(p1.id)) playersMap.set(p1.id, p1);
+          if (!playersMap.has(p2.id)) playersMap.set(p2.id, p2);
+        }
+      } catch (e: unknown) {
+        errors.push(`[UPCOMING ${label}] ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+
+    log.push(`[SYNC] Total: ${matchesMap.size} matches, ${playersMap.size} players`);
+
+    // ── 3. Upsert players first (FK safety) ───────────────────────────────────
+    if (playersMap.size > 0) {
+      const playerChunks = chunk([...playersMap.values()], 50);
+      for (const ch of playerChunks) {
+        const { error } = await supabase
+          .from('players')
+          .upsert(ch, { onConflict: 'id', ignoreDuplicates: true });
+        if (error) errors.push(`[PLAYERS] ${error.message}`);
+      }
+      log.push(`[PLAYERS] ✓ Upserted ${playersMap.size} players`);
+    }
+
+    // ── 4. Upsert matches ─────────────────────────────────────────────────────
+    if (matchesMap.size > 0) {
+      const matchChunks = chunk([...matchesMap.values()], 50);
+      for (const ch of matchChunks) {
+        const { error } = await supabase
+          .from('matches')
+          .upsert(ch, { onConflict: 'id', ignoreDuplicates: false });
+        if (error) errors.push(`[MATCHES] ${error.message}`);
+      }
+      log.push(`[MATCHES] ✓ Upserted ${matchesMap.size} matches`);
     } else {
-      log.push(`[CLEANUP] Deleted ${count ?? 0} stale upcoming/live rows older than ${cutoffISO}`);
+      log.push('[MATCHES] No matches to upsert');
     }
+
   } catch (err: unknown) {
-    errors.push(`[CLEANUP] ${err instanceof Error ? err.message : String(err)}`);
-  }
-
-  // ── Collect all raw events — deduplicated by ID ────────────────────────────
-  const rawEventsMap = new Map<string, any>();
-
-  // ── 1. Live matches ────────────────────────────────────────────────────────
-  try {
-    log.push('[LIVE] Fetching /api/tennis/matches/live ...');
-    const liveRaw    = await rapidGet('/api/tennis/matches/live');
-    const liveEvents = extractArray(liveRaw);
-    log.push(`[LIVE] ${liveEvents.length} events`);
-    liveEvents.forEach((e: any) => {
-      if (e?.id) rawEventsMap.set(String(e.id), e);
-    });
-  } catch (err: unknown) {
-    errors.push(`[LIVE] ${err instanceof Error ? err.message : String(err)}`);
-  }
-
-  // ── 2. Events by date: 2 days ago → today + 3 days ahead ──────────────────
-  const today = new Date();
-  const dateParams = Array.from({ length: 6 }, (_, i) => {
-    const offset = i - 2; // -2, -1, 0, +1, +2, +3
-    const d = new Date(today);
-    d.setUTCDate(today.getUTCDate() + offset);
-    return {
-      day:    d.getUTCDate(),
-      month:  d.getUTCMonth() + 1,
-      year:   d.getUTCFullYear(),
-      offset,
-    };
-  });
-
-  const dateFetches = dateParams.map(({ day, month, year, offset }) =>
-    rapidGet(`/api/tennis/events/${day}/${month}/${year}`)
-      .then(raw => ({ raw, label: `${day}/${month}/${year} (offset ${offset >= 0 ? '+' : ''}${offset})` }))
-  );
-
-  const dateResults = await Promise.allSettled(dateFetches);
-
-  for (const result of dateResults) {
-    if (result.status !== 'fulfilled' || !result.value.raw) continue;
-    const { raw, label } = result.value;
-    const events = extractArray(raw);
-    log.push(`[DATE ${label}] ${events.length} events`);
-    events.forEach((e: any) => {
-      if (e?.id) rawEventsMap.set(String(e.id), e);
-    });
-  }
-
-  log.push(`[DEDUP] ${rawEventsMap.size} unique events total`);
-
-  // ── 3. Normalize + separate live/upcoming from finished ────────────────────
-  const playersMap           = new Map<string, object>();
-  const liveAndUpcomingRows: object[] = [];
-  const finishedRows:        object[] = [];
-  let   skippedNonATPWTA    = 0;
-  let   skippedMissingFields = 0;
-
-  for (const rawEvent of rawEventsMap.values()) {
-    // resolveTour reads category.slug from the API — authoritative, not guessed
-    const tour = resolveTour(rawEvent);
-    if (!tour) {
-      skippedNonATPWTA++;
-      continue;
-    }
-
-    // Pass tour directly into normalizeEvent — it gets stored in the DB row
-    const normalized = normalizeEvent(rawEvent, tour);
-    if (!normalized) {
-      skippedMissingFields++;
-      continue;
-    }
-
-    const { match, player1, player2 } = normalized;
-
-    if (match.status === 'finished') {
-      finishedRows.push(match);
-    } else {
-      liveAndUpcomingRows.push(match);
-    }
-
-    if (!playersMap.has(player1.id)) playersMap.set(player1.id, player1);
-    if (!playersMap.has(player2.id)) playersMap.set(player2.id, player2);
-  }
-
-  log.push(
-    `[NORMALIZE] live+upcoming: ${liveAndUpcomingRows.length} | ` +
-    `finished: ${finishedRows.length} | ` +
-    `skipped (non-ATP/WTA): ${skippedNonATPWTA} | ` +
-    `skipped (bad data): ${skippedMissingFields}`
-  );
-
-  // ── 4. Upsert players FIRST (FK safety) ───────────────────────────────────
-  if (playersMap.size > 0) {
-    const { error } = await supabase
-      .from('players')
-      .upsert([...playersMap.values()], { onConflict: 'id', ignoreDuplicates: true });
-    if (error) errors.push(`[DB] players: ${error.message}`);
-    else log.push(`[DB] ✓ Upserted ${playersMap.size} players`);
-  }
-
-  // ── 5. Upsert live + upcoming matches ─────────────────────────────────────
-  if (liveAndUpcomingRows.length > 0) {
-    const { error } = await supabase
-      .from('matches')
-      .upsert(liveAndUpcomingRows, { onConflict: 'id', ignoreDuplicates: false });
-    if (error) errors.push(`[DB] live/upcoming matches: ${error.message}`);
-    else log.push(`[DB] ✓ Upserted ${liveAndUpcomingRows.length} live/upcoming matches`);
-  }
-
-  // ── 6. Upsert finished matches (H2H history) ──────────────────────────────
-  if (finishedRows.length > 0) {
-    const { error } = await supabase
-      .from('matches')
-      .upsert(finishedRows, { onConflict: 'id', ignoreDuplicates: false });
-    if (error) errors.push(`[DB] finished matches: ${error.message}`);
-    else log.push(`[DB] ✓ Upserted ${finishedRows.length} finished matches`);
+    errors.push(`FATAL: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   return new Response(
@@ -200,6 +171,13 @@ Deno.serve(async (req: Request) => {
     {
       status:  errors.length ? 207 : 200,
       headers: { 'Content-Type': 'application/json' },
-    },
+    }
   );
 });
+
+// ── Utility: split array into chunks of n ────────────────────────────────────
+function chunk<T>(arr: T[], n: number): T[][] {
+  const result: T[][] = [];
+  for (let i = 0; i < arr.length; i += n) result.push(arr.slice(i, i + n));
+  return result;
+}
