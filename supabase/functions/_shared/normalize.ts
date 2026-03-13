@@ -146,36 +146,77 @@ export function resolveTour(event: any): 'ATP' | 'WTA' | null {
 // ─────────────────────────────────────────────────────────────────────────────
 // resolveMatchType — determines exact match type for filter pills
 //
-// Detection logic:
-//   Doubles: homeTeam or awayTeam name contains "/" (e.g. "Arevalo/Pavic")
-//   Mixed doubles: one team gender M, other F
-//   ATP doubles: both teams M (or both unknown, but name has "/")
-//   WTA doubles: both teams F
-//   ATP singles: M gender, no slash
-//   WTA singles: F gender, no slash
+// ROBUST multi-signal detection. The tennisapi1 API is inconsistent:
+// - Some events have homeTeam.gender, some don't
+// - Tournament name / category is the most reliable fallback
+// - Player names with "/" = doubles
 // ─────────────────────────────────────────────────────────────────────────────
 export function resolveMatchType(
   event: any
 ): 'atp_singles' | 'wta_singles' | 'atp_doubles' | 'wta_doubles' | 'mixed_doubles' {
-  const homeName   = String(event?.homeTeam?.name ?? '');
-  const awayName   = String(event?.awayTeam?.name ?? '');
-  const isDoubles  = homeName.includes('/') || awayName.includes('/');
+  const homeName = String(event?.homeTeam?.name ?? '');
+  const awayName = String(event?.awayTeam?.name ?? '');
+  const isDoubles = homeName.includes('/') || awayName.includes('/');
 
   const homeGender = String(event?.homeTeam?.gender ?? '').toUpperCase();
   const awayGender = String(event?.awayTeam?.gender ?? '').toUpperCase();
 
-  // Singles path
-  if (!isDoubles) {
-    if (homeGender === 'F' || awayGender === 'F') return 'wta_singles';
-    return 'atp_singles'; // default for unknown gender in singles
+  // ── Signal 2: category slug / name ──────────────────────────────────────
+  const catSlug = String(
+    event?.tournament?.category?.slug ??
+    event?.tournament?.uniqueTournament?.category?.slug ?? ''
+  ).toLowerCase();
+  const catName = String(
+    event?.tournament?.category?.name ??
+    event?.tournament?.uniqueTournament?.category?.name ?? ''
+  ).toLowerCase();
+  const tournamentName = String(
+    event?.tournament?.uniqueTournament?.name ??
+    event?.tournament?.name ?? ''
+  ).toLowerCase();
+
+  const isWtaByCategory =
+    catSlug === 'wta' ||
+    catName === 'wta' ||
+    catName.includes('wta') ||
+    tournamentName.includes('wta');
+
+  const isAtpByCategory =
+    catSlug === 'atp' ||
+    catName === 'atp' ||
+    catName.includes('atp');
+
+  // ── Signal 3: "mixed" in tournament name ────────────────────────────────
+  const isMixedByName =
+    tournamentName.includes('mixed') ||
+    String(event?.tournament?.name ?? '').toLowerCase().includes('mixed');
+
+  // ── Doubles branch ───────────────────────────────────────────────────────
+  if (isDoubles) {
+    // Mixed: explicit gender mismatch OR "mixed" in name
+    if (isMixedByName) return 'mixed_doubles';
+    if (homeGender !== '' && awayGender !== '' && homeGender !== awayGender) {
+      return 'mixed_doubles';
+    }
+    // WTA doubles
+    if (homeGender === 'F' || awayGender === 'F' || isWtaByCategory) {
+      return 'wta_doubles';
+    }
+    // ATP doubles (male or unknown)
+    return 'atp_doubles';
   }
 
-  // Doubles path — check for mixed first
-  if (homeGender !== '' && awayGender !== '' && homeGender !== awayGender) {
-    return 'mixed_doubles';
-  }
-  if (homeGender === 'F' || awayGender === 'F') return 'wta_doubles';
-  return 'atp_doubles'; // default for doubles when gender unknown
+  // ── Singles branch ───────────────────────────────────────────────────────
+  // Gender field is most reliable
+  if (homeGender === 'F' || awayGender === 'F') return 'wta_singles';
+  if (homeGender === 'M' || awayGender === 'M') return 'atp_singles';
+
+  // Fallback: category/tournament name
+  if (isWtaByCategory) return 'wta_singles';
+  if (isAtpByCategory) return 'atp_singles';
+
+  // Last resort: default to atp_singles
+  return 'atp_singles';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

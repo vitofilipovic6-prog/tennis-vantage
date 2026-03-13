@@ -136,13 +136,13 @@ Deno.serve(async (req: Request) => {
 
     log.push(`[SYNC] Total: ${matchesMap.size} matches, ${playersMap.size} players`);
 
-    // ── 3. Upsert players first (FK safety) ───────────────────────────────────
+   // ── 3. Upsert players — ignoreDuplicates: FALSE so gender/rank updates land ──
     if (playersMap.size > 0) {
       const playerChunks = chunk([...playersMap.values()], 50);
       for (const ch of playerChunks) {
         const { error } = await supabase
           .from('players')
-          .upsert(ch, { onConflict: 'id', ignoreDuplicates: true });
+          .upsert(ch, { onConflict: 'id', ignoreDuplicates: false });
         if (error) errors.push(`[PLAYERS] ${error.message}`);
       }
       log.push(`[PLAYERS] ✓ Upserted ${playersMap.size} players`);
@@ -160,6 +160,55 @@ Deno.serve(async (req: Request) => {
       log.push(`[MATCHES] ✓ Upserted ${matchesMap.size} matches`);
     } else {
       log.push('[MATCHES] No matches to upsert');
+    }
+
+    // ── 5. BACKFILL: fix existing rows where match_type = 'atp_singles' wrongly ──
+    // Re-derive match_type from tournament name for already-stored matches
+    // This runs every sync so stale rows get corrected automatically
+    try {
+      const { data: existingMatches, error: fetchErr } = await supabase
+        .from('matches')
+        .select('id, tournament, round, player1_id, player2_id, match_type')
+        .in('status', ['live', 'upcoming']);
+
+      if (!fetchErr && existingMatches) {
+        const updates: { id: string; match_type: string }[] = [];
+
+        for (const m of existingMatches) {
+          const nameLower = (m.tournament ?? '').toLowerCase();
+          const roundLower = (m.round ?? '').toLowerCase();
+
+          // Detect doubles from round name (e.g. "Doubles Quarterfinals")
+          const isDoubles = roundLower.includes('double') || nameLower.includes('double');
+          const isMixed = roundLower.includes('mixed') || nameLower.includes('mixed');
+          const isWta = nameLower.includes('wta');
+
+          let derivedType = m.match_type;
+
+          if (isMixed && isDoubles) derivedType = 'mixed_doubles';
+          else if (isDoubles && isWta) derivedType = 'wta_doubles';
+          else if (isDoubles) derivedType = 'atp_doubles'; // will be corrected if WTA
+          else if (isWta) derivedType = 'wta_singles';
+
+          if (derivedType !== m.match_type) {
+            updates.push({ id: m.id, match_type: derivedType });
+          }
+        }
+
+        if (updates.length > 0) {
+          for (const u of updates) {
+            await supabase
+              .from('matches')
+              .update({ match_type: u.match_type })
+              .eq('id', u.id);
+          }
+          log.push(`[BACKFILL] ✓ Corrected match_type on ${updates.length} rows`);
+        } else {
+          log.push('[BACKFILL] All match_type values look correct');
+        }
+      }
+    } catch (backfillErr: unknown) {
+      errors.push(`[BACKFILL] ${backfillErr instanceof Error ? backfillErr.message : String(backfillErr)}`);
     }
 
   } catch (err: unknown) {
