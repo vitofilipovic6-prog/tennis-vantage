@@ -448,7 +448,13 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict }) {
   const surfaceColors = { Clay: '#f97316', Hard: '#60a5fa', Grass: '#4ade80' };
   const surfaceColor  = surfaceColors[m.surface] ?? '#94a3b8';
 
-  const matchTypeDef = MATCH_FILTERS.find(f => f.id === (m.match_type ?? 'atp_singles'));
+  // Only show a type badge if we actually know the type — no ATP fallback
+  const matchTypeDef = m.match_type
+    ? MATCH_FILTERS.find(f => f.id === m.match_type)
+    : null;
+
+  const isFinished = m.status === 'finished';
+  const isLive     = m.status === 'live';
 
   return (
     <Card>
@@ -465,6 +471,7 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict }) {
           <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>{m.round}</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+          {/* Only render badge if match_type is actually known */}
           {matchTypeDef && (
             <span style={{
               fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '4px',
@@ -482,7 +489,7 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict }) {
           }}>
             {m.surface}
           </span>
-          {m.status === 'live' && (
+          {isLive && (
             <span style={{
               display: 'flex', alignItems: 'center', gap: '4px',
               fontSize: '10px', fontWeight: 700, color: 'var(--lime)',
@@ -492,64 +499,116 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict }) {
               Live
             </span>
           )}
+          {isFinished && (
+            <span style={{
+              fontSize: '10px', fontWeight: 700, color: 'var(--text-faint)',
+              textTransform: 'uppercase', letterSpacing: '0.06em',
+            }}>
+              Final
+            </span>
+          )}
         </div>
       </div>
 
       {/* Players */}
-      {[m.player1, m.player2].map((p, i) => (
-        <div key={i} style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '8px 0',
-          borderTop: i === 0 ? '1px solid var(--border)' : 'none',
-          borderBottom: '1px solid var(--border)',
-          gap: '8px',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
-            <span style={{ fontSize: '18px', flexShrink: 0 }}>{p?.flag ?? '🏳️'}</span>
-            <div style={{ minWidth: 0 }}>
-              <p className="tv-match-card-name" style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text)' }}>
-                {p?.name ?? 'TBD'}
-              </p>
-              <p style={{ fontSize: '11px', color: 'var(--text-faint)' }}>
-                {p?.rank !== 999 ? `#${p?.rank}` : 'Unranked'}
-              </p>
-            </div>
-          </div>
-          {m.score && (
-            <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-              {m.score.split(',').map((s, si) => (
-                <span key={si} style={{
-                  fontFamily: 'var(--font-mono)', fontSize: '13px', fontWeight: 600,
-                  color: i === 0 ? 'var(--lime)' : 'var(--text)',
+      {[m.player1, m.player2].map((p, i) => {
+        const isWinner = isFinished && m.winner_id && m.winner_id === p?.id;
+        return (
+          <div key={i} style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '8px 0',
+            borderTop: i === 0 ? '1px solid var(--border)' : 'none',
+            borderBottom: '1px solid var(--border)',
+            gap: '8px',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+              <span style={{ fontSize: '18px', flexShrink: 0 }}>{p?.flag ?? '🏳️'}</span>
+              <div style={{ minWidth: 0 }}>
+                <p className="tv-match-card-name" style={{
+                  fontWeight: 600, fontSize: '14px',
+                  color: isWinner ? 'var(--lime)' : 'var(--text)',
                 }}>
-                  {m.score.split(',')[si] ?? ''}
-                </span>
-              ))}
+                  {p?.name ?? 'TBD'}
+                  {isWinner && <span style={{ marginLeft: '6px', fontSize: '11px' }}>🏆</span>}
+                </p>
+                <p style={{ fontSize: '11px', color: 'var(--text-faint)' }}>
+                  {p?.rank !== 999 ? `#${p?.rank}` : 'Unranked'}
+                </p>
+              </div>
             </div>
-          )}
-        </div>
-      ))}
+            {m.score && (
+              <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                {m.score.split(',').map((s, si) => (
+                  <span key={si} style={{
+                    fontFamily: 'var(--font-mono)', fontSize: '13px', fontWeight: 600,
+                    color: i === 0 ? 'var(--lime)' : 'var(--text)',
+                  }}>
+                    {s.trim()}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
 
-      <Btn variant="lime" size="sm" fullWidth style={{ marginTop: '16px' }} onClick={onPredict}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-        </svg>
-        Predict this match
-      </Btn>
+      {/* Footer button — no predict for finished/live matches */}
+      {isFinished ? (
+        <div style={{
+          marginTop: '14px',
+          padding: '9px 14px',
+          borderRadius: 'var(--radius-sm)',
+          background: 'rgba(255,255,255,0.03)',
+          border: '1px solid var(--border)',
+          textAlign: 'center',
+          fontSize: '12px',
+          color: 'var(--text-faint)',
+          fontWeight: 600,
+          letterSpacing: '0.04em',
+        }}>
+          Match Complete
+        </div>
+      ) : (
+        <Btn variant="lime" size="sm" fullWidth style={{ marginTop: '16px' }} onClick={onPredict}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+          </svg>
+          {isLive ? 'Predict winner' : 'Predict this match'}
+        </Btn>
+      )}
     </Card>
   );
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PREDICTIONS TAB
+// Only shows upcoming + live matches (no finished) — you can't predict the past
 // ─────────────────────────────────────────────────────────────────────────────
 function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMatch }) {
-  const [predFilter, setPredFilter]     = useState('atp_singles');
+  const [predFilter, setPredFilter] = useState('atp_singles');
   const { prediction, loading: predLoading, error: predError } = usePrediction(selectedMatch);
-  const [h2h, setH2h]                   = useState(null);
-  const [h2hLoading, setH2hLoading]     = useState(false);
+  const [h2h, setH2h]           = useState(null);
+  const [h2hLoading, setH2hLoading] = useState(false);
 
-  // Reset selected match when filter changes
+  // Only today + future matches are predictable
+  const predictableMatches = useMemo(() => {
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    return allMatches.filter(m => {
+      // Always include live matches
+      if (m.status === 'live') return true;
+      // Exclude finished
+      if (m.status === 'finished') return false;
+      // For upcoming, only today or future
+      if (m.date) {
+        const d = new Date(m.date);
+        d.setHours(0, 0, 0, 0);
+        return d >= now;
+      }
+      return true;
+    });
+  }, [allMatches]);
+
   function handleFilterChange(filterId) {
     setPredFilter(filterId);
     onSelectMatch(null);
@@ -566,7 +625,7 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
     return () => { cancelled = true; };
   }, [selectedMatch?.player1?.id, selectedMatch?.player2?.id]);
 
-  const filteredMatches = allMatches.filter(
+  const filteredMatches = predictableMatches.filter(
     m => (m.match_type ?? 'atp_singles') === predFilter
   );
 
@@ -577,14 +636,27 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
         {/* ── Match picker sidebar ───────────────────────────────────── */}
         <div className="tv-predictions-sidebar" style={{ flex: '0 0 clamp(200px, 30%, 340px)', minWidth: '200px' }}>
 
-          {/* Filter pills — small size for sidebar */}
           <FilterPills activeFilter={predFilter} onSelect={handleFilterChange} size="small" />
+
+          {/* Info note — predictions are forward-looking only */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: '6px',
+            padding: '8px 12px', marginBottom: '12px',
+            background: 'rgba(159,239,102,0.05)',
+            border: '1px solid rgba(159,239,102,0.15)',
+            borderRadius: '8px',
+          }}>
+            <span style={{ fontSize: '12px' }}>🔮</span>
+            <span style={{ fontSize: '11px', color: 'var(--text-faint)', lineHeight: 1.4 }}>
+              Showing live & upcoming matches only
+            </span>
+          </div>
 
           <SectionHeading label="Select a Match" />
           {matchesLoading ? (
             <LoadingGrid cols={1} rows={3} />
           ) : filteredMatches.length === 0 ? (
-            <EmptyState icon="🎾" title="No matches available" desc="Try a different filter." />
+            <EmptyState icon="🎾" title="No upcoming matches" desc="Check back soon for new fixtures." />
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {filteredMatches.map(m => (
@@ -606,7 +678,7 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
             <EmptyState
               icon="🔮"
               title="Select a match to analyse"
-              desc="Choose any match from the left to see our AI prediction breakdown."
+              desc="Choose any upcoming or live match from the left to see our AI prediction breakdown."
             />
           ) : predLoading ? (
             <PredictionSkeleton />
@@ -631,49 +703,6 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
 
       </div>
     </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// MATCH PICKER ROW (inside Predictions sidebar)
-// ─────────────────────────────────────────────────────────────────────────────
-function MatchPickerRow({ match: m, selected, onSelect }) {
-  const matchTypeDef = MATCH_FILTERS.find(f => f.id === (m.match_type ?? 'atp_singles'));
-
-  return (
-    <button
-      onClick={onSelect}
-      style={{
-        width: '100%', textAlign: 'left', padding: '12px 14px',
-        background: selected ? 'rgba(159,239,102,0.08)' : 'var(--bg-card)',
-        border: `1px solid ${selected ? 'var(--lime)' : 'var(--border)'}`,
-        borderRadius: 'var(--radius-sm)', cursor: 'pointer', transition: 'var(--t)',
-        fontFamily: 'var(--font-body)',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px', gap: '6px' }}>
-        <p style={{
-          fontSize: '11px', color: 'var(--text-faint)', fontWeight: 700,
-          textTransform: 'uppercase', letterSpacing: '0.07em',
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          flex: 1, minWidth: 0,
-        }}>
-          {m.tournament} · {m.round}
-        </p>
-        {matchTypeDef && (
-          <span style={{
-            fontSize: '9px', fontWeight: 700, padding: '1px 5px', borderRadius: '3px',
-            background: `${matchTypeDef.color}22`, color: matchTypeDef.color,
-            flexShrink: 0,
-          }}>
-            {matchTypeDef.shortLabel}
-          </span>
-        )}
-      </div>
-      <p style={{ fontSize: '13px', fontWeight: 600, color: selected ? 'var(--lime)' : 'var(--text)', lineHeight: 1.5 }}>
-        {m.player1?.name} <span style={{ color: 'var(--text-faint)', fontWeight: 400 }}>vs</span> {m.player2?.name}
-      </p>
-    </button>
   );
 }
 
