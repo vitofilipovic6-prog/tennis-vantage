@@ -1,13 +1,16 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // src/services/tennisApi.js – TennisVantage API service layer
 //
-// CHANGES IN THIS VERSION:
+// CHANGES IN THIS VERSION (on top of actual GitHub repo):
 //  + deriveMatchType() — client-side safety net that re-derives match_type
 //    from actual player names + tournament, overriding any DB mistakes.
 //    Slash in name = doubles. WTA player id in wtaPlayerIds set = WTA.
 //  + normaliseMatch() — calls deriveMatchType so every match leaving this
 //    file has the correct type regardless of what the DB stored.
-//  + getLiveMatches / getUpcomingMatches — AbortError guard added
+//  + getLiveMatches — AbortError guard + [STALE-LIVE FIX]: .gte('match_date')
+//    filter so only matches from the last 6 hours are returned as "live".
+//    This prevents yesterday's matches staying live due to Supabase sync lag.
+//  + getUpcomingMatches — AbortError guard added
 // ─────────────────────────────────────────────────────────────────────────────
 import { supabase } from './supabase';
 
@@ -85,6 +88,7 @@ function normaliseMatch(m, wtaPlayerIds = new Set()) {
     score:      m.score ?? null,
     date:       m.match_date,
     match_type: m.match_type ?? 'atp_singles',
+    winner_id:  m.winner_id ?? null,
     player1:    m.player1 ?? { id: 'p1', name: 'TBD', flag: '🏳️', rank: 999 },
     player2:    m.player2 ?? { id: 'p2', name: 'TBD', flag: '🏳️', rank: 999 },
   };
@@ -95,12 +99,18 @@ function normaliseMatch(m, wtaPlayerIds = new Set()) {
 }
 
 // ── Live matches ──────────────────────────────────────────────────────────────
+// [STALE-LIVE FIX] .gte('match_date', sixHoursAgo) ensures only matches
+// started in the last 6 hours are returned. Prevents yesterday's "live"
+// rows from reappearing after a Supabase sync lag.
 export async function getLiveMatches(wtaPlayerIds = new Set()) {
   try {
+    const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
+
     const { data, error } = await supabase
       .from('matches')
       .select(MATCH_SELECT)
       .eq('status', 'live')
+      .gte('match_date', sixHoursAgo)
       .order('match_date', { ascending: true });
 
     if (error) throw error;
@@ -264,68 +274,44 @@ export async function getPrediction(match) {
 
 // ── AI Chat ───────────────────────────────────────────────────────────────────
 export async function sendChatMessage(messages, systemContext = '') {
-  try {
-    const res = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages, systemContext }),
-    });
-
-    if (res.status === 429) {
-      const err = await res.json().catch(() => ({}));
-      return {
-        content: [{
-          text: `⏱️ **AI Analyst Busy**\n\n${err.message ?? 'Too many requests — please wait 30 seconds and try again.'}`,
-        }],
-      };
-    }
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error ?? `HTTP ${res.status}`);
-    }
-
-    return await res.json();
-  } catch (e) {
-    console.error('[sendChatMessage]', e.message);
-    return {
-      content: [{ text: `⚠️ AI service unavailable: ${e.message}` }],
-    };
-  }
+  const response = await fetch('/api/chat', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ messages, systemContext }),
+  });
+  if (!response.ok) throw new Error(`Chat API error: ${response.status}`);
+  return response.json();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MOCK DATA — fallback only when Supabase query fails
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Mock data (fallback when Supabase is unavailable) ─────────────────────────
 export const MOCK_DATA = {
-  players: [
-    { id:'1', name:'Novak Djokovic',     country:'Serbia',  flag:'🇷🇸', rank:1, wins:1104, losses:214, ace_avg:6.2, surface_pref:'Hard', first_serve_pct:63, recent_form:'W W W L W' },
-    { id:'2', name:'Carlos Alcaraz',     country:'Spain',   flag:'🇪🇸', rank:2, wins:214,  losses:63,  ace_avg:7.1, surface_pref:'Clay', first_serve_pct:66, recent_form:'W W L W W' },
-    { id:'3', name:'Jannik Sinner',      country:'Italy',   flag:'🇮🇹', rank:3, wins:198,  losses:74,  ace_avg:5.8, surface_pref:'Hard', first_serve_pct:61, recent_form:'W W W W L' },
-    { id:'4', name:'Daniil Medvedev',    country:'Russia',  flag:'🇷🇺', rank:4, wins:377,  losses:192, ace_avg:8.3, surface_pref:'Hard', first_serve_pct:59, recent_form:'L W W W W' },
-    { id:'5', name:'Andrey Rublev',      country:'Russia',  flag:'🇷🇺', rank:5, wins:344,  losses:187, ace_avg:5.1, surface_pref:'Clay', first_serve_pct:58, recent_form:'W L W L W' },
-    { id:'6', name:'Holger Rune',        country:'Denmark', flag:'🇩🇰', rank:6, wins:148,  losses:87,  ace_avg:6.7, surface_pref:'Clay', first_serve_pct:60, recent_form:'W W L W L' },
-    { id:'7', name:'Casper Ruud',        country:'Norway',  flag:'🇳🇴', rank:7, wins:258,  losses:139, ace_avg:5.5, surface_pref:'Clay', first_serve_pct:57, recent_form:'L W W W W' },
-    { id:'8', name:'Stefanos Tsitsipas', country:'Greece',  flag:'🇬🇷', rank:8, wins:336,  losses:165, ace_avg:7.9, surface_pref:'Clay', first_serve_pct:62, recent_form:'W L W W L' },
-  ],
+  get players() {
+    return [
+      { id:'p1', name:'Carlos Alcaraz',    flag:'🇪🇸', country:'ESP', rank:1,  wins:45, losses:8,  ace_avg:6.2, surface_pref:'Clay', first_serve_pct:68, recent_form:'W W W L W' },
+      { id:'p2', name:'Novak Djokovic',    flag:'🇷🇸', country:'SRB', rank:2,  wins:42, losses:9,  ace_avg:5.8, surface_pref:'Hard', first_serve_pct:65, recent_form:'W L W W W' },
+      { id:'p3', name:'Jannik Sinner',     flag:'🇮🇹', country:'ITA', rank:3,  wins:48, losses:7,  ace_avg:5.1, surface_pref:'Hard', first_serve_pct:67, recent_form:'W W W W L' },
+      { id:'p4', name:'Alexander Zverev',  flag:'🇩🇪', country:'GER', rank:4,  wins:38, losses:12, ace_avg:7.4, surface_pref:'Clay', first_serve_pct:62, recent_form:'L W W L W' },
+      { id:'p5', name:'Daniil Medvedev',   flag:'🇷🇺', country:'RUS', rank:5,  wins:36, losses:13, ace_avg:4.9, surface_pref:'Hard', first_serve_pct:64, recent_form:'W W L W W' },
+      { id:'p6', name:'Andrey Rublev',     flag:'🇷🇺', country:'RUS', rank:6,  wins:32, losses:14, ace_avg:4.5, surface_pref:'Hard', first_serve_pct:61, recent_form:'L L W W W' },
+      { id:'p7', name:'Holger Rune',       flag:'🇩🇰', country:'DEN', rank:7,  wins:29, losses:15, ace_avg:5.6, surface_pref:'Clay', first_serve_pct:63, recent_form:'W L W W L' },
+      { id:'p8', name:'Stefanos Tsitsipas',flag:'🇬🇷', country:'GRE', rank:8,  wins:31, losses:16, ace_avg:5.3, surface_pref:'Clay', first_serve_pct:63, recent_form:'W W L W L' },
+    ];
+  },
   get matches() {
     const p = this.players;
     return [
-      { id:'m1', status:'live',     tournament:'Roland Garros',   round:'QF', surface:'Clay',  score:'6-4, 3-2*', date: new Date().toISOString(), match_type:'atp_singles', player1:p[0], player2:p[1] },
-      { id:'m2', status:'upcoming', tournament:'Wimbledon',        round:'SF', surface:'Grass', score:null,        date: new Date().toISOString(), match_type:'atp_singles', player1:p[2], player2:p[3] },
-      { id:'m3', status:'upcoming', tournament:'US Open',          round:'F',  surface:'Hard',  score:null,        date: new Date().toISOString(), match_type:'atp_singles', player1:p[4], player2:p[5] },
-      { id:'m4', status:'upcoming', tournament:'Australian Open',  round:'QF', surface:'Hard',  score:null,        date: new Date().toISOString(), match_type:'atp_singles', player1:p[6], player2:p[7] },
+      { id:'m1', status:'live',     match_type:'atp_singles', tournament:'Indian Wells', round:'QF', surface:'Hard', score:'6-4, 3-2', winner_id:null, date:new Date().toISOString(),                    player1:p[0], player2:p[2] },
+      { id:'m2', status:'live',     match_type:'atp_singles', tournament:'Indian Wells', round:'QF', surface:'Hard', score:'7-6, 2-1', winner_id:null, date:new Date().toISOString(),                    player1:p[1], player2:p[3] },
+      { id:'m3', status:'upcoming', match_type:'atp_singles', tournament:'Miami Open',   round:'R2', surface:'Hard', score:null,        winner_id:null, date:new Date(Date.now()+86400000).toISOString(), player1:p[1], player2:p[3] },
+      { id:'m4', status:'upcoming', match_type:'atp_singles', tournament:'Miami Open',   round:'SF', surface:'Hard', score:null,        winner_id:null, date:new Date(Date.now()+86400000).toISOString(), player1:p[4], player2:p[5] },
+      { id:'m5', status:'upcoming', match_type:'atp_singles', tournament:'Monte-Carlo',  round:'R32',surface:'Clay', score:null,        winner_id:null, date:new Date(Date.now()+172800000).toISOString(), player1:p[6], player2:p[7] },
     ];
   },
-  rankings: [
-    { id:'1', name:'Novak Djokovic',     country:'Serbia',  flag:'🇷🇸', rank:1, points:11245, wins:1104, losses:214, ace_avg:6.2, surface_pref:'Hard', first_serve_pct:63 },
-    { id:'2', name:'Carlos Alcaraz',     country:'Spain',   flag:'🇪🇸', rank:2, points:9815,  wins:214,  losses:63,  ace_avg:7.1, surface_pref:'Clay', first_serve_pct:66 },
-    { id:'3', name:'Jannik Sinner',      country:'Italy',   flag:'🇮🇹', rank:3, points:8740,  wins:198,  losses:74,  ace_avg:5.8, surface_pref:'Hard', first_serve_pct:61 },
-    { id:'4', name:'Daniil Medvedev',    country:'Russia',  flag:'🇷🇺', rank:4, points:7560,  wins:377,  losses:192, ace_avg:8.3, surface_pref:'Hard', first_serve_pct:59 },
-    { id:'5', name:'Andrey Rublev',      country:'Russia',  flag:'🇷🇺', rank:5, points:5820,  wins:344,  losses:187, ace_avg:5.1, surface_pref:'Clay', first_serve_pct:58 },
-    { id:'6', name:'Holger Rune',        country:'Denmark', flag:'🇩🇰', rank:6, points:4760,  wins:148,  losses:87,  ace_avg:6.7, surface_pref:'Clay', first_serve_pct:60 },
-    { id:'7', name:'Casper Ruud',        country:'Norway',  flag:'🇳🇴', rank:7, points:4120,  wins:258,  losses:139, ace_avg:5.5, surface_pref:'Clay', first_serve_pct:57 },
-    { id:'8', name:'Stefanos Tsitsipas', country:'Greece',  flag:'🇬🇷', rank:8, points:3980,  wins:336,  losses:165, ace_avg:7.9, surface_pref:'Clay', first_serve_pct:62 },
-  ],
-  h2h: null,
+  get rankings() {
+    return this.players.map((p, i) => ({
+      ...p,
+      points:    Math.round(11000 / (i + 1)),
+      prev_rank: p.rank,
+    }));
+  },
 };

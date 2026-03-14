@@ -175,10 +175,12 @@ a { color: inherit; text-decoration: none; }
   background: var(--green);
   animation: tv-live-dot 1.2s ease infinite;
   flex-shrink: 0;
+  display: inline-block;
 }
 
 /* ── Skeleton shimmer ─────────────────────────────────────────────────────── */
-.skeleton {
+.skeleton,
+.tv-skeleton {
   background: linear-gradient(
     90deg,
     var(--bg-card) 25%,
@@ -208,50 +210,31 @@ a { color: inherit; text-decoration: none; }
 
 /* ═══════════════════════════════════════════════════════════════════════════
    RANKINGS TABLE — Responsive grid
+   FIX: Rankings row now uses minmax(0,1fr) on the name column.
+        Without the 0, the grid won't shrink that column below its content
+        width, causing the points column to overflow/overlap the name.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-/* Desktop: 4 columns — rank | player | points | W/L */
-.rankings-row {
-  display: grid;
-  grid-template-columns: 52px 1fr 100px 80px;
-  padding: 14px 20px;
-  align-items: center;
+/* Rankings rows are rendered as inline grid in Dashboard.jsx.
+   The CSS class .rankings-wl hides the W/L column on mobile. */
+.rankings-wl {
+  /* visible on desktop, hidden on mobile via media query below */
 }
 
-.rankings-header {
-  padding: 12px 20px;
-}
-
-/* Tablet (≤ 680px): drop W/L column */
 @media (max-width: 680px) {
-  .rankings-row {
-    grid-template-columns: 44px 1fr 80px;
-    padding: 12px 14px;
-  }
-  .rankings-header {
-    padding: 10px 14px;
-  }
   .rankings-wl {
     display: none !important;
   }
 }
 
-/* Mobile (≤ 400px): tighter padding */
-@media (max-width: 400px) {
-  .rankings-row {
-    grid-template-columns: 40px 1fr 72px;
-    padding: 10px 12px;
-  }
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════
    BOTTOM TAB BAR — Mobile navigation
-   The most impactful mobile fix. Replaces the hamburger drawer with a native
-   app-style bottom navigation bar, visible only on ≤900px screens.
+   Replaces the hamburger drawer with a native app-style bottom nav bar.
+   Visible only on ≤900px screens.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 .tv-bottom-nav {
-  display: none; /* Hidden on desktop by default */
+  display: none; /* Hidden on desktop */
 }
 
 @media (max-width: 900px) {
@@ -288,21 +271,12 @@ a { color: inherit; text-decoration: none; }
     letter-spacing: 0.02em;
     cursor: pointer;
     transition: color 0.15s ease;
-    /* Large enough touch target */
     min-height: 48px;
-    /* Prevent iOS tap flash */
     -webkit-tap-highlight-color: transparent;
   }
 
   .tv-bottom-nav__item.active {
     color: var(--lime);
-  }
-
-  .tv-bottom-nav__item.active span {
-    /* Subtle scale on active icon */
-    display: inline-block;
-    transform: scale(1.1);
-    transition: transform 0.2s var(--ease);
   }
 
   /* Push main content up so it's never hidden behind the bottom nav */
@@ -313,22 +287,36 @@ a { color: inherit; text-decoration: none; }
 
 /* ═══════════════════════════════════════════════════════════════════════════
    PREDICTIONS TAB — Stack to single column on mobile
+   FIX: On mobile (≤680px) the sidebar (match list) stacks ABOVE the main
+        prediction panel. order:1 = top, order:2 = bottom.
    ═══════════════════════════════════════════════════════════════════════════ */
+
+.tv-predictions-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+.tv-predictions-sidebar {
+  /* Desktop: fixed sidebar width handled by grid */
+}
+
+.tv-predictions-main {
+  min-width: 0;
+}
 
 @media (max-width: 680px) {
   .tv-predictions-layout {
-    flex-direction: column !important;
+    grid-template-columns: 1fr !important;
   }
+
   .tv-predictions-sidebar {
-    flex: unset !important;
-    width: 100% !important;
-    min-width: unset !important;
-    max-width: 100% !important;
+    order: 1;
   }
+
   .tv-predictions-main {
-    flex: unset !important;
-    width: 100% !important;
-    min-width: 0 !important;
+    order: 2;
   }
 }
 
@@ -340,10 +328,12 @@ a { color: inherit; text-decoration: none; }
   .tv-chat-layout {
     grid-template-columns: 1fr !important;
   }
+
   /* On mobile: show chat first, context card second */
   .tv-chat-context-panel {
     order: 2;
   }
+
   .tv-chat-column {
     order: 1;
     /* Shorter height on mobile since screen is small */
@@ -402,47 +392,15 @@ a { color: inherit; text-decoration: none; }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   PLAYER BIO MODAL — Hero section wraps on small screens
+   MATCH CALENDAR — Horizontal date strip
    ═══════════════════════════════════════════════════════════════════════════ */
 
-@media (max-width: 480px) {
-  .tv-bio-hero {
-    flex-direction: column !important;
-    align-items: flex-start !important;
-    gap: 16px !important;
-  }
-  .tv-bio-hero-img {
-    width: 80px !important;
-    height: 80px !important;
-    border-radius: var(--radius) !important;
-  }
-  .tv-bio-meta-chips {
-    flex-wrap: wrap !important;
-    gap: 6px !important;
-  }
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   LANDING PAGE — Hero title overflow prevention on 320px devices
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-.lp-title {
-  overflow-wrap: break-word;
-  word-break: break-word;
-  hyphens: auto;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   HORIZONTAL CALENDAR (SofaScore-style date strip)
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-.tv-calendar-wrapper {
+.tv-calendar-wrap {
   width: 100%;
-  background: var(--bg-card);
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
+  overflow-x: hidden;
+  margin-bottom: 28px;
+  border-bottom: 1px solid var(--border);
   padding: 12px 0;
-  margin-bottom: 24px;
 }
 
 .tv-calendar-scroll {
@@ -454,6 +412,7 @@ a { color: inherit; text-decoration: none; }
   -ms-overflow-style: none;
   -webkit-overflow-scrolling: touch;
 }
+
 .tv-calendar-scroll::-webkit-scrollbar { display: none; }
 
 .tv-date-btn {
@@ -468,7 +427,9 @@ a { color: inherit; text-decoration: none; }
   transition: var(--t);
   flex-shrink: 0;
 }
+
 .tv-date-btn:hover { border-color: var(--lime-dark); color: var(--text); }
+
 .tv-date-btn.active-date {
   background: var(--lime);
   border-color: var(--lime);
@@ -476,86 +437,24 @@ a { color: inherit; text-decoration: none; }
   box-shadow: 0 0 15px var(--lime-glow);
   transform: scale(1.05);
 }
+
 .tv-date-day   { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
 .tv-date-num   { font-size: 1.3rem; font-weight: 700; font-family: var(--font-display); margin: 2px 0; }
 .tv-date-month { font-size: 0.7rem; font-weight: 500; }
-.tv-date-btn.is-today .tv-date-day { color: var(--clay); }
+.tv-date-btn.is-today .tv-date-day            { color: var(--clay); }
 .tv-date-btn.active-date.is-today .tv-date-day { color: #070B14; }
 
-/* Slightly larger touch targets on mobile */
 @media (max-width: 640px) {
-  .tv-calendar-scroll {
-    gap: 6px;
-    padding: 0 12px;
-  }
-  .tv-date-btn {
-    min-width: 58px;
-    height: 68px;
-  }
+  .tv-calendar-scroll { gap: 6px; padding: 0 12px; }
+  .tv-date-btn        { min-width: 56px; height: 66px; }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
    MATCH CARD GRID — Responsive auto-fill
    ═══════════════════════════════════════════════════════════════════════════ */
 
-/* Single column on very small screens */
 @media (max-width: 400px) {
   .tv-matches-grid {
     grid-template-columns: 1fr !important;
   }
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   PROFILE DROPDOWN — Mobile avatar menu
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-.tv-profile-dropdown {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  z-index: 200;
-  min-width: 200px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-md);
-  border-radius: var(--radius);
-  box-shadow: 0 8px 32px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.3);
-  overflow: hidden;
-  animation: tv-dropdown-in 0.15s var(--ease) both;
-}
-
-@keyframes tv-dropdown-in {
-  from { opacity: 0; transform: translateY(-6px) scale(0.97); }
-  to   { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-.tv-profile-dropdown__item {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  width: 100%;
-  padding: 11px 14px;
-  background: none;
-  border: none;
-  font-family: var(--font-body);
-  font-size: 13.5px;
-  font-weight: 500;
-  color: var(--text-muted);
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.12s ease, color 0.12s ease;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.tv-profile-dropdown__item:hover {
-  background: var(--bg-glass-md);
-  color: var(--text);
-}
-
-.tv-profile-dropdown__item--danger {
-  color: #f87171;
-}
-
-.tv-profile-dropdown__item--danger:hover {
-  background: rgba(248, 113, 113, 0.08);
-  color: #f87171;
 }
