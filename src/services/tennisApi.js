@@ -1,16 +1,14 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // src/services/tennisApi.js – TennisVantage API service layer
 //
-// CHANGES IN THIS VERSION (on top of actual GitHub repo):
-//  + deriveMatchType() — client-side safety net that re-derives match_type
-//    from actual player names + tournament, overriding any DB mistakes.
-//    Slash in name = doubles. WTA player id in wtaPlayerIds set = WTA.
-//  + normaliseMatch() — calls deriveMatchType so every match leaving this
-//    file has the correct type regardless of what the DB stored.
-//  + getLiveMatches — AbortError guard + [STALE-LIVE FIX]: .gte('match_date')
-//    filter so only matches from the last 6 hours are returned as "live".
-//    This prevents yesterday's matches staying live due to Supabase sync lag.
-//  + getUpcomingMatches — AbortError guard added
+// STALE-LIVE FIX: The previous version added .gte('match_date', sixHoursAgo)
+// to getLiveMatches which broke today's morning matches (Indian Wells sessions
+// starting at 11am were >6h old by evening and got filtered out).
+//
+// Correct fix: NO date filter in getLiveMatches. The stale-row guard lives
+// in MatchesTab (Dashboard.jsx) — it compares local calendar date strings
+// so only matches from a *previous day* are dropped. Today's matches at any
+// hour are always shown.
 // ─────────────────────────────────────────────────────────────────────────────
 import { supabase } from './supabase';
 
@@ -30,10 +28,6 @@ const MATCH_SELECT = `
 // ─────────────────────────────────────────────────────────────────────────────
 // deriveMatchType — CLIENT-SIDE safety net
 //
-// Runs on every match that comes out of Supabase. Uses real player name data
-// (slash = doubles) and an optional Set of WTA player IDs from rankings to
-// correctly classify any match the DB got wrong.
-//
 // Priority order:
 //  1. Slash in player name  → doubles branch
 //  2. wtaPlayerIds Set      → WTA (most reliable for combined events)
@@ -50,8 +44,8 @@ export function deriveMatchType(m, wtaPlayerIds = new Set()) {
   const isDoubles = p1Name.includes('/') || p2Name.includes('/');
 
   // ── WTA detection ──────────────────────────────────────────────────────────
-  const p1IsWta = wtaPlayerIds.size > 0 && wtaPlayerIds.has(m.player1?.id);
-  const p2IsWta = wtaPlayerIds.size > 0 && wtaPlayerIds.has(m.player2?.id);
+  const p1IsWta         = wtaPlayerIds.size > 0 && wtaPlayerIds.has(m.player1?.id);
+  const p2IsWta         = wtaPlayerIds.size > 0 && wtaPlayerIds.has(m.player2?.id);
   const isWtaByRankings = p1IsWta || p2IsWta;
 
   const isWtaByTournament =
@@ -59,12 +53,9 @@ export function deriveMatchType(m, wtaPlayerIds = new Set()) {
     tournament.includes('women') ||
     tournament.includes('ladies');
 
-  const isWtaByStored =
-    stored === 'wta_singles' || stored === 'wta_doubles';
-
+  const isWtaByStored   = stored === 'wta_singles' || stored === 'wta_doubles';
   const isMixedByStored = stored === 'mixed_doubles';
-
-  const isWta = isWtaByRankings || isWtaByTournament || isWtaByStored;
+  const isWta           = isWtaByRankings || isWtaByTournament || isWtaByStored;
 
   // ── Resolve final type ─────────────────────────────────────────────────────
   if (isDoubles) {
@@ -99,18 +90,14 @@ function normaliseMatch(m, wtaPlayerIds = new Set()) {
 }
 
 // ── Live matches ──────────────────────────────────────────────────────────────
-// [STALE-LIVE FIX] .gte('match_date', sixHoursAgo) ensures only matches
-// started in the last 6 hours are returned. Prevents yesterday's "live"
-// rows from reappearing after a Supabase sync lag.
+// No date filter — return everything Supabase has as "live".
+// The UI (MatchesTab) handles stale-row filtering via calendar day comparison.
 export async function getLiveMatches(wtaPlayerIds = new Set()) {
   try {
-    const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
-
     const { data, error } = await supabase
       .from('matches')
       .select(MATCH_SELECT)
       .eq('status', 'live')
-      .gte('match_date', sixHoursAgo)
       .order('match_date', { ascending: true });
 
     if (error) throw error;
@@ -300,8 +287,8 @@ export const MOCK_DATA = {
   get matches() {
     const p = this.players;
     return [
-      { id:'m1', status:'live',     match_type:'atp_singles', tournament:'Indian Wells', round:'QF', surface:'Hard', score:'6-4, 3-2', winner_id:null, date:new Date().toISOString(),                    player1:p[0], player2:p[2] },
-      { id:'m2', status:'live',     match_type:'atp_singles', tournament:'Indian Wells', round:'QF', surface:'Hard', score:'7-6, 2-1', winner_id:null, date:new Date().toISOString(),                    player1:p[1], player2:p[3] },
+      { id:'m1', status:'live',     match_type:'atp_singles', tournament:'Indian Wells', round:'QF', surface:'Hard', score:'6-4, 3-2', winner_id:null, date:new Date().toISOString(), player1:p[0], player2:p[2] },
+      { id:'m2', status:'live',     match_type:'atp_singles', tournament:'Indian Wells', round:'QF', surface:'Hard', score:'7-6, 2-1', winner_id:null, date:new Date().toISOString(), player1:p[1], player2:p[3] },
       { id:'m3', status:'upcoming', match_type:'atp_singles', tournament:'Miami Open',   round:'R2', surface:'Hard', score:null,        winner_id:null, date:new Date(Date.now()+86400000).toISOString(), player1:p[1], player2:p[3] },
       { id:'m4', status:'upcoming', match_type:'atp_singles', tournament:'Miami Open',   round:'SF', surface:'Hard', score:null,        winner_id:null, date:new Date(Date.now()+86400000).toISOString(), player1:p[4], player2:p[5] },
       { id:'m5', status:'upcoming', match_type:'atp_singles', tournament:'Monte-Carlo',  round:'R32',surface:'Clay', score:null,        winner_id:null, date:new Date(Date.now()+172800000).toISOString(), player1:p[6], player2:p[7] },

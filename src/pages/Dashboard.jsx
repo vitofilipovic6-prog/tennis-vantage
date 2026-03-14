@@ -1,29 +1,19 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // src/pages/Dashboard.jsx – TennisVantage main app screen
 //
-// ALL FIXES APPLIED ON TOP OF THE ACTUAL GITHUB REPO:
-//
-//  [NAV-FIX]   Navbar: Logo is flex-shrink:0. Search button has flex:1+maxWidth
-//              so it grows into space but caps out, never pushing the desktop
-//              tabs/avatar off screen. Mobile gets MobileUserMenu popover
-//              (replaces the tiny "Out" button that was cramped).
-//
-//  [RNK-FIX]   Rankings: inline grid columns changed to
-//              '44px minmax(0,1fr) 80px 60px' — the minmax(0,1fr) is the key
-//              fix. Without the 0 minimum the browser refuses to shrink the
-//              player name column, causing points to overflow it.
-//
-//  [LIVE-FIX]  Stale live matches: trulyLive filter drops any "live" row whose
-//              match_date is >6 hours old (Supabase sync can lag, leaving
-//              yesterday's matches stuck in "live" status until next cron run).
-//
-//  [FIN-FIX]   Finished matches already had Final badge in repo ✓. Added the
-//              "Match Complete" pill at the bottom + removed Predict button for
-//              finished matches (the "…" conditional was missing for finished).
-//
-//  [PRED-FIX]  Predictions tab now uses .tv-predictions-layout CSS class which
-//              stacks to a single column on mobile (≤680px). Match list is
-//              order:1 (top), prediction panel is order:2 (below).
+// FIXES APPLIED ON TOP OF THE EXACT GITHUB REPO:
+//  [NAV-FIX]  Search button: flex:1+maxWidth:220px so it never pushes
+//             desktop tabs/avatar off screen. MobileUserMenu popover
+//             replaces the old "Out" button on mobile.
+//  [RNK-FIX]  Rankings grid: '44px minmax(0,1fr) 80px 60px' — the
+//             minmax(0,1fr) forces the name column to shrink so points
+//             never overlap it.
+//  [LIVE-FIX] Stale live rows: trulyLive filters out rows whose
+//             match_date is from a previous calendar day (not 6h — that
+//             broke morning sessions).
+//  [FIN-FIX]  Finished matches: show "Match Complete" pill, hide Predict btn.
+//  [PRED-FIX] Predictions: .tv-predictions-layout CSS class stacks to
+//             single column on mobile (sidebar above, panel below).
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState, useMemo, useEffect, memo } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -59,7 +49,7 @@ export default function Dashboard({ showToast }) {
   const { live, upcoming, loading: matchesLoading, error: matchesError, refresh } = useMatches();
   const allMatches = useMemo(() => [...live, ...upcoming], [live, upcoming]);
 
-  // Build WTA player ID set from rankings (key fix for combined events like Indian Wells)
+  // ── Build WTA player ID set from rankings (the key fix for combined events) ─
   const { rankings: wtaRankings } = useRankings('WTA');
   const wtaPlayerIds = useMemo(
     () => new Set((wtaRankings ?? []).map(r => r.id)),
@@ -108,9 +98,9 @@ export default function Dashboard({ showToast }) {
     <div style={{ minHeight: '100dvh', background: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
 
       {/* ── Top Navbar ─────────────────────────────────────────────────── */}
-      {/* [NAV-FIX] Logo flex-shrink:0. Search flex:1+maxWidth:220px.
-          Desktop right side: tab buttons + avatar + sign-out (unchanged).
-          Mobile right side: MobileUserMenu popover (replaces "Out" button). */}
+      {/* [NAV-FIX] Logo flex-shrink:0. Search flex:1+maxWidth:220px caps it.
+          Desktop: tabs + avatar + Sign Out button.
+          Mobile: MobileUserMenu popover (replaces cramped "Out" button). */}
       <nav style={{
         background: 'rgba(7,11,20,0.92)',
         backdropFilter: 'blur(20px)',
@@ -126,13 +116,12 @@ export default function Dashboard({ showToast }) {
         zIndex: 100,
         gap: '8px',
       }}>
-
         {/* Left: Logo — never shrinks */}
         <div style={{ flexShrink: 0 }}>
           <Logo size="sm" />
         </div>
 
-        {/* Center: Search — grows into remaining space, capped at 220px */}
+        {/* Center: Search — grows but capped so desktop tabs stay visible */}
         <button
           onClick={() => setSearchOpen(true)}
           style={{
@@ -162,7 +151,7 @@ export default function Dashboard({ showToast }) {
 
         {/* Right: Desktop — tab buttons + avatar + sign out */}
         <div className="hide-md" style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
-          <div style={{ display: 'flex', gap: '2px' }}>
+          <div className="tv-desktop-tabs" style={{ display: 'flex', gap: '2px' }}>
             {tabs.map(t => (
               <button
                 key={t.id}
@@ -306,8 +295,7 @@ export default function Dashboard({ showToast }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MOBILE USER MENU  [NAV-FIX]
-// Replaces the old "Out" button with a proper popover on mobile
+// MOBILE USER MENU — replaces the old "Out" button
 // ─────────────────────────────────────────────────────────────────────────────
 function MobileUserMenu({ firstName, user, onLogout }) {
   const [open, setOpen] = useState(false);
@@ -353,12 +341,9 @@ function MobileUserMenu({ firstName, user, onLogout }) {
             onClick={() => { setOpen(false); onLogout(); }}
             style={{
               width: '100%', padding: '8px 0',
-              background: 'rgba(255,80,80,0.08)',
-              border: '1px solid rgba(255,80,80,0.2)',
-              borderRadius: '6px', color: '#ff6060',
-              fontSize: '13px', fontWeight: 600,
-              cursor: 'pointer', fontFamily: 'var(--font-body)',
-              transition: 'var(--t)',
+              background: 'rgba(255,80,80,0.08)', border: '1px solid rgba(255,80,80,0.2)',
+              borderRadius: '6px', color: '#ff6060', fontSize: '13px', fontWeight: 600,
+              cursor: 'pointer', fontFamily: 'var(--font-body)', transition: 'var(--t)',
             }}
           >
             Sign Out
@@ -410,10 +395,10 @@ function FilterPills({ activeFilter, onSelect, size = 'normal' }) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MATCHES TAB
-// [LIVE-FIX] trulyLive drops any "live" row older than 6 hours
 // ─────────────────────────────────────────────────────────────────────────────
 function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wtaPlayerIds }) {
   const [calendarDate, setCalendarDate] = useState(null);
+  const [calendarDateStr, setCalendarDateStr] = useState(null);
   const [activeFilter, setActiveFilter] = useState('atp_singles');
   const [pastMatches, setPastMatches]   = useState([]);
   const [pastLoading, setPastLoading]   = useState(false);
@@ -435,28 +420,30 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
   const isTodayOrFuture = !selectedDay || selectedDay >= today;
 
   useEffect(() => {
-    if (!isPastDay) { setPastMatches([]); return; }
+    if (!isPastDay || !calendarDateStr) { setPastMatches([]); return; }
     let cancelled = false;
     setPastLoading(true);
-    const dateStr = calendarDate.toISOString().split('T')[0];
-    getMatchesByDate(dateStr, wtaPlayerIds)
+    getMatchesByDate(calendarDateStr, wtaPlayerIds)
       .then(data => { if (!cancelled) setPastMatches(data ?? []); })
       .catch(()   => { if (!cancelled) setPastMatches([]); })
       .finally(() => { if (!cancelled) setPastLoading(false); });
     return () => { cancelled = true; };
-  }, [calendarDate?.toDateString(), isPastDay, wtaPlayerIds]);
+  }, [calendarDateStr, isPastDay, wtaPlayerIds]);
 
   if (loading) return <LoadingGrid />;
   if (error)   return <ErrorMessage msg={error} onRetry={refresh} />;
 
-  // [LIVE-FIX] Drop stale "live" rows that are >6 hours old
-  const SIX_HOURS = 6 * 60 * 60 * 1000;
+  // [LIVE-FIX] Drop "live" rows from a previous calendar day only.
+  // Comparing local date strings avoids cutting off today's morning matches.
+  const todayStr  = today.toLocaleDateString('en-CA'); // YYYY-MM-DD local
   const trulyLive = live.filter(m => {
     if (!m.date) return true;
-    return (Date.now() - new Date(m.date).getTime()) < SIX_HOURS;
+    return new Date(m.date).toLocaleDateString('en-CA') >= todayStr;
   });
 
-  const byType = (arr) => arr.filter(m => deriveMatchType(m, wtaPlayerIds) === activeFilter);
+  // ── The key filter function — uses deriveMatchType with WTA ids ───────────
+  const byType = (arr) =>
+    arr.filter(m => deriveMatchType(m, wtaPlayerIds) === activeFilter);
 
   const filteredLive = byType(trulyLive);
 
@@ -475,11 +462,17 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
 
   return (
     <div className="tv-fade-up">
+
       {/* Filter pills */}
       <FilterPills activeFilter={activeFilter} onSelect={setActiveFilter} />
 
       {/* Calendar */}
-      <MatchCalendar onSelectDate={setCalendarDate} />
+      <MatchCalendar
+        onSelectDate={(date, dateStr) => {
+          setCalendarDate(date);
+          setCalendarDateStr(dateStr);
+        }}
+      />
 
       {/* PAST DAY */}
       {isPastDay ? (
@@ -488,7 +481,11 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
           {pastLoading ? (
             <LoadingGrid />
           ) : filteredPast.length === 0 ? (
-            <EmptyState icon="📅" title={`No ${activeFilterDef?.label} results`} desc="No matches found for this filter on this day." />
+            <EmptyState
+              icon="📅"
+              title={`No ${activeFilterDef?.label} results`}
+              desc="No matches found for this filter on this day."
+            />
           ) : (
             <div style={gridStyle}>
               {filteredPast.map((m, i) => (
@@ -518,7 +515,11 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
                 : `${activeFilterDef?.label} — Upcoming`
             } />
             {filteredUpcoming.length === 0 ? (
-              <EmptyState icon="🎾" title={`No ${activeFilterDef?.label} matches`} desc="Try a different filter or check another date." />
+              <EmptyState
+                icon="🎾"
+                title={`No ${activeFilterDef?.label} matches`}
+                desc="Try a different filter or check another date."
+              />
             ) : (
               <div style={gridStyle}>
                 {filteredUpcoming.map((m, i) => (
@@ -537,8 +538,7 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MATCH CARD
-// [FIN-FIX] isFinished → shows "Final" badge + "Match Complete" pill,
-//           hides the Predict button entirely.
+// [FIN-FIX] Finished: show "Final" badge + "Match Complete" pill, no Predict.
 // ─────────────────────────────────────────────────────────────────────────────
 const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = new Set() }) {
   const surfaceColors = { Clay: '#f97316', Hard: '#60a5fa', Grass: '#4ade80' };
@@ -552,7 +552,7 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = 
 
   return (
     <Card>
-      {/* Tournament + badges row */}
+      {/* Tournament + surface + type badge row */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '12px', gap: '8px' }}>
         <div style={{ minWidth: 0 }}>
           <p style={{
@@ -638,15 +638,19 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = 
         );
       })}
 
-      {/* Footer — [FIN-FIX] no Predict button for finished matches */}
+      {/* Footer */}
       {isFinished ? (
         <div style={{
-          marginTop: '14px', padding: '9px 14px',
+          marginTop: '14px',
+          padding: '9px 14px',
           borderRadius: 'var(--radius-sm)',
           background: 'rgba(255,255,255,0.03)',
           border: '1px solid var(--border)',
-          textAlign: 'center', fontSize: '12px',
-          color: 'var(--text-faint)', fontWeight: 600, letterSpacing: '0.04em',
+          textAlign: 'center',
+          fontSize: '12px',
+          color: 'var(--text-faint)',
+          fontWeight: 600,
+          letterSpacing: '0.04em',
         }}>
           Match Complete
         </div>
@@ -664,15 +668,15 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = 
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PREDICTIONS TAB
-// [PRED-FIX] Uses tv-predictions-layout CSS class → stacks on mobile (≤680px)
-//            so the match list (sidebar) appears above the prediction panel.
+// [PRED-FIX] .tv-predictions-layout CSS class stacks to single column mobile
 // ─────────────────────────────────────────────────────────────────────────────
 function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMatch, wtaPlayerIds }) {
-  const [predFilter, setPredFilter]       = useState('atp_singles');
+  const [predFilter, setPredFilter] = useState('atp_singles');
   const { prediction, loading: predLoading, error: predError } = usePrediction(selectedMatch);
-  const [h2h, setH2h]                     = useState(null);
-  const [h2hLoading, setH2hLoading]       = useState(false);
+  const [h2h, setH2h]               = useState(null);
+  const [h2hLoading, setH2hLoading] = useState(false);
 
+  // Only today + future matches are predictable
   const predictableMatches = useMemo(() => {
     const now = new Date();
     now.setHours(0, 0, 0, 0);
@@ -704,15 +708,15 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
     return () => { cancelled = true; };
   }, [selectedMatch?.player1?.id, selectedMatch?.player2?.id]);
 
+  // Use deriveMatchType for filter too
   const filteredMatches = predictableMatches.filter(
     m => deriveMatchType(m, wtaPlayerIds) === predFilter
   );
 
   return (
-    // [PRED-FIX] tv-predictions-layout: desktop=side-by-side, mobile=stacked
     <div className="tv-fade-up tv-predictions-layout">
 
-      {/* ── Match picker (sidebar / top on mobile) ── */}
+      {/* ── Sidebar / top on mobile ── */}
       <div className="tv-predictions-sidebar">
         <p style={{ fontSize: '11px', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '12px' }}>
           Filter matches
@@ -742,7 +746,7 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
         )}
       </div>
 
-      {/* ── Main prediction panel (below on mobile) ── */}
+      {/* ── Main panel / below on mobile ── */}
       <div className="tv-predictions-main" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
         {!selectedMatch ? (
           <Card>
@@ -965,9 +969,8 @@ function H2HPanel({ h2h, match }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // RANKINGS TAB
 // [RNK-FIX] gridTemplateColumns: '44px minmax(0,1fr) 80px 60px'
-//           The minmax(0,1fr) forces the name column to shrink below its
-//           content width — without the 0 it wouldn't shrink, causing the
-//           points column to overflow into/over the name.
+//           minmax(0,1fr) forces the name column to shrink below content
+//           width — without it, points column overflows into the name.
 // ─────────────────────────────────────────────────────────────────────────────
 function RankingsTab({ onSelectPlayer }) {
   const [tour, setTour]     = useState('ATP');
@@ -1001,7 +1004,7 @@ function RankingsTab({ onSelectPlayer }) {
         <ErrorMessage msg={error} />
       ) : (
         <Card>
-          {/* [RNK-FIX] Header with same column definition */}
+          {/* Header row */}
           <div style={{
             display: 'grid',
             gridTemplateColumns: '44px minmax(0,1fr) 80px 60px',
@@ -1043,7 +1046,6 @@ function RankingsTab({ onSelectPlayer }) {
                 {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : p.rank}
               </span>
 
-              {/* [RNK-FIX] overflow:hidden on the container + text */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, overflow: 'hidden' }}>
                 <span style={{ fontSize: '20px', flexShrink: 0 }}>{p.flag ?? '🏳️'}</span>
                 <div style={{ minWidth: 0, overflow: 'hidden' }}>
@@ -1112,7 +1114,7 @@ function AiChatTab({ contextMatch }) {
       alignItems: 'start',
     }}>
       <Card className="tv-chat-column" style={{ display: 'flex', flexDirection: 'column', height: 'clamp(500px, 70vh, 700px)' }}>
-        {/* Chat header */}
+        {/* Chat header with clear button */}
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '0 0 14px', borderBottom: '1px solid var(--border)', marginBottom: '14px',
