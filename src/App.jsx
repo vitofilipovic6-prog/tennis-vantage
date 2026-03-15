@@ -1,25 +1,22 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// App.jsx  –  TennisVantage root
+// src/App.jsx
 //
-// FIXES APPLIED (Batch 2A):
-//  #13 — React.lazy() on Dashboard: authenticated users pay zero bundle cost
-//        on the landing page. Suspense falls back to the existing FullscreenLoader.
-//  #16 — ErrorBoundary wraps AppRouter so any unhandled runtime crash in any
-//        tab/component shows a friendly recovery screen instead of a white void.
+// CHANGES:
+//  - Added 'magic' screen → MagicLinkPage (passwordless sign-in)
+//  - ResetPage kept for backward compat (still exported, just not linked)
+//  - All other logic unchanged
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState, useEffect, lazy, Suspense } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import ErrorBoundary from './components/ErrorBoundary';
 
-// Auth pages are lightweight — always eager-loaded (they're on the critical path)
-import LandingPage from './pages/LandingPage';
-import LoginPage   from './pages/LoginPage';
-import SignupPage  from './pages/SignupPage';
-import ResetPage   from './pages/ResetPage';
+// Auth pages — always eager-loaded (on the critical path)
+import LandingPage    from './pages/LandingPage';
+import LoginPage      from './pages/LoginPage';
+import SignupPage     from './pages/SignupPage';
+import MagicLinkPage  from './pages/MagicLinkPage';
 
-// FIX #13: Dashboard is large. Only authenticated users ever see it, so we
-// lazy-load it. Vite splits it into a separate chunk (~80-120 kB saved from
-// initial bundle). The Suspense fallback reuses our existing loader.
+// Dashboard is large — lazy-load so unauthenticated users don't pay the cost
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 
 import { useToast } from './hooks/hooks';
@@ -28,15 +25,16 @@ import ToastContainer from './components/ToastContainer';
 // ── Inner router ──────────────────────────────────────────────────────────────
 function AppRouter() {
   const { user, loading } = useAuth();
-  const [screen, setScreen] = useState('landing'); // landing | login | signup | reset
+  const [screen, setScreen] = useState('landing');
   const { toasts, show: showToast, dismiss } = useToast();
 
-  // Once user logs in, always go to dashboard; on logout return to landing
+  // Once user logs in (including via magic link click), always go to dashboard
   useEffect(() => {
     if (!loading) {
       if (user) setScreen('dashboard');
       else if (screen === 'dashboard') setScreen('landing');
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, loading]);
 
   const nav = (to) => setScreen(to);
@@ -47,13 +45,11 @@ function AppRouter() {
 
   return (
     <>
-      {screen === 'landing'   && <LandingPage {...sharedProps} />}
-      {screen === 'login'     && <LoginPage   {...sharedProps} />}
-      {screen === 'signup'    && <SignupPage  {...sharedProps} />}
-      {screen === 'reset'     && <ResetPage   {...sharedProps} />}
+      {screen === 'landing'   && <LandingPage    {...sharedProps} />}
+      {screen === 'login'     && <LoginPage       {...sharedProps} />}
+      {screen === 'signup'    && <SignupPage       {...sharedProps} />}
+      {screen === 'magic'     && <MagicLinkPage    {...sharedProps} />}
 
-      {/* Suspense boundary: shows the loader while the Dashboard chunk downloads.
-          This only fires once — after that it's cached by the browser. */}
       {screen === 'dashboard' && (
         <Suspense fallback={<FullscreenLoader />}>
           <Dashboard {...sharedProps} />
@@ -65,7 +61,7 @@ function AppRouter() {
   );
 }
 
-// ── Fullscreen loader (used by both auth loading state + Suspense fallback) ───
+// ── Fullscreen loader ─────────────────────────────────────────────────────────
 function FullscreenLoader() {
   return (
     <div style={{
@@ -88,9 +84,6 @@ function FullscreenLoader() {
 // ── Root ──────────────────────────────────────────────────────────────────────
 export default function App() {
   return (
-    // FIX #16: ErrorBoundary sits outside AuthProvider so it catches crashes
-    // in auth context too. Any .map() on undefined, bad API shape, missing
-    // prop — all caught here instead of turning the screen white.
     <ErrorBoundary>
       <AuthProvider>
         <AppRouter />

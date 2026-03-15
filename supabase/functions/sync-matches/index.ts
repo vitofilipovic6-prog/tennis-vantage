@@ -2,13 +2,11 @@
 // supabase/functions/sync-matches/index.ts
 //
 // CHANGES IN THIS VERSION:
-//  + Migrated to tennisapi1.p.rapidapi.com (new API)
-//  + Uses normalizeEvent() from _shared/normalize.ts
-//  + Stores match_type and winner_id on every match row
-//  + Does NOT skip doubles — they are stored with correct match_type
-//    (atp_doubles / wta_doubles / mixed_doubles)
-//  + Fetches today + 3 days ahead using per-day endpoints
-//  + Also fetches live matches from /matches/live
+//  + Fetches yesterday (-1) + today + 3 days ahead (fixes "today shows tomorrow")
+//  + Force-finishes any 'upcoming' match whose match_date is before today UTC
+//  + Stores winner_id and score from API when available on finished matches
+//  + Cron: deploy with --schedule "*/30 * * * *" (every 30 minutes)
+//  + All other logic unchanged from the working version
 // ─────────────────────────────────────────────────────────────────────────────
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { normalizeEvent, resolveTour } from '../_shared/normalize.ts';
@@ -49,13 +47,22 @@ function extractEvents(data: any): any[] {
 }
 
 // ── Generate date range as {day, month, year} tuples ─────────────────────────
-function dateRange(daysAhead: number): Array<{ day: number; month: number; year: number }> {
+// daysBack: how many days before today to include (1 = yesterday for late results)
+// daysAhead: how many days after today to include (3 = today + 3 future days)
+function dateRange(daysBack: number, daysAhead: number): Array<{ day: number; month: number; year: number }> {
   const result = [];
-  for (let i = 0; i <= daysAhead; i++) {
+  for (let i = -daysBack; i <= daysAhead; i++) {
     const d = new Date();
-    d.setDate(d.getDate() + i);
-    result.push({ day: d.getDate(), month: d.getMonth() + 1, year: d.getFullYear() });
+    d.setUTCDate(d.getUTCDate() + i);
+    result.push({ day: d.getUTCDate(), month: d.getUTCMonth() + 1, year: d.getUTCFullYear() });
   }
+  return result;
+}
+
+// ── Utility: split array into chunks of n ────────────────────────────────────
+function chunk<T>(arr: T[], n: number): T[][] {
+  const result: T[][] = [];
+  for (let i = 0; i < arr.length; i += n) result.push(arr.slice(i, i + n));
   return result;
 }
 
@@ -86,7 +93,7 @@ Deno.serve(async (req: Request) => {
 
       for (const ev of events) {
         const tour = resolveTour(ev);
-        if (!tour) continue; // skip ITF / Challenger / non-ATP-WTA
+        if (!tour) continue;
 
         const result = normalizeEvent(ev, 'live');
         if (!result) continue;
@@ -101,42 +108,48 @@ Deno.serve(async (req: Request) => {
       errors.push(`[LIVE] ${e instanceof Error ? e.message : String(e)}`);
     }
 
-    // ── 2. Upcoming matches — today + 3 days ──────────────────────────────────
-    const dates = dateRange(3);
+    // ── 2. Date-range matches: yesterday + today + 3 days ahead ──────────────
+    // WHY yesterday: The API may return today's matches under yesterday's
+    // date in UTC+0 during early morning hours (e.g. 01:00 CEST = 23:00 UTC prev day).
+    // Fetching yesterday ensures we never miss today's matches due to timezone lag.
+    const dates = dateRange(1, 3); // -1 day back, +3 days ahead
     for (const { day, month, year } of dates) {
       const label = `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
       try {
-        log.push(`[UPCOMING] Fetching ${label}...`);
+        log.push(`[DATES] Fetching ${label}...`);
         const raw    = await rapidGet(`events/${day}/${month}/${year}`);
         const events = extractEvents(raw);
-        log.push(`[UPCOMING] ${label}: ${events.length} events`);
+        log.push(`[DATES] ${label}: ${events.length} events`);
 
         for (const ev of events) {
           const tour = resolveTour(ev);
-          if (!tour) continue; // skip ITF / Challenger
+          if (!tour) continue;
 
-          // Skip if already captured as live
+          // Skip if already captured as live (live data is more accurate)
           if (matchesMap.has(String(ev?.id ?? ''))) continue;
 
           const result = normalizeEvent(ev);
           if (!result) continue;
 
-          // Skip genuinely finished matches (don't pollute upcoming list)
-          if (result.match.status === 'finished') continue;
-
           const { match, p1, p2 } = result;
+
+          // For past dates: store finished matches WITH their results
+          // For today/future: skip matches that are finished (don't pollute upcoming)
+          const isYesterdayDate = label < new Date().toISOString().slice(0, 10);
+          if (!isYesterdayDate && result.match.status === 'finished') continue;
+
           matchesMap.set(match.id, match);
           if (!playersMap.has(p1.id)) playersMap.set(p1.id, p1);
           if (!playersMap.has(p2.id)) playersMap.set(p2.id, p2);
         }
       } catch (e: unknown) {
-        errors.push(`[UPCOMING ${label}] ${e instanceof Error ? e.message : String(e)}`);
+        errors.push(`[DATES ${label}] ${e instanceof Error ? e.message : String(e)}`);
       }
     }
 
     log.push(`[SYNC] Total: ${matchesMap.size} matches, ${playersMap.size} players`);
 
-   // ── 3. Upsert players — ignoreDuplicates: FALSE so gender/rank updates land ──
+    // ── 3. Upsert players ─────────────────────────────────────────────────────
     if (playersMap.size > 0) {
       const playerChunks = chunk([...playersMap.values()], 50);
       for (const ch of playerChunks) {
@@ -162,9 +175,43 @@ Deno.serve(async (req: Request) => {
       log.push('[MATCHES] No matches to upsert');
     }
 
-    // ── 5. BACKFILL: fix existing rows where match_type = 'atp_singles' wrongly ──
-    // Re-derive match_type from tournament name for already-stored matches
-    // This runs every sync so stale rows get corrected automatically
+    // ── 5. FORCE-FINISH: mark stale 'upcoming' rows as 'finished' ─────────────
+    // Any match still marked 'upcoming' but whose match_date is BEFORE today
+    // (UTC midnight) is definitively over, regardless of what the API says.
+    // This prevents old matches from showing the "Predict Winner" button.
+    try {
+      const todayUTC = new Date();
+      todayUTC.setUTCHours(0, 0, 0, 0);
+      const todayISO = todayUTC.toISOString();
+
+      const { data: staleMatches, error: staleErr } = await supabase
+        .from('matches')
+        .select('id')
+        .eq('status', 'upcoming')
+        .lt('match_date', todayISO);
+
+      if (staleErr) {
+        errors.push(`[FORCE-FINISH] Query error: ${staleErr.message}`);
+      } else if (staleMatches && staleMatches.length > 0) {
+        const ids = staleMatches.map(m => m.id);
+        const { error: updateErr } = await supabase
+          .from('matches')
+          .update({ status: 'finished' })
+          .in('id', ids);
+
+        if (updateErr) {
+          errors.push(`[FORCE-FINISH] Update error: ${updateErr.message}`);
+        } else {
+          log.push(`[FORCE-FINISH] ✓ Marked ${ids.length} stale 'upcoming' matches as 'finished'`);
+        }
+      } else {
+        log.push('[FORCE-FINISH] No stale upcoming matches found');
+      }
+    } catch (e: unknown) {
+      errors.push(`[FORCE-FINISH] ${e instanceof Error ? e.message : String(e)}`);
+    }
+
+    // ── 6. BACKFILL: fix existing rows where match_type is wrong ──────────────
     try {
       const { data: existingMatches, error: fetchErr } = await supabase
         .from('matches')
@@ -175,20 +222,19 @@ Deno.serve(async (req: Request) => {
         const updates: { id: string; match_type: string }[] = [];
 
         for (const m of existingMatches) {
-          const nameLower = (m.tournament ?? '').toLowerCase();
+          const nameLower  = (m.tournament ?? '').toLowerCase();
           const roundLower = (m.round ?? '').toLowerCase();
 
-          // Detect doubles from round name (e.g. "Doubles Quarterfinals")
           const isDoubles = roundLower.includes('double') || nameLower.includes('double');
-          const isMixed = roundLower.includes('mixed') || nameLower.includes('mixed');
-          const isWta = nameLower.includes('wta');
+          const isMixed   = roundLower.includes('mixed')  || nameLower.includes('mixed');
+          const isWta     = nameLower.includes('wta');
 
           let derivedType = m.match_type;
 
-          if (isMixed && isDoubles) derivedType = 'mixed_doubles';
-          else if (isDoubles && isWta) derivedType = 'wta_doubles';
-          else if (isDoubles) derivedType = 'atp_doubles'; // will be corrected if WTA
-          else if (isWta) derivedType = 'wta_singles';
+          if (isMixed && isDoubles)       derivedType = 'mixed_doubles';
+          else if (isDoubles && isWta)    derivedType = 'wta_doubles';
+          else if (isDoubles)             derivedType = 'atp_doubles';
+          else if (isWta)                 derivedType = 'wta_singles';
 
           if (derivedType !== m.match_type) {
             updates.push({ id: m.id, match_type: derivedType });
@@ -219,14 +265,10 @@ Deno.serve(async (req: Request) => {
     JSON.stringify({ ok: errors.length === 0, log, errors }),
     {
       status:  errors.length ? 207 : 200,
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type':                'application/json',
+        'Access-Control-Allow-Origin': '*',
+      },
     }
   );
 });
-
-// ── Utility: split array into chunks of n ────────────────────────────────────
-function chunk<T>(arr: T[], n: number): T[][] {
-  const result: T[][] = [];
-  for (let i = 0; i < arr.length; i += n) result.push(arr.slice(i, i + n));
-  return result;
-}

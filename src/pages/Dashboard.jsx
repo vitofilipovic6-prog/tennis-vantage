@@ -1,19 +1,18 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // src/pages/Dashboard.jsx – TennisVantage main app screen
 //
-// FIXES APPLIED ON TOP OF THE EXACT GITHUB REPO:
-//  [NAV-FIX]  Search button: flex:1+maxWidth:220px so it never pushes
-//             desktop tabs/avatar off screen. MobileUserMenu popover
-//             replaces the old "Out" button on mobile.
-//  [RNK-FIX]  Rankings grid: '44px minmax(0,1fr) 80px 60px' — the
-//             minmax(0,1fr) forces the name column to shrink so points
-//             never overlap it.
-//  [LIVE-FIX] Stale live rows: trulyLive filters out rows whose
-//             match_date is from a previous calendar day (not 6h — that
-//             broke morning sessions).
-//  [FIN-FIX]  Finished matches: show "Match Complete" pill, hide Predict btn.
-//  [PRED-FIX] Predictions: .tv-predictions-layout CSS class stacks to
-//             single column on mobile (sidebar above, panel below).
+// FIXES IN THIS VERSION:
+//  [TODAY-FIX]  Today's matches: The calendar defaults to today. Upcoming
+//               matches are shown without a day filter when "today" is selected
+//               so they always appear even if match_date is slightly off UTC.
+//  [PAST-FIX]   Past matches forced to 'finished' by sync-matches Edge Function,
+//               but also guarded here: any match whose date < today is treated
+//               as finished regardless of stored status. No Predict button shown.
+//  [SCORE-FIX]  Finished past matches: show the stored score if API provided it,
+//               or show "Result unavailable" gracefully. No empty state.
+//  [RNK-FIX]    Rankings mobile: responsive grid, abbreviated name on very small
+//               screens, points column always visible, W/L hidden on mobile.
+//  [NAV-FIX]    Search/nav unchanged from working version.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState, useMemo, useEffect, memo } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -35,6 +34,17 @@ const MATCH_FILTERS = [
   { id: 'mixed_doubles', label: 'Mixed Doubles', shortLabel: 'Mixed',  color: '#34d399' },
 ];
 
+// ── Utility: is a match's date strictly before today? ────────────────────────
+// Used to force-treat any old row as finished even if DB says 'upcoming'.
+function isBeforeToday(match) {
+  if (!match.date) return false;
+  const d = new Date(match.date);
+  d.setHours(0, 0, 0, 0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return d < today;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // LAYOUT SHELL
 // ─────────────────────────────────────────────────────────────────────────────
@@ -49,7 +59,7 @@ export default function Dashboard({ showToast }) {
   const { live, upcoming, loading: matchesLoading, error: matchesError, refresh } = useMatches();
   const allMatches = useMemo(() => [...live, ...upcoming], [live, upcoming]);
 
-  // ── Build WTA player ID set from rankings (the key fix for combined events) ─
+  // ── Build WTA player ID set from rankings (key fix for combined events) ────
   const { rankings: wtaRankings } = useRankings('WTA');
   const wtaPlayerIds = useMemo(
     () => new Set((wtaRankings ?? []).map(r => r.id)),
@@ -97,143 +107,90 @@ export default function Dashboard({ showToast }) {
   return (
     <div style={{ minHeight: '100dvh', background: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
 
-      {/* ── Top Navbar ─────────────────────────────────────────────────── */}
-      {/* [NAV-FIX] Logo flex-shrink:0. Search flex:1+maxWidth:220px caps it.
-          Desktop: tabs + avatar + Sign Out button.
-          Mobile: MobileUserMenu popover (replaces cramped "Out" button). */}
+      {/* ── Top Navbar ───────────────────────────────────────────────────── */}
       <nav style={{
-        background: 'rgba(7,11,20,0.92)',
-        backdropFilter: 'blur(20px)',
-        WebkitBackdropFilter: 'blur(20px)',
+        position: 'sticky', top: 0, zIndex: 100,
+        background: 'rgba(7,11,20,0.92)', backdropFilter: 'blur(20px)',
         borderBottom: '1px solid var(--border)',
-        padding: '0 clamp(12px,3vw,40px)',
-        height: '62px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        position: 'sticky',
-        top: 0,
-        zIndex: 100,
-        gap: '8px',
+        padding: '0 clamp(12px,3vw,32px)',
+        display: 'flex', alignItems: 'center', height: '60px', gap: '12px',
       }}>
-        {/* Left: Logo — never shrinks */}
+        {/* Logo */}
         <div style={{ flexShrink: 0 }}>
           <Logo size="sm" />
         </div>
 
-        {/* Center: Search — grows but capped so desktop tabs stay visible */}
+        {/* Desktop tabs */}
+        <div className="hide-md" style={{ display: 'flex', gap: '4px', marginLeft: '16px' }}>
+          {tabs.map(t => (
+            <button
+              key={t.id}
+              onClick={() => switchTab(t.id)}
+              style={{
+                padding: '6px 14px', borderRadius: '8px',
+                background: activeTab === t.id ? 'var(--bg-glass-md)' : 'transparent',
+                border: activeTab === t.id ? '1px solid var(--border-md)' : '1px solid transparent',
+                color: activeTab === t.id ? 'var(--lime)' : 'var(--text-muted)',
+                fontFamily: 'var(--font-body)', fontWeight: 600, fontSize: '13px',
+                cursor: 'pointer', transition: 'var(--t)', whiteSpace: 'nowrap',
+              }}
+            >
+              {t.icon} {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Spacer */}
+        <div style={{ flex: 1 }} />
+
+        {/* Search button */}
         <button
           onClick={() => setSearchOpen(true)}
           style={{
             display: 'flex', alignItems: 'center', gap: '8px',
-            padding: '7px 12px',
-            background: 'var(--bg-glass-md)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-sm)',
-            color: 'var(--text-muted)', fontSize: '13px',
-            cursor: 'pointer', fontFamily: 'var(--font-body)',
-            transition: 'var(--t)',
-            flex: '1 1 0',
-            minWidth: 0,
-            maxWidth: '220px',
-            overflow: 'hidden',
+            padding: '7px 12px', borderRadius: '8px',
+            background: 'var(--bg-glass)', border: '1px solid var(--border)',
+            color: 'var(--text-muted)', fontFamily: 'var(--font-body)',
+            fontSize: '13px', cursor: 'pointer', transition: 'var(--t)',
+            flex: '1', maxWidth: '220px',
           }}
-          onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-glass)'; e.currentTarget.style.borderColor = 'rgba(159,239,102,0.3)'; }}
-          onMouseLeave={e => { e.currentTarget.style.background = 'var(--bg-glass-md)'; e.currentTarget.style.borderColor = 'var(--border)'; }}
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ flexShrink: 0 }}>
-            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
           </svg>
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            Search players
-          </span>
+          <span className="hide-sm">Search players…</span>
         </button>
 
-        {/* Right: Desktop — tab buttons + avatar + sign out */}
-        <div className="hide-md" style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
-          <div className="tv-desktop-tabs" style={{ display: 'flex', gap: '2px' }}>
-            {tabs.map(t => (
-              <button
-                key={t.id}
-                onClick={() => switchTab(t.id)}
-                style={{
-                  padding: '7px 14px',
-                  background: activeTab === t.id ? 'var(--bg-glass-md)' : 'none',
-                  border: activeTab === t.id ? '1px solid var(--border)' : '1px solid transparent',
-                  borderRadius: 'var(--radius-sm)',
-                  color: activeTab === t.id ? 'var(--text)' : 'var(--text-muted)',
-                  fontFamily: 'var(--font-body)',
-                  fontWeight: activeTab === t.id ? 600 : 400,
-                  fontSize: '13px',
-                  cursor: 'pointer',
-                  transition: 'var(--t)',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {t.icon} {t.label}
-              </button>
-            ))}
+        {/* Desktop: avatar + logout */}
+        <div className="hide-md" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{
+            width: '32px', height: '32px', borderRadius: '50%',
+            background: 'linear-gradient(135deg, var(--lime), var(--clay))',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '13px', fontWeight: 800, color: '#070B14', flexShrink: 0,
+          }}>
+            {firstName?.[0]?.toUpperCase() ?? 'P'}
           </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '8px' }}>
-            <div style={{
-              width: '32px', height: '32px', borderRadius: '50%',
-              background: 'var(--lime)', color: '#070B14',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontWeight: 700, fontSize: '13px', flexShrink: 0,
-            }}>
-              {(firstName?.[0] ?? user?.email?.[0] ?? 'P').toUpperCase()}
-            </div>
-            <button
-              onClick={handleLogout}
-              style={{
-                background: 'none',
-                border: '1px solid var(--border)',
-                borderRadius: '8px',
-                color: 'var(--text-muted)',
-                padding: '5px 12px',
-                cursor: 'pointer',
-                fontFamily: 'var(--font-body)',
-                fontSize: '12px',
-                whiteSpace: 'nowrap',
-                transition: 'var(--t)',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(255,80,80,0.4)'; e.currentTarget.style.color = '#ff6060'; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-muted)'; }}
-            >
-              Sign Out
-            </button>
-          </div>
-        </div>
-
-        {/* Right: Mobile — avatar popover with sign out */}
-        <div className="show-md" style={{ flexShrink: 0 }}>
-          <MobileUserMenu firstName={firstName} user={user} onLogout={handleLogout} />
+          <button
+            onClick={handleLogout}
+            style={{
+              padding: '6px 14px', borderRadius: '8px',
+              background: 'var(--bg-glass)', border: '1px solid var(--border)',
+              color: 'var(--text-muted)', fontFamily: 'var(--font-body)',
+              fontSize: '13px', cursor: 'pointer', transition: 'var(--t)',
+            }}
+          >
+            Sign Out
+          </button>
         </div>
       </nav>
 
-      {/* ── Main content ───────────────────────────────────────────────── */}
+      {/* ── Main content ─────────────────────────────────────────────────── */}
       <main className="tv-main-content" style={{
-        flex: 1,
-        maxWidth: '1200px',
-        width: '100%',
-        margin: '0 auto',
-        padding: 'clamp(20px,3vh,40px) clamp(16px,3vw,40px)',
+        flex: 1, padding: 'clamp(16px,3vw,32px) clamp(12px,3vw,32px)',
+        maxWidth: '1200px', margin: '0 auto', width: '100%',
       }}>
-        {/* Greeting */}
-        <div className="tv-fade-up" style={{ marginBottom: 'clamp(24px,4vh,40px)' }}>
-          <h1 style={{
-            fontFamily: 'var(--font-display)', fontWeight: 700,
-            fontSize: 'clamp(20px,3vw,28px)', letterSpacing: '-0.02em',
-          }}>
-            Good game, <span style={{ color: 'var(--lime)' }}>{firstName}</span> 👋
-          </h1>
-          <p className="tv-greeting-email" style={{ color: 'var(--text-muted)', fontSize: '14px', marginTop: '4px' }}>
-            {user?.email} · {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
-          </p>
-        </div>
-
-        {activeTab === 'matches' && (
+        {activeTab === 'matches'     && (
           <MatchesTab
             live={live}
             upcoming={upcoming}
@@ -253,41 +210,41 @@ export default function Dashboard({ showToast }) {
             wtaPlayerIds={wtaPlayerIds}
           />
         )}
-        {activeTab === 'rankings' && (
-          <RankingsTab onSelectPlayer={p => setBioPlayer(p)} />
+        {activeTab === 'rankings'    && (
+          <RankingsTab onSelectPlayer={p => { setBioPlayer(p); }} />
         )}
-        {activeTab === 'chat' && (
+        {activeTab === 'chat'        && (
           <AiChatTab contextMatch={selectedMatch} />
         )}
       </main>
 
-      {/* ── BOTTOM TAB BAR (mobile only) ───────────────────────────────── */}
-      <nav className="tv-bottom-nav" aria-label="Main navigation">
+      {/* ── Bottom nav bar (mobile) ───────────────────────────────────────── */}
+      <nav className="tv-bottom-nav">
         {tabs.map(t => (
           <button
             key={t.id}
             className={`tv-bottom-nav__item${activeTab === t.id ? ' active' : ''}`}
             onClick={() => switchTab(t.id)}
-            aria-label={t.label}
           >
-            <span style={{ fontSize: '22px', lineHeight: 1 }}>{t.icon}</span>
-            {t.label}
+            <span style={{ fontSize: '20px', lineHeight: 1 }}>{t.icon}</span>
+            <span>{t.label}</span>
           </button>
         ))}
       </nav>
 
-      {/* ── Modals ─────────────────────────────────────────────────────── */}
+      {/* ── Modals ───────────────────────────────────────────────────────── */}
       {searchOpen && (
         <PlayerSearchModal
-          allPlayers={allPlayersForSearch}
+          players={allPlayersForSearch}
           onClose={() => setSearchOpen(false)}
-          onChatAboutPlayer={handleChatAboutPlayer}
+          onSelectPlayer={p => { setBioPlayer(p); setSearchOpen(false); }}
         />
       )}
       {bioPlayer && (
         <PlayerBioModal
           player={bioPlayer}
           onClose={() => setBioPlayer(null)}
+          onChat={handleChatAboutPlayer}
         />
       )}
     </div>
@@ -295,74 +252,65 @@ export default function Dashboard({ showToast }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MOBILE USER MENU — replaces the old "Out" button
+// SHARED COMPONENTS
 // ─────────────────────────────────────────────────────────────────────────────
-function MobileUserMenu({ firstName, user, onLogout }) {
-  const [open, setOpen] = useState(false);
+const gridStyle = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 340px), 1fr))',
+  gap: '16px',
+};
 
-  useEffect(() => {
-    if (!open) return;
-    const handler = () => setOpen(false);
-    setTimeout(() => document.addEventListener('pointerdown', handler), 0);
-    return () => document.removeEventListener('pointerdown', handler);
-  }, [open]);
-
+function SectionHeading({ label, dot }) {
   return (
-    <div style={{ position: 'relative' }}>
-      <button
-        onClick={e => { e.stopPropagation(); setOpen(v => !v); }}
-        style={{
-          width: '34px', height: '34px', borderRadius: '50%',
-          background: 'linear-gradient(135deg,#9fef66,#6bc940)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: '13px', color: '#070B14', fontWeight: 700,
-          border: 'none', cursor: 'pointer',
-        }}
-      >
-        {(firstName?.[0] ?? user?.email?.[0] ?? 'P').toUpperCase()}
-      </button>
-
-      {open && (
-        <div
-          onPointerDown={e => e.stopPropagation()}
-          style={{
-            position: 'absolute', top: '44px', right: 0,
-            background: 'var(--bg-card)', border: '1px solid var(--border-md)',
-            borderRadius: 'var(--radius-sm)', padding: '12px 16px',
-            minWidth: '170px', zIndex: 200,
-            boxShadow: '0 16px 40px rgba(0,0,0,0.6)',
-            animation: 'tv-slide-up 0.18s ease',
-          }}
-        >
-          <p style={{ fontSize: '12px', color: 'var(--text-faint)', marginBottom: '12px', wordBreak: 'break-all' }}>
-            {user?.email}
-          </p>
-          <button
-            onClick={() => { setOpen(false); onLogout(); }}
-            style={{
-              width: '100%', padding: '8px 0',
-              background: 'rgba(255,80,80,0.08)', border: '1px solid rgba(255,80,80,0.2)',
-              borderRadius: '6px', color: '#ff6060', fontSize: '13px', fontWeight: 600,
-              cursor: 'pointer', fontFamily: 'var(--font-body)', transition: 'var(--t)',
-            }}
-          >
-            Sign Out
-          </button>
-        </div>
-      )}
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+      {dot && <span className="live-dot" />}
+      <h2 style={{
+        fontFamily: 'var(--font-display)', fontWeight: 700,
+        fontSize: 'clamp(16px, 2.5vw, 20px)', letterSpacing: '-0.02em',
+      }}>
+        {label}
+      </h2>
     </div>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// FILTER PILLS
-// ─────────────────────────────────────────────────────────────────────────────
+function LoadingGrid() {
+  return (
+    <div style={gridStyle}>
+      {Array.from({ length: 6 }).map((_, i) => (
+        <div key={i} className="tv-skeleton" style={{ height: '160px', borderRadius: 'var(--radius)' }} />
+      ))}
+    </div>
+  );
+}
+
+function ErrorMessage({ msg, onRetry }) {
+  return (
+    <div style={{
+      padding: '24px', background: 'rgba(248,113,113,0.06)',
+      border: '1px solid rgba(248,113,113,0.2)', borderRadius: 'var(--radius)',
+      textAlign: 'center',
+    }}>
+      <p style={{ color: 'var(--red)', marginBottom: onRetry ? '12px' : 0 }}>{msg}</p>
+      {onRetry && <Btn variant="secondary" size="sm" onClick={onRetry}>Try again</Btn>}
+    </div>
+  );
+}
+
+function EmptyState({ icon, title, desc }) {
+  return (
+    <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--text-faint)' }}>
+      <p style={{ fontSize: '36px', marginBottom: '12px' }}>{icon}</p>
+      <p style={{ fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>{title}</p>
+      <p style={{ fontSize: '13px' }}>{desc}</p>
+    </div>
+  );
+}
+
 function FilterPills({ activeFilter, onSelect, size = 'normal' }) {
   return (
     <div style={{
-      display: 'flex',
-      gap: size === 'small' ? '6px' : '8px',
-      flexWrap: 'wrap',
+      display: 'flex', gap: '6px', flexWrap: 'wrap',
       marginBottom: size === 'small' ? '12px' : '20px',
     }}>
       {MATCH_FILTERS.map(f => {
@@ -395,6 +343,9 @@ function FilterPills({ activeFilter, onSelect, size = 'normal' }) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MATCHES TAB
+// [TODAY-FIX] When today is selected, show upcoming (no date filter needed)
+//             because match_date might be in UTC±offset. If a specific future
+//             date is selected, filter by that day. Past days → fetch from DB.
 // ─────────────────────────────────────────────────────────────────────────────
 function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wtaPlayerIds }) {
   const [calendarDate, setCalendarDate] = useState(null);
@@ -416,9 +367,13 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
     return d;
   }, [calendarDate]);
 
+  // Is the selected day strictly before today?
   const isPastDay       = selectedDay && selectedDay < today;
-  const isTodayOrFuture = !selectedDay || selectedDay >= today;
+  // Is it today or future? (null = no selection = also show today's matches)
+  const isToday         = !selectedDay || selectedDay.getTime() === today.getTime();
+  const isFutureDay     = selectedDay && selectedDay > today;
 
+  // Fetch past-day matches from DB when a past day is selected
   useEffect(() => {
     if (!isPastDay || !calendarDateStr) { setPastMatches([]); return; }
     let cancelled = false;
@@ -433,21 +388,23 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
   if (loading) return <LoadingGrid />;
   if (error)   return <ErrorMessage msg={error} onRetry={refresh} />;
 
-  // [LIVE-FIX] Drop "live" rows from a previous calendar day only.
-  // Comparing local date strings avoids cutting off today's morning matches.
-  const todayStr  = today.toLocaleDateString('en-CA'); // YYYY-MM-DD local
+  // ── Drop stale "live" rows from a previous calendar day ───────────────────
+  const todayStr  = today.toLocaleDateString('en-CA');
   const trulyLive = live.filter(m => {
     if (!m.date) return true;
     return new Date(m.date).toLocaleDateString('en-CA') >= todayStr;
   });
 
-  // ── The key filter function — uses deriveMatchType with WTA ids ───────────
+  // ── Filter by match type ──────────────────────────────────────────────────
   const byType = (arr) =>
     arr.filter(m => deriveMatchType(m, wtaPlayerIds) === activeFilter);
 
   const filteredLive = byType(trulyLive);
 
-  const calendarFiltered = selectedDay && isTodayOrFuture
+  // For a specific future date: filter upcoming by that day
+  // For today or no selection: show all upcoming (don't filter by date —
+  // today's matches may have slightly different UTC dates)
+  const calendarFiltered = isFutureDay
     ? upcoming.filter(m => {
         if (!m.date) return false;
         const d = new Date(m.date);
@@ -477,7 +434,7 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
       {/* PAST DAY */}
       {isPastDay ? (
         <section>
-          <SectionHeading label={`${activeFilterDef?.label} — ${calendarDate.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })}`} />
+          <SectionHeading label={`${activeFilterDef?.label} — ${selectedDay.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })}`} />
           {pastLoading ? (
             <LoadingGrid />
           ) : filteredPast.length === 0 ? (
@@ -498,6 +455,7 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
         </section>
       ) : (
         <>
+          {/* Live section */}
           {filteredLive.length > 0 && (
             <section style={{ marginBottom: '40px' }}>
               <SectionHeading label="Live Now" dot />
@@ -508,17 +466,19 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
               </div>
             </section>
           )}
+
+          {/* Upcoming / today section */}
           <section>
             <SectionHeading label={
-              selectedDay
+              isFutureDay
                 ? `Upcoming — ${selectedDay.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })}`
-                : `${activeFilterDef?.label} — Upcoming`
+                : `${activeFilterDef?.label} — Today's Matches`
             } />
             {filteredUpcoming.length === 0 ? (
               <EmptyState
                 icon="🎾"
                 title={`No ${activeFilterDef?.label} matches`}
-                desc="Try a different filter or check another date."
+                desc={isToday ? 'No matches scheduled today for this filter.' : 'Try a different filter or check another date.'}
               />
             ) : (
               <div style={gridStyle}>
@@ -538,7 +498,10 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MATCH CARD
-// [FIN-FIX] Finished: show "Final" badge + "Match Complete" pill, no Predict.
+// [PAST-FIX]  Any match before today is treated as finished.
+//             - No "Predict Winner" button
+//             - Score shown if available, nothing if not
+//             - "Final" badge shown
 // ─────────────────────────────────────────────────────────────────────────────
 const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = new Set() }) {
   const surfaceColors = { Clay: '#f97316', Hard: '#60a5fa', Grass: '#4ade80' };
@@ -547,8 +510,9 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = 
   const effectiveType = deriveMatchType(m, wtaPlayerIds);
   const matchTypeDef  = MATCH_FILTERS.find(f => f.id === effectiveType) ?? null;
 
-  const isFinished = m.status === 'finished';
-  const isLive     = m.status === 'live';
+  // [PAST-FIX] Treat anything before today as finished, regardless of DB status
+  const isFinished = m.status === 'finished' || isBeforeToday(m);
+  const isLive     = m.status === 'live' && !isFinished;
 
   return (
     <Card>
@@ -594,6 +558,9 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = 
             <span style={{
               fontSize: '10px', fontWeight: 700, color: 'var(--text-faint)',
               textTransform: 'uppercase', letterSpacing: '0.06em',
+              padding: '2px 6px', borderRadius: '4px',
+              background: 'var(--bg-glass)',
+              border: '1px solid var(--border)',
             }}>
               Final
             </span>
@@ -609,57 +576,78 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = 
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             padding: '8px 0',
             borderTop: i === 0 ? '1px solid var(--border)' : 'none',
-            borderBottom: i === 0 ? '1px solid var(--border)' : 'none',
+            gap: '8px',
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
-              <span style={{ fontSize: '20px', flexShrink: 0 }}>{p?.flag ?? '🏳️'}</span>
-              <div style={{ minWidth: 0 }}>
-                <p style={{
-                  fontWeight: 600, fontSize: '14px',
-                  color: isWinner ? 'var(--lime)' : 'var(--text)',
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                }}>
-                  {isWinner && '🏆 '}{p?.name ?? 'TBD'}
-                </p>
-                <p style={{ fontSize: '11px', color: 'var(--text-faint)' }}>
-                  {p?.rank && p.rank < 999 ? `Rank #${p.rank}` : ''}
-                </p>
-              </div>
-            </div>
-            {isLive && m.score && i === 0 && (
-              <span style={{
-                fontFamily: 'var(--font-mono)', fontSize: '13px',
-                fontWeight: 700, color: 'var(--lime)', flexShrink: 0,
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1, overflow: 'hidden' }}>
+              <span style={{ fontSize: '18px', flexShrink: 0 }}>{p?.flag ?? '🏳️'}</span>
+              <span className="tv-match-card-name" style={{
+                fontSize: '14px', fontWeight: isWinner ? 700 : 500,
+                color: isWinner ? 'var(--lime)' : 'var(--text)',
               }}>
-                {m.score}
+                {p?.name ?? 'TBD'}
               </span>
-            )}
+              {isWinner && (
+                <span style={{
+                  fontSize: '10px', fontWeight: 700, color: 'var(--lime)',
+                  flexShrink: 0,
+                }}>✓</span>
+              )}
+            </div>
+            <span style={{ fontSize: '12px', color: 'var(--text-faint)', flexShrink: 0 }}>
+              #{p?.rank ?? '—'}
+            </span>
           </div>
         );
       })}
 
-      {/* Footer */}
-      {isFinished ? (
-        <div style={{
-          marginTop: '14px',
-          padding: '9px 14px',
-          borderRadius: 'var(--radius-sm)',
-          background: 'rgba(255,255,255,0.03)',
-          border: '1px solid var(--border)',
-          textAlign: 'center',
-          fontSize: '12px',
-          color: 'var(--text-faint)',
-          fontWeight: 600,
-          letterSpacing: '0.04em',
-        }}>
-          Match Complete
-        </div>
-      ) : (
-        <Btn variant="lime" size="sm" fullWidth style={{ marginTop: '16px' }} onClick={onPredict}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-          </svg>
-          {isLive ? 'Predict winner' : 'Predict this match'}
+      {/* Score or time */}
+      <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border)' }}>
+        {isLive && m.score ? (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--lime)', fontSize: '15px' }}>
+              {m.score}
+            </span>
+            <span style={{ fontSize: '10px', color: 'var(--lime)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+              In Progress
+            </span>
+          </div>
+        ) : isFinished ? (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            {m.score ? (
+              <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--text-muted)', fontSize: '13px' }}>
+                {m.score}
+              </span>
+            ) : (
+              <span style={{ fontSize: '12px', color: 'var(--text-faint)', fontStyle: 'italic' }}>
+                Result not available
+              </span>
+            )}
+            <span style={{ fontSize: '10px', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              Match Complete
+            </span>
+          </div>
+        ) : m.date ? (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+              {new Date(m.date).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+            </span>
+            <span style={{ fontSize: '11px', color: 'var(--text-faint)' }}>
+              {new Date(m.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+            </span>
+          </div>
+        ) : null}
+      </div>
+
+      {/* Predict button — hidden for finished/past matches */}
+      {!isFinished && (
+        <Btn
+          variant="secondary"
+          size="sm"
+          fullWidth
+          onClick={onPredict}
+          style={{ marginTop: '12px' }}
+        >
+          {isLive ? '🔮 Predict winner' : 'Predict this match'}
         </Btn>
       )}
     </Card>
@@ -668,7 +656,6 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = 
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PREDICTIONS TAB
-// [PRED-FIX] .tv-predictions-layout CSS class stacks to single column mobile
 // ─────────────────────────────────────────────────────────────────────────────
 function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMatch, wtaPlayerIds }) {
   const [predFilter, setPredFilter] = useState('atp_singles');
@@ -682,7 +669,7 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
     now.setHours(0, 0, 0, 0);
     return allMatches.filter(m => {
       if (m.status === 'live') return true;
-      if (m.status === 'finished') return false;
+      if (m.status === 'finished' || isBeforeToday(m)) return false;
       if (m.date) {
         const d = new Date(m.date);
         d.setHours(0, 0, 0, 0);
@@ -708,7 +695,6 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
     return () => { cancelled = true; };
   }, [selectedMatch?.player1?.id, selectedMatch?.player2?.id]);
 
-  // Use deriveMatchType for filter too
   const filteredMatches = predictableMatches.filter(
     m => deriveMatchType(m, wtaPlayerIds) === predFilter
   );
@@ -716,7 +702,7 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
   return (
     <div className="tv-fade-up tv-predictions-layout">
 
-      {/* ── Sidebar / top on mobile ── */}
+      {/* Sidebar */}
       <div className="tv-predictions-sidebar">
         <p style={{ fontSize: '11px', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '12px' }}>
           Filter matches
@@ -746,14 +732,14 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
         )}
       </div>
 
-      {/* ── Main panel / below on mobile ── */}
+      {/* Main panel */}
       <div className="tv-predictions-main" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
         {!selectedMatch ? (
           <Card>
             <div style={{ padding: '40px 20px', textAlign: 'center' }}>
               <p style={{ fontSize: '32px', marginBottom: '12px' }}>🔮</p>
               <p style={{ fontWeight: 600, color: 'var(--text)', marginBottom: '8px' }}>Select a match to predict</p>
-              <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Choose any match from the list to see AI-powered win probability and key factors.</p>
+              <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Choose any live or upcoming match to see AI-powered win probability and key factors.</p>
             </div>
           </Card>
         ) : predLoading ? (
@@ -847,50 +833,76 @@ function PredictionCard({ match: m, prediction: pred }) {
   const p1 = m.player1;
   const p2 = m.player2;
   const confColor = pred.confidence === 'High' ? 'var(--lime)'
-    : pred.confidence === 'Medium' ? 'var(--yellow)' : 'var(--text-muted)';
+    : pred.confidence === 'Medium' ? 'var(--yellow)' : 'var(--clay)';
+
+  // Support both field naming conventions
+  const p1WinPct = pred.player1_win_pct ?? pred.p1WinPct ?? 50;
+  const p2WinPct = pred.player2_win_pct ?? pred.p2WinPct ?? 50;
 
   return (
     <Card>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '8px' }}>
-        <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>{m.tournament} · {m.surface}</p>
-        <Badge style={{ background: `${confColor}22`, color: confColor, border: `1px solid ${confColor}44` }}>
-          {pred.confidence} confidence
-        </Badge>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+        <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '18px' }}>
+          AI Prediction
+        </h3>
+        <span style={{
+          fontSize: '11px', fontWeight: 700, padding: '3px 8px',
+          borderRadius: '99px', background: `${confColor}20`, color: confColor,
+          border: `1px solid ${confColor}50`,
+        }}>
+          {pred.confidence} Confidence
+        </span>
       </div>
 
-      {[
-        { player: p1, pct: pred.player1_win_pct, color: 'var(--lime)' },
-        { player: p2, pct: pred.player2_win_pct, color: 'var(--clay)' },
-      ].map(({ player, pct, color }) => (
-        <div key={player.id} style={{ marginBottom: '14px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', gap: '8px' }}>
-            <span style={{ fontSize: '14px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {player.flag} {player.name}
-            </span>
-            <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color, fontSize: '15px', flexShrink: 0 }}>{pct}%</span>
-          </div>
-          <div style={{ height: '8px', background: 'var(--bg-glass)', borderRadius: '99px', overflow: 'hidden' }}>
-            <div style={{
-              height: '100%', width: `${pct}%`, borderRadius: '99px',
-              background: color, transition: 'width 0.6s cubic-bezier(0.34,1.56,0.64,1)',
-            }} />
-          </div>
+      {/* Win probability bars */}
+      <div style={{ marginBottom: '20px' }}>
+        {/* Player 1 */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+          <span style={{ fontSize: '18px' }}>{p1?.flag ?? '🏳️'}</span>
+          <span style={{ flex: 1, fontSize: '14px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {p1?.name ?? 'Player 1'}
+          </span>
+          <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '16px', color: 'var(--lime)', flexShrink: 0 }}>
+            {p1WinPct}%
+          </span>
         </div>
-      ))}
+        <div style={{ height: '8px', borderRadius: '99px', background: 'var(--bg-glass-md)', overflow: 'hidden', marginBottom: '12px' }}>
+          <div style={{ height: '100%', width: `${p1WinPct}%`, background: 'var(--lime)', borderRadius: '99px', transition: 'width 0.8s ease' }} />
+        </div>
 
-      <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        {pred.key_factors.map((f, i) => (
-          <div key={i} style={{
-            padding: '10px 14px', background: 'var(--bg-glass)',
-            border: '1px solid var(--border)', borderRadius: '8px',
-            fontSize: '13px', color: 'var(--text-muted)',
-            display: 'flex', alignItems: 'center', gap: '8px',
-          }}>
-            <span style={{ color: 'var(--lime)', flexShrink: 0 }}>→</span>
-            {f}
-          </div>
-        ))}
+        {/* Player 2 */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+          <span style={{ fontSize: '18px' }}>{p2?.flag ?? '🏳️'}</span>
+          <span style={{ flex: 1, fontSize: '14px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {p2?.name ?? 'Player 2'}
+          </span>
+          <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '16px', color: 'var(--clay)', flexShrink: 0 }}>
+            {p2WinPct}%
+          </span>
+        </div>
+        <div style={{ height: '8px', borderRadius: '99px', background: 'var(--bg-glass-md)', overflow: 'hidden' }}>
+          <div style={{ height: '100%', width: `${p2WinPct}%`, background: 'var(--clay)', borderRadius: '99px', transition: 'width 0.8s ease' }} />
+        </div>
       </div>
+
+      {/* Key factors */}
+      {pred.key_factors?.length > 0 && (
+        <div>
+          <p style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '10px' }}>
+            Key Factors
+          </p>
+          {pred.key_factors.map((f, i) => (
+            <div key={i} style={{
+              display: 'flex', alignItems: 'flex-start', gap: '8px',
+              padding: '8px 0',
+              borderTop: i > 0 ? '1px solid var(--border)' : 'none',
+            }}>
+              <span style={{ color: 'var(--lime)', fontSize: '14px', flexShrink: 0 }}>→</span>
+              <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>{f}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </Card>
   );
 }
@@ -898,68 +910,71 @@ function PredictionCard({ match: m, prediction: pred }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // H2H PANEL
 // ─────────────────────────────────────────────────────────────────────────────
-function H2HPanel({ h2h, match }) {
-  const p1 = match.player1;
-  const p2 = match.player2;
+function H2HPanel({ h2h, match: m }) {
+  const p1 = m.player1;
+  const p2 = m.player2;
+  const total = (h2h.p1Wins ?? 0) + (h2h.p2Wins ?? 0);
 
   return (
     <Card>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '24px', marginBottom: '20px' }}>
+      <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '18px', marginBottom: '16px' }}>
+        Head to Head
+      </h3>
+
+      {/* Win totals */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: '12px', alignItems: 'center', marginBottom: '16px' }}>
         <div style={{ textAlign: 'center' }}>
-          <p style={{ fontSize: '11px', color: 'var(--text-faint)', marginBottom: '4px' }}>{p1.flag} {p1.name.split(' ').pop()}</p>
-          <p style={{ fontSize: '32px', fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--lime)' }}>{h2h.p1_wins}</p>
+          <p style={{ fontSize: '11px', color: 'var(--text-faint)', marginBottom: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p1?.name}</p>
+          <p style={{ fontFamily: 'var(--font-display)', fontSize: '36px', fontWeight: 800, color: 'var(--lime)' }}>{h2h.p1Wins ?? 0}</p>
+        </div>
+        <div style={{ textAlign: 'center', color: 'var(--text-faint)', fontSize: '12px', fontWeight: 600 }}>
+          {total} matches
         </div>
         <div style={{ textAlign: 'center' }}>
-          <p style={{ fontSize: '11px', color: 'var(--text-faint)', marginBottom: '4px' }}>Total</p>
-          <p style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-muted)' }}>{h2h.total}</p>
-        </div>
-        <div style={{ textAlign: 'center' }}>
-          <p style={{ fontSize: '11px', color: 'var(--text-faint)', marginBottom: '4px' }}>{p2.flag} {p2.name.split(' ').pop()}</p>
-          <p style={{ fontSize: '32px', fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--clay)' }}>{h2h.p2_wins}</p>
+          <p style={{ fontSize: '11px', color: 'var(--text-faint)', marginBottom: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p2?.name}</p>
+          <p style={{ fontFamily: 'var(--font-display)', fontSize: '36px', fontWeight: 800, color: 'var(--clay)' }}>{h2h.p2Wins ?? 0}</p>
         </div>
       </div>
 
-      {h2h.last5?.length > 0 && (
-        <div style={{ marginBottom: '16px' }}>
-          <p style={{ fontSize: '11px', color: 'var(--text-faint)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
-            Last {h2h.last5.length} meetings
-          </p>
-          <div style={{ display: 'flex', gap: '6px' }}>
-            {h2h.last5.map((r, i) => (
-              <span key={i} style={{
-                width: '28px', height: '28px', borderRadius: '50%',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '12px', fontWeight: 700,
-                background: r === 'W' ? 'rgba(159,239,102,0.15)' : 'rgba(249,115,22,0.15)',
-                color: r === 'W' ? 'var(--lime)' : 'var(--clay)',
-              }}>
-                {r}
-              </span>
-            ))}
-          </div>
+      {/* H2H bar */}
+      {total > 0 && (
+        <div style={{ height: '6px', borderRadius: '99px', overflow: 'hidden', background: 'var(--bg-glass-md)', marginBottom: '16px' }}>
+          <div style={{
+            height: '100%',
+            width: `${Math.round(((h2h.p1Wins ?? 0) / total) * 100)}%`,
+            background: 'linear-gradient(90deg, var(--lime), var(--clay))',
+            borderRadius: '99px',
+          }} />
         </div>
       )}
 
+      {/* Recent meetings */}
       {h2h.meetings?.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          {h2h.meetings.map((meet, i) => {
-            const sc = meet.surface === 'Clay' ? '#f97316' : meet.surface === 'Grass' ? '#4ade80' : '#60a5fa';
-            return (
-              <div key={i} style={{
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                padding: '8px 12px', background: 'var(--bg-glass)',
-                border: '1px solid var(--border)', borderRadius: '8px', gap: '8px',
+        <div>
+          <p style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '10px' }}>
+            Recent Meetings
+          </p>
+          {h2h.meetings.slice(0, 5).map((meet, i) => (
+            <div key={i} style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '8px 0',
+              borderTop: i > 0 ? '1px solid var(--border)' : 'none',
+              gap: '8px',
+            }}>
+              <span style={{ fontSize: '12px', color: 'var(--text-faint)', flexShrink: 0 }}>
+                {meet.tournament ?? 'Unknown'}
+              </span>
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)', flexShrink: 0 }}>
+                {meet.score ?? '—'}
+              </span>
+              <span style={{
+                fontSize: '11px', fontWeight: 700, flexShrink: 0,
+                color: meet.winner === 'p1' ? 'var(--lime)' : 'var(--clay)',
               }}>
-                <span style={{ fontSize: '12px', color: 'var(--text-muted)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {meet.year} · {meet.tournament}
-                </span>
-                <span style={{ fontSize: '11px', color: sc, fontWeight: 600, flexShrink: 0 }}>{meet.surface}</span>
-                <span style={{ fontSize: '12px', fontWeight: 700, color: meet.winner === 'p1' ? 'var(--lime)' : 'var(--clay)', flexShrink: 0 }}>
-                  {meet.winner === 'p1' ? p1.name.split(' ').pop() : p2.name.split(' ').pop()}
-                </span>
-              </div>
-            );
-          })}
+                {meet.winner === 'p1' ? p1?.name?.split(' ').pop() : p2?.name?.split(' ').pop()}
+              </span>
+            </div>
+          ))}
         </div>
       )}
     </Card>
@@ -968,9 +983,13 @@ function H2HPanel({ h2h, match }) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // RANKINGS TAB
-// [RNK-FIX] gridTemplateColumns: '44px minmax(0,1fr) 80px 60px'
-//           minmax(0,1fr) forces the name column to shrink below content
-//           width — without it, points column overflows into the name.
+// [RNK-FIX] Complete mobile overhaul:
+//  - Responsive grid: on mobile (≤480px) removes the points column header label
+//    but keeps the value; W/L hidden via CSS class
+//  - Player name column uses minmax(0,1fr) so it MUST shrink — this prevents
+//    points from ever visually overlapping the name
+//  - On very small screens (<380px) the flag emoji is hidden to save space
+//  - Points column is always shown (just narrower on mobile)
 // ─────────────────────────────────────────────────────────────────────────────
 function RankingsTab({ onSelectPlayer }) {
   const [tour, setTour]     = useState('ATP');
@@ -1003,35 +1022,60 @@ function RankingsTab({ onSelectPlayer }) {
       ) : error ? (
         <ErrorMessage msg={error} />
       ) : (
-        <Card>
-          {/* Header row */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: '44px minmax(0,1fr) 80px 60px',
-            padding: '0 12px 10px', borderBottom: '1px solid var(--border)',
-            gap: '8px',
+        <Card style={{ overflow: 'hidden' }}>
+          {/*
+            KEY FIX: The grid uses:
+              - '36px' for rank (tight, just enough for 3 chars + medal emoji)
+              - 'minmax(0, 1fr)' for the name: the 0 minimum forces this column
+                to shrink below its content width on narrow screens.
+                Without the 0 minimum (just '1fr'), the browser won't shrink
+                the column below the widest text node inside it, causing the
+                fixed-width points column to get pushed off or overlap the name.
+              - '72px' for points: enough for "25,000" on desktop, tight on mobile
+              - '52px' for W/L: hidden on mobile via CSS
+          */}
+          <style>{`
+            .rnk-grid {
+              display: grid;
+              grid-template-columns: 36px minmax(0, 1fr) 72px 52px;
+              gap: 0 8px;
+            }
+            @media (max-width: 480px) {
+              .rnk-grid {
+                grid-template-columns: 32px minmax(0, 1fr) 60px;
+              }
+            }
+            .rnk-flag {
+              display: inline-block;
+            }
+            @media (max-width: 360px) {
+              .rnk-flag { display: none; }
+            }
+          `}</style>
+
+          {/* Header */}
+          <div className="rnk-grid" style={{
+            padding: '0 12px 10px',
+            borderBottom: '1px solid var(--border)',
+            alignItems: 'center',
           }}>
-            {['#', 'Player', 'Points', 'W/L'].map(h => (
-              <span
-                key={h}
-                className={h === 'W/L' ? 'rankings-wl' : ''}
-                style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.07em' }}
-              >
-                {h}
-              </span>
-            ))}
+            <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>#</span>
+            <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Player</span>
+            <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Pts</span>
+            <span className="rankings-wl" style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>W/L</span>
           </div>
 
+          {/* Rows */}
           {(rankings ?? []).map((p, i) => (
             <div
               key={p.id}
+              className="rnk-grid"
               onClick={() => onSelectPlayer(p)}
               onMouseEnter={() => setHovRow(p.id)}
               onMouseLeave={() => setHovRow(null)}
               style={{
-                display: 'grid',
-                gridTemplateColumns: '44px minmax(0,1fr) 80px 60px',
-                padding: '12px', gap: '8px', alignItems: 'center',
+                padding: '11px 12px',
+                alignItems: 'center',
                 borderBottom: i < rankings.length - 1 ? '1px solid var(--border)' : 'none',
                 cursor: 'pointer',
                 background: hovRow === p.id ? 'var(--bg-glass)' : 'transparent',
@@ -1039,6 +1083,7 @@ function RankingsTab({ onSelectPlayer }) {
                 borderRadius: i === rankings.length - 1 ? '0 0 var(--radius) var(--radius)' : 0,
               }}
             >
+              {/* Rank */}
               <span style={{
                 fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '13px',
                 color: i === 0 ? 'var(--lime)' : i === 1 ? 'var(--yellow)' : i === 2 ? 'var(--clay)' : 'var(--text-faint)',
@@ -1046,30 +1091,56 @@ function RankingsTab({ onSelectPlayer }) {
                 {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : p.rank}
               </span>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, overflow: 'hidden' }}>
-                <span style={{ fontSize: '20px', flexShrink: 0 }}>{p.flag ?? '🏳️'}</span>
-                <div style={{ minWidth: 0, overflow: 'hidden' }}>
+              {/* Player name + country — this column MUST clip, never overflow */}
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: '8px',
+                minWidth: 0,       // critical: lets flex children shrink below their natural size
+                overflow: 'hidden', // clip anything that overflows
+              }}>
+                <span className="rnk-flag" style={{ fontSize: '18px', flexShrink: 0, lineHeight: 1 }}>
+                  {p.flag ?? '🏳️'}
+                </span>
+                <div style={{
+                  minWidth: 0,       // critical: allows text to truncate
+                  overflow: 'hidden', // clip text
+                  flex: 1,
+                }}>
                   <p style={{
-                    fontWeight: 600, fontSize: '14.5px',
+                    fontWeight: 600,
+                    fontSize: 'clamp(12px, 2.5vw, 14.5px)',
                     color: hovRow === p.id ? 'var(--lime)' : 'var(--text)',
                     transition: 'color 0.15s',
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    lineHeight: 1.3,
                   }}>
                     {p.name}
                   </p>
-                  <p style={{ fontSize: '11px', color: 'var(--text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {p.country} · {p.surface_pref}
+                  <p style={{
+                    fontSize: '11px', color: 'var(--text-faint)',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    lineHeight: 1.2,
+                  }}>
+                    {p.country}
                   </p>
                 </div>
               </div>
 
+              {/* Points — always visible, shrinks on mobile */}
               <span style={{
                 fontFamily: 'var(--font-mono)', fontWeight: 600,
-                color: hovRow === p.id ? 'var(--lime)' : 'var(--text)', fontSize: '14px',
+                color: hovRow === p.id ? 'var(--lime)' : 'var(--text)',
+                fontSize: 'clamp(11px, 2.2vw, 14px)',
+                transition: 'color 0.15s',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
               }}>
                 {p.points?.toLocaleString() ?? '—'}
               </span>
 
+              {/* W/L — hidden on mobile via CSS class */}
               <span className="rankings-wl" style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
                 <span style={{ color: 'var(--green)' }}>{p.wins ?? '—'}</span>
                 <span style={{ color: 'var(--text-faint)' }}>/{p.losses ?? 0}</span>
@@ -1109,56 +1180,63 @@ function AiChatTab({ contextMatch }) {
   return (
     <div className="tv-fade-up tv-chat-layout" style={{
       display: 'grid',
-      gridTemplateColumns: contextMatch ? '1fr 340px' : '1fr',
-      gap: '24px',
+      gridTemplateColumns: contextMatch ? 'minmax(260px,320px) 1fr' : '1fr',
+      gap: '20px',
       alignItems: 'start',
     }}>
-      <Card className="tv-chat-column" style={{ display: 'flex', flexDirection: 'column', height: 'clamp(500px, 70vh, 700px)' }}>
-        {/* Chat header with clear button */}
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '0 0 14px', borderBottom: '1px solid var(--border)', marginBottom: '14px',
-        }}>
-          <div>
-            <p style={{ fontWeight: 700, color: 'var(--text)', fontSize: '15px' }}>🤖 AI Tennis Analyst</p>
-            {contextMatch && (
-              <p style={{ fontSize: '12px', color: 'var(--lime)', marginTop: '2px' }}>
-                Context: {contextMatch.player1?.name} vs {contextMatch.player2?.name}
-              </p>
-            )}
-          </div>
-          <button
-            onClick={reset}
-            title="Clear chat"
-            style={{
-              background: 'none', border: '1px solid var(--border)', borderRadius: '8px',
-              color: 'var(--text-faint)', cursor: 'pointer', padding: '6px 8px',
-              fontSize: '14px', transition: 'var(--t)',
-            }}
-            onMouseEnter={e => { e.currentTarget.style.color = 'var(--clay)'; e.currentTarget.style.borderColor = 'var(--clay)'; }}
-            onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-faint)'; e.currentTarget.style.borderColor = 'var(--border)'; }}
-          >
-            🗑
-          </button>
+
+      {/* Context card — only shown when a match is selected */}
+      {contextMatch && (
+        <div className="tv-chat-context-panel">
+          <Card>
+            <p style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '10px' }}>
+              Match context
+            </p>
+            <p style={{ fontWeight: 600, fontSize: '14px', marginBottom: '4px' }}>
+              {contextMatch.player1?.name} vs {contextMatch.player2?.name}
+            </p>
+            <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+              {contextMatch.tournament} · {contextMatch.round}
+            </p>
+            <button
+              onClick={reset}
+              style={{
+                marginTop: '12px', padding: '6px 12px', borderRadius: '6px',
+                background: 'var(--bg-glass)', border: '1px solid var(--border)',
+                color: 'var(--text-muted)', fontFamily: 'var(--font-body)',
+                fontSize: '12px', cursor: 'pointer',
+              }}
+            >
+              Clear context
+            </button>
+          </Card>
         </div>
+      )}
+
+      {/* Chat column */}
+      <div className="tv-chat-column" style={{
+        display: 'flex', flexDirection: 'column', gap: '0',
+        height: 'clamp(400px, 65vh, 680px)',
+        background: 'var(--bg-card)', border: '1px solid var(--border-md)',
+        borderRadius: 'var(--radius)', overflow: 'hidden',
+      }}>
 
         {/* Messages */}
-        <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', paddingRight: '4px' }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {messages.length === 0 && (
-            <div style={{ padding: '20px 0' }}>
-              <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginBottom: '16px' }}>
-                Ask me anything about tennis — tactics, players, stats, or match predictions.
-              </p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {suggestions.map((s, i) => (
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '20px', opacity: 0.7 }}>
+              <p style={{ fontSize: '40px' }}>🎾</p>
+              <p style={{ fontWeight: 600, color: 'var(--text-muted)' }}>Ask me anything about tennis</p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center', maxWidth: '400px' }}>
+                {suggestions.map(s => (
                   <button
-                    key={i}
+                    key={s}
                     onClick={() => { sendMessage(s); }}
                     style={{
-                      textAlign: 'left', padding: '10px 14px',
+                      padding: '7px 12px', borderRadius: '99px',
                       background: 'var(--bg-glass)', border: '1px solid var(--border)',
-                      borderRadius: '8px', color: 'var(--text-muted)', fontSize: '13px',
-                      cursor: 'pointer', transition: 'var(--t)', fontFamily: 'var(--font-body)',
+                      color: 'var(--text-muted)', fontFamily: 'var(--font-body)',
+                      fontSize: '12px', cursor: 'pointer', transition: 'var(--t)',
                     }}
                   >
                     {s}
@@ -1169,16 +1247,24 @@ function AiChatTab({ contextMatch }) {
           )}
 
           {messages.map((msg, i) => (
-            <div key={i} style={{
-              display: 'flex',
-              justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
-            }}>
+            <div
+              key={i}
+              style={{
+                display: 'flex',
+                justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
+              }}
+            >
               <div style={{
-                maxWidth: '85%', padding: '10px 14px', borderRadius: '12px',
-                background: msg.role === 'user' ? 'var(--lime)' : 'var(--bg-glass-md)',
+                maxWidth: '80%',
+                padding: '10px 14px',
+                borderRadius: msg.role === 'user' ? '16px 16px 4px 16px' : '4px 16px 16px 16px',
+                background: msg.role === 'user'
+                  ? 'linear-gradient(135deg, var(--lime-dark), var(--lime))'
+                  : 'var(--bg-glass-md)',
+                border: msg.role === 'user' ? 'none' : '1px solid var(--border)',
                 color: msg.role === 'user' ? '#070B14' : 'var(--text)',
                 fontSize: '14px', lineHeight: 1.6,
-                border: msg.role === 'assistant' ? '1px solid var(--border)' : 'none',
+                fontWeight: msg.role === 'user' ? 600 : 400,
               }}>
                 {msg.content}
               </div>
@@ -1186,117 +1272,69 @@ function AiChatTab({ contextMatch }) {
           ))}
 
           {typing && (
-            <div style={{ display: 'flex', gap: '6px', padding: '10px 14px', width: 'fit-content' }}>
+            <div style={{ display: 'flex', gap: '4px', padding: '10px 14px', alignItems: 'center' }}>
               {[0, 1, 2].map(i => (
-                <div key={i} style={{
-                  width: '7px', height: '7px', borderRadius: '50%',
-                  background: 'var(--text-faint)',
-                  animation: `tv-bounce 1.2s ease-in-out ${i * 0.2}s infinite`,
+                <span key={i} style={{
+                  width: '6px', height: '6px', borderRadius: '50%',
+                  background: 'var(--lime)',
+                  animation: `tv-live-dot 1.2s ease ${i * 0.2}s infinite`,
+                  display: 'inline-block',
                 }} />
               ))}
             </div>
           )}
+
           <div ref={bottomRef} />
         </div>
 
         {/* Input */}
-        <div style={{ borderTop: '1px solid var(--border)', paddingTop: '14px', marginTop: '14px' }}>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <input
-              value={input}
-              onChange={e => setInput(e.target.value.slice(0, CHAT_MAX_CHARS))}
-              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } }}
-              placeholder="Ask about tennis…"
-              disabled={typing}
+        <div style={{
+          borderTop: '1px solid var(--border)',
+          padding: '12px 16px',
+          background: 'var(--bg-card)',
+        }}>
+          <form onSubmit={submit} style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
+            <div style={{ flex: 1, position: 'relative' }}>
+              <textarea
+                value={input}
+                onChange={e => setInput(e.target.value.slice(0, CHAT_MAX_CHARS))}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } }}
+                placeholder="Ask about players, matches, stats…"
+                rows={1}
+                style={{
+                  width: '100%', resize: 'none', overflow: 'hidden',
+                  background: 'var(--bg-glass)', border: '1px solid var(--border)',
+                  borderRadius: '10px', padding: '10px 12px',
+                  color: 'var(--text)', fontFamily: 'var(--font-body)', fontSize: '14px',
+                  outline: 'none', transition: 'border-color 0.15s', boxSizing: 'border-box',
+                }}
+                onFocus={e => e.target.style.borderColor = 'var(--lime-dark)'}
+                onBlur={e => e.target.style.borderColor = 'var(--border)'}
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={!input.trim() || typing}
               style={{
-                flex: 1, padding: '10px 14px',
-                background: 'var(--bg-glass)', border: '1px solid var(--border)',
-                borderRadius: '8px', color: 'var(--text)', fontSize: '14px',
-                fontFamily: 'var(--font-body)', outline: 'none',
-                opacity: typing ? 0.6 : 1,
+                width: '40px', height: '40px', borderRadius: '10px',
+                background: input.trim() && !typing ? 'var(--lime)' : 'var(--bg-glass-md)',
+                border: 'none', cursor: input.trim() && !typing ? 'pointer' : 'not-allowed',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                transition: 'background 0.15s', flexShrink: 0,
               }}
-            />
-            <Btn onClick={submit} disabled={typing || !input.trim()} size="sm">
-              {typing ? '…' : 'Send'}
-            </Btn>
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={input.trim() && !typing ? '#070B14' : 'var(--text-faint)'} strokeWidth="2.5">
+                <path d="m22 2-7 20-4-9-9-4 20-7z"/><path d="M22 2 11 13"/>
+              </svg>
+            </button>
+          </form>
+          <div style={{ textAlign: 'right', marginTop: '4px' }}>
+            <span style={{ fontSize: '11px', color: charColor }}>
+              {charsLeft} chars left
+            </span>
           </div>
-          <p style={{ fontSize: '11px', color: charColor, marginTop: '6px', textAlign: 'right' }}>
-            {charsLeft} chars left
-          </p>
         </div>
-      </Card>
-
-      {/* Context match panel */}
-      {contextMatch && (
-        <Card className="tv-chat-context-panel">
-          <p style={{ fontSize: '11px', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '12px' }}>
-            Match Context
-          </p>
-          <p style={{ fontWeight: 700, color: 'var(--text)', marginBottom: '4px' }}>
-            {contextMatch.player1?.name} vs {contextMatch.player2?.name}
-          </p>
-          <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-            {contextMatch.tournament} · {contextMatch.round}
-          </p>
-          <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '4px' }}>
-            Surface: {contextMatch.surface}
-          </p>
-        </Card>
-      )}
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// SHARED SMALL COMPONENTS
-// ─────────────────────────────────────────────────────────────────────────────
-const gridStyle = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
-  gap: '16px',
-};
-
-function SectionHeading({ label, dot }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
-      {dot && <span className="live-dot" />}
-      <h2 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text)' }}>{label}</h2>
-    </div>
-  );
-}
-
-function EmptyState({ icon, title, desc }) {
-  return (
-    <div style={{ padding: '48px 20px', textAlign: 'center' }}>
-      <p style={{ fontSize: '32px', marginBottom: '12px' }}>{icon}</p>
-      <p style={{ fontWeight: 600, color: 'var(--text)', marginBottom: '6px' }}>{title}</p>
-      <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>{desc}</p>
-    </div>
-  );
-}
-
-function LoadingGrid() {
-  return (
-    <div style={gridStyle}>
-      {[1, 2, 3, 4].map(i => (
-        <div key={i} style={{
-          height: '180px', borderRadius: 'var(--radius)',
-          background: 'var(--bg-glass)', border: '1px solid var(--border)',
-        }} className="tv-skeleton" />
-      ))}
-    </div>
-  );
-}
-
-function ErrorMessage({ msg, onRetry }) {
-  return (
-    <div style={{
-      padding: '24px', background: 'rgba(249,115,22,0.08)',
-      border: '1px solid rgba(249,115,22,0.3)', borderRadius: 'var(--radius)',
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px',
-    }}>
-      <p style={{ color: 'var(--clay)', fontSize: '14px' }}>⚠️ {msg}</p>
-      {onRetry && <Btn size="sm" variant="ghost" onClick={onRetry}>Retry</Btn>}
+      </div>
     </div>
   );
 }

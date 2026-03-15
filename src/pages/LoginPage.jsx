@@ -1,6 +1,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// LoginPage.jsx  –  TennisVantage sign-in screen
-// Auth logic migrated from the user's MaturaPrep project
+// src/pages/LoginPage.jsx
+//
+// CHANGES:
+//  - Apple sign-in button removed
+//  - "Forgot password?" replaced with "Sign in without password" → nav('magic')
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState } from 'react';
 import AuthLayout from '../components/AuthLayout';
@@ -8,11 +11,11 @@ import { Btn, Input, PasswordInput, SocialBtn, Divider } from '../components/ui'
 import { useAuth } from '../context/AuthContext';
 
 export default function LoginPage({ nav, showToast }) {
-  const { login, loginWithGoogle, loginWithApple, authLoading, error, clearError } = useAuth();
+  const { login, loginWithGoogle, authLoading, error, clearError } = useAuth();
 
   const [email,    setEmail]    = useState('');
   const [password, setPassword] = useState('');
-  const [oauthLoading, setOauthLoading] = useState(null); // 'google' | 'apple' | null
+  const [oauthLoading, setOauthLoading] = useState(false);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -21,22 +24,15 @@ export default function LoginPage({ nav, showToast }) {
     if (error) {
       showToast(error, 'error');
     } else {
-      showToast('Welcome back!', 'success');
+      showToast('Welcome back! 🎾', 'success');
     }
   }
 
   async function handleGoogle() {
-    setOauthLoading('google');
+    setOauthLoading(true);
     clearError();
     await loginWithGoogle();
-    setOauthLoading(null);
-  }
-
-  async function handleApple() {
-    setOauthLoading('apple');
-    clearError();
-    await loginWithApple();
-    setOauthLoading(null);
+    setOauthLoading(false);
   }
 
   return (
@@ -45,25 +41,18 @@ export default function LoginPage({ nav, showToast }) {
       title="Welcome back"
       subtitle="Sign in to your TennisVantage account"
     >
-      {/* Social buttons */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '24px' }}>
+      {/* Google only — Apple removed */}
+      <div style={{ marginBottom: '24px' }}>
         <SocialBtn
           provider="google"
           label="Continue with Google"
           onClick={handleGoogle}
-          loading={oauthLoading === 'google'}
-        />
-        <SocialBtn
-          provider="apple"
-          label="Continue with Apple"
-          onClick={handleApple}
-          loading={oauthLoading === 'apple'}
+          loading={oauthLoading}
         />
       </div>
 
       <Divider label="or sign in with email" />
 
-      {/* Email / password form */}
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '24px' }}>
         <Input
           label="Email"
@@ -89,18 +78,21 @@ export default function LoginPage({ nav, showToast }) {
           autoComplete="current-password"
         />
 
-        {/* Forgot password link */}
+        {/* "Sign in without password" replaces "Forgot password?" */}
         <div style={{ textAlign: 'right', marginTop: '-8px' }}>
           <button
             type="button"
-            onClick={() => nav('reset')}
+            onClick={() => nav('magic')}
             style={{
               background: 'none', border: 'none', cursor: 'pointer',
               fontSize: '13px', color: 'var(--lime)', fontFamily: 'var(--font-body)',
               fontWeight: 500, padding: 0,
+              transition: 'opacity 0.15s',
             }}
+            onMouseEnter={e => e.currentTarget.style.opacity = '0.75'}
+            onMouseLeave={e => e.currentTarget.style.opacity = '1'}
           >
-            Forgot password?
+            Sign in without password →
           </button>
         </div>
 
@@ -130,7 +122,7 @@ export default function LoginPage({ nav, showToast }) {
             fontFamily: 'var(--font-body)', padding: 0,
           }}
         >
-          Create one →
+          Sign up free →
         </button>
       </p>
     </AuthLayout>

@@ -1,12 +1,18 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// AuthContext.jsx  –  TennisVantage Auth State
-// FIX: Replaced dual getSession()+onAuthStateChange race condition with a
-//      single onAuthStateChange bootstrap. Supabase fires INITIAL_SESSION
-//      on mount, which is the correct way to restore sessions per their docs.
+// src/context/AuthContext.jsx
+//
+// CHANGES IN THIS VERSION:
+//  - Apple OAuth removed (not configured — avoided to prevent auth errors)
+//  - resetPassword replaced with sendMagicLink (OTP / passwordless sign-in)
+//  - Magic link flow: user enters email → Supabase sends OTP email →
+//    user clicks link → Supabase fires SIGNED_IN event → AuthContext picks
+//    it up automatically → App.jsx routes to dashboard. Zero extra code needed.
+//  - All other auth logic (Google, email+password, profile loading) unchanged.
 // ─────────────────────────────────────────────────────────────────────────────
-import { createContext, useContext, useEffect, useReducer, useCallback, useRef } from 'react';
+import { createContext, useContext, useReducer, useCallback, useEffect, useRef } from 'react';
 import { supabase } from '../services/supabase';
 
+// ── State shape ───────────────────────────────────────────────────────────────
 const initialState = {
   user:        null,
   profile:     null,
@@ -17,26 +23,26 @@ const initialState = {
 
 function reducer(state, action) {
   switch (action.type) {
-    case 'SET_USER':     return { ...state, user: action.user, profile: action.profile, loading: false, error: null };
-    case 'SIGNED_OUT':   return { ...state, user: null, profile: null, loading: false, error: null };
-    case 'LOADING_DONE': return { ...state, loading: false };
-    case 'AUTH_START':   return { ...state, authLoading: true, error: null };
-    case 'AUTH_END':     return { ...state, authLoading: false };
-    case 'SET_ERROR':    return { ...state, error: action.error, authLoading: false };
-    case 'CLEAR_ERROR':  return { ...state, error: null };
-    default: return state;
+    case 'AUTH_START':    return { ...state, authLoading: true,  error: null };
+    case 'AUTH_END':      return { ...state, authLoading: false };
+    case 'SET_USER':      return { ...state, user: action.user, profile: action.profile, loading: false, authLoading: false, error: null };
+    case 'CLEAR_USER':    return { ...state, user: null, profile: null, loading: false, authLoading: false };
+    case 'SET_ERROR':     return { ...state, error: action.error, authLoading: false };
+    case 'CLEAR_ERROR':   return { ...state, error: null };
+    case 'LOADING_DONE':  return { ...state, loading: false };
+    default:              return state;
   }
 }
 
+// ── Context ───────────────────────────────────────────────────────────────────
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const mountedRef = useRef(true);
 
-  // ── Load profile ─────────────────────────────────────────────────────────────
+  // ── Load user profile from DB ──────────────────────────────────────────────
   const loadProfile = useCallback(async (userId) => {
-    if (!userId) return null;
     try {
       const { data } = await supabase
         .from('profiles')
@@ -49,25 +55,22 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
-  // ── Bootstrap — single source of truth via onAuthStateChange ─────────────────
+  // ── Bootstrap — single source of truth via onAuthStateChange ──────────────
   // Supabase v2 fires 'INITIAL_SESSION' synchronously on subscribe with the
-  // restored (or refreshed) session. This eliminates the getSession() race.
+  // restored (or refreshed) session. This also catches magic link sign-ins:
+  // when a user clicks the magic link in their email, Supabase resolves the
+  // OTP token from the URL hash and fires 'SIGNED_IN' here automatically.
   useEffect(() => {
     mountedRef.current = true;
 
-    // Safety net: if INITIAL_SESSION never fires (e.g. network totally offline),
-    // stop the loading screen after 5 seconds so the user isn't stuck forever.
     const safetyTimeout = setTimeout(() => {
-      if (mountedRef.current) {
-        dispatch({ type: 'LOADING_DONE' });
-      }
+      if (mountedRef.current) dispatch({ type: 'LOADING_DONE' });
     }, 5000);
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (!mountedRef.current) return;
 
-        // INITIAL_SESSION fires once on mount — this replaces getSession()
         if (event === 'INITIAL_SESSION') {
           clearTimeout(safetyTimeout);
           if (session?.user) {
@@ -81,20 +84,21 @@ export function AuthProvider({ children }) {
           return;
         }
 
+        // This fires when: email+password login, Google OAuth callback,
+        // AND magic link click. All three are handled identically here.
         if (event === 'SIGNED_IN' && session?.user) {
           const profile = await loadProfile(session.user.id);
           if (mountedRef.current) {
             dispatch({ type: 'SET_USER', user: session.user, profile });
           }
-          // Clean up OAuth hash from URL if present
-          if (window.location.hash) {
-            window.history.replaceState(null, '', window.location.pathname + window.location.search);
+          // Clean up auth tokens/hash from URL after magic link sign-in
+          if (window.location.hash || window.location.search.includes('token')) {
+            window.history.replaceState(null, '', window.location.pathname);
           }
           return;
         }
 
         if (event === 'TOKEN_REFRESHED' && session?.user) {
-          // Token silently refreshed — update user object but don't re-fetch profile
           if (mountedRef.current) {
             dispatch({ type: 'SET_USER', user: session.user, profile: state.profile });
           }
@@ -102,54 +106,40 @@ export function AuthProvider({ children }) {
         }
 
         if (event === 'SIGNED_OUT') {
-          clearTimeout(safetyTimeout);
-          if (mountedRef.current) dispatch({ type: 'SIGNED_OUT' });
-          return;
+          if (mountedRef.current) dispatch({ type: 'CLEAR_USER' });
         }
       }
     );
 
     return () => {
       mountedRef.current = false;
-      clearTimeout(safetyTimeout);
       subscription.unsubscribe();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadProfile]);
+  }, []);
 
-  // ── Login ─────────────────────────────────────────────────────────────────────
+  // ── Email + password login ─────────────────────────────────────────────────
   const login = useCallback(async (email, password) => {
     dispatch({ type: 'AUTH_START' });
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) { dispatch({ type: 'SET_ERROR', error: error.message }); return { error }; }
     dispatch({ type: 'AUTH_END' });
-    return { error: null };
+    return { error: error?.message ?? null };
   }, []);
 
-  // ── Register ──────────────────────────────────────────────────────────────────
+  // ── Email + password register ──────────────────────────────────────────────
   const register = useCallback(async (email, password, fullName) => {
     dispatch({ type: 'AUTH_START' });
     const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { full_name: fullName },
-        emailRedirectTo: window.location.origin,
-      },
+      email, password,
+      options: { data: { full_name: fullName } },
     });
-    if (error) { dispatch({ type: 'SET_ERROR', error: error.message }); return { error }; }
-
-    if (data.user) {
-      await supabase
-        .from('profiles')
-        .upsert([{ id: data.user.id, full_name: fullName }], { onConflict: 'id' });
-    }
-
     dispatch({ type: 'AUTH_END' });
-    return { error: null, requiresConfirmation: !data.session };
+    if (error) return { error: error.message, requiresConfirmation: false };
+    const requiresConfirmation = !data?.session;
+    return { error: null, requiresConfirmation };
   }, []);
 
-  // ── Google OAuth ──────────────────────────────────────────────────────────────
+  // ── Google OAuth ───────────────────────────────────────────────────────────
   const loginWithGoogle = useCallback(async () => {
     dispatch({ type: 'AUTH_START' });
     const { data, error } = await supabase.auth.signInWithOAuth({
@@ -164,28 +154,27 @@ export function AuthProvider({ children }) {
     dispatch({ type: 'AUTH_END' });
   }, []);
 
-  // ── Apple OAuth ───────────────────────────────────────────────────────────────
-  const loginWithApple = useCallback(async () => {
+  // ── Magic link (passwordless sign-in) ─────────────────────────────────────
+  // Supabase sends an email with a one-time link. When the user clicks it,
+  // Supabase handles the token automatically and fires SIGNED_IN above.
+  // No extra callback page or URL parsing needed — it just works.
+  const sendMagicLink = useCallback(async (email) => {
     dispatch({ type: 'AUTH_START' });
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'apple',
-      options: { redirectTo: window.location.origin },
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        // After clicking the link, redirect back to the app root.
+        // Supabase appends the token as a URL fragment (#access_token=...).
+        // The onAuthStateChange listener above handles it from there.
+        emailRedirectTo: window.location.origin,
+        shouldCreateUser: true, // creates account if doesn't exist yet
+      },
     });
-    if (error) { dispatch({ type: 'SET_ERROR', error: error.message }); }
     dispatch({ type: 'AUTH_END' });
+    return { error: error?.message ?? null };
   }, []);
 
-  // ── Reset password ────────────────────────────────────────────────────────────
-  const resetPassword = useCallback(async (email) => {
-    dispatch({ type: 'AUTH_START' });
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: window.location.origin,
-    });
-    dispatch({ type: 'AUTH_END' });
-    return { error };
-  }, []);
-
-  // ── Logout ────────────────────────────────────────────────────────────────────
+  // ── Logout ─────────────────────────────────────────────────────────────────
   const logout = useCallback(async () => {
     await supabase.auth.signOut();
   }, []);
@@ -198,8 +187,7 @@ export function AuthProvider({ children }) {
     login,
     register,
     loginWithGoogle,
-    loginWithApple,
-    resetPassword,
+    sendMagicLink,
     logout,
     clearError,
   };

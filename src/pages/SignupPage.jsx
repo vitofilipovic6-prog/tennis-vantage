@@ -1,6 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// SignupPage.jsx  –  TennisVantage sign-up screen
-// Auth logic migrated from the user's MaturaPrep project
+// src/pages/SignupPage.jsx
+//
+// CHANGES:
+//  - Apple sign-up button removed
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState } from 'react';
 import AuthLayout from '../components/AuthLayout';
@@ -8,21 +10,21 @@ import { Btn, Input, PasswordInput, SocialBtn, Divider } from '../components/ui'
 import { useAuth } from '../context/AuthContext';
 
 export default function SignupPage({ nav, showToast }) {
-  const { register, loginWithGoogle, loginWithApple, authLoading, error, clearError } = useAuth();
+  const { register, loginWithGoogle, authLoading, error, clearError } = useAuth();
 
   const [fullName, setFullName]   = useState('');
   const [email,    setEmail]      = useState('');
   const [password, setPassword]   = useState('');
   const [confirm,  setConfirm]    = useState('');
   const [fieldErrors, setFieldErrors] = useState({});
-  const [oauthLoading, setOauthLoading] = useState(null);
+  const [oauthLoading, setOauthLoading] = useState(false);
 
   function validate() {
     const errs = {};
-    if (!fullName.trim())             errs.fullName = 'Full name is required';
-    if (!email.trim())                errs.email    = 'Email is required';
-    if (password.length < 8)          errs.password = 'Password must be at least 8 characters';
-    if (password !== confirm)         errs.confirm  = 'Passwords do not match';
+    if (!fullName.trim())    errs.fullName = 'Full name is required';
+    if (!email.trim())       errs.email    = 'Email is required';
+    if (password.length < 8) errs.password = 'Password must be at least 8 characters';
+    if (password !== confirm) errs.confirm  = 'Passwords do not match';
     return errs;
   }
 
@@ -37,27 +39,18 @@ export default function SignupPage({ nav, showToast }) {
     if (error) {
       showToast(error, 'error');
     } else if (requiresConfirmation) {
-      // Email confirmation is ON — tell user to check inbox
       showToast('Account created! Check your email for a confirmation link.', 'success');
       nav('login');
     } else {
-      // Email confirmation is OFF — user is already logged in, App.jsx routes to dashboard
-      showToast('Welcome to TennisVantage!', 'success');
+      showToast('Welcome to TennisVantage! 🎾', 'success');
     }
   }
 
   async function handleGoogle() {
-    setOauthLoading('google');
+    setOauthLoading(true);
     clearError();
     await loginWithGoogle();
-    setOauthLoading(null);
-  }
-
-  async function handleApple() {
-    setOauthLoading('apple');
-    clearError();
-    await loginWithApple();
-    setOauthLoading(null);
+    setOauthLoading(false);
   }
 
   return (
@@ -66,19 +59,13 @@ export default function SignupPage({ nav, showToast }) {
       title="Create your account"
       subtitle="Start predicting matches in seconds"
     >
-      {/* Social buttons */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '24px' }}>
+      {/* Google only — Apple removed */}
+      <div style={{ marginBottom: '24px' }}>
         <SocialBtn
           provider="google"
           label="Sign up with Google"
           onClick={handleGoogle}
-          loading={oauthLoading === 'google'}
-        />
-        <SocialBtn
-          provider="apple"
-          label="Sign up with Apple"
-          onClick={handleApple}
-          loading={oauthLoading === 'apple'}
+          loading={oauthLoading}
         />
       </div>
 
