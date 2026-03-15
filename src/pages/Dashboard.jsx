@@ -502,8 +502,12 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = 
   const effectiveType = deriveMatchType(m, wtaPlayerIds);
   const matchTypeDef  = MATCH_FILTERS.find(f => f.id === effectiveType) ?? null;
 
-  // [PAST-FIX] Treat anything before today as finished, regardless of DB status
-  const isFinished = m.status === 'finished';
+  // isFinished: DB status OR local calendar date already passed.
+  // Using local date strings (en-CA = YYYY-MM-DD) avoids UTC offset bugs —
+  // a match at 01:00 local (23:00 UTC prev day) correctly shows as today locally.
+  const todayLocal = new Date().toLocaleDateString('en-CA');
+  const matchLocal = m.date ? new Date(m.date).toLocaleDateString('en-CA') : todayLocal;
+  const isFinished = m.status === 'finished' || matchLocal < todayLocal;
   const isLive     = m.status === 'live' && !isFinished;
 
   return (
@@ -632,15 +636,37 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = 
 
       {/* Predict button — hidden for finished/past matches */}
       {!isFinished && (
-        <Btn
-          variant="secondary"
-          size="sm"
-          fullWidth
+        <button
           onClick={onPredict}
-          style={{ marginTop: '12px' }}
+          style={{
+            marginTop: '12px',
+            width: '100%',
+            padding: '9px 16px',
+            borderRadius: '8px',
+            background: 'transparent',
+            border: '1px solid var(--lime)',
+            color: 'var(--lime)',
+            fontFamily: 'var(--font-body)',
+            fontWeight: 600,
+            fontSize: '13px',
+            cursor: 'pointer',
+            transition: 'background 0.15s, color 0.15s',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '6px',
+          }}
+          onMouseEnter={e => {
+            e.currentTarget.style.background = 'var(--lime)';
+            e.currentTarget.style.color = '#070B14';
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.background = 'transparent';
+            e.currentTarget.style.color = 'var(--lime)';
+          }}
         >
-          {isLive ? '🔮 Predict winner' : 'Predict this match'}
-        </Btn>
+          {isLive ? '🔮 Predict winner' : '🔮 Predict this match'}
+        </button>
       )}
     </Card>
   );
@@ -656,23 +682,26 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
   const [h2hLoading, setH2hLoading] = useState(false);
 
   // Only live + today/future upcoming matches are predictable.
-  // We use toLocaleDateString('en-CA') for date comparison — this gives
-  // YYYY-MM-DD in the browser's LOCAL timezone, avoiding UTC offset bugs
-  // (e.g. a 17:00 UTC match is correctly "today" in Croatia UTC+2).
+  // IMPORTANT: We compare local YYYY-MM-DD strings (en-CA = YYYY-MM-DD format).
+  // This correctly handles UTC offset — a 01:00 local Croatian match stored as
+  // 23:00 UTC the previous day still shows the correct LOCAL calendar date.
+  // A match is predictable ONLY if:
+  //   - It's live (regardless of date), OR
+  //   - It's upcoming AND its LOCAL calendar date >= today's LOCAL date
   const predictableMatches = useMemo(() => {
     const todayLocal = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD local
     return allMatches.filter(m => {
-      // Live matches are always predictable
+      // Live matches always predictable
       if (m.status === 'live') return true;
-      // Finished matches are never predictable
+      // Finished matches never predictable
       if (m.status === 'finished') return false;
-      // For upcoming: only allow today or future (local calendar day)
+      // upcoming: check local calendar date — must be today or future
       if (m.date) {
         const matchLocal = new Date(m.date).toLocaleDateString('en-CA');
         return matchLocal >= todayLocal;
       }
-      // No date info — allow it (safe default)
-      return true;
+      // No date stored — exclude to be safe (unknown past match)
+      return false;
     });
   }, [allMatches]);
 
