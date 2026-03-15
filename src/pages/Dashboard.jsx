@@ -34,15 +34,17 @@ const MATCH_FILTERS = [
   { id: 'mixed_doubles', label: 'Mixed Doubles', shortLabel: 'Mixed',  color: '#34d399' },
 ];
 
-// ── Utility: is a match's date strictly before today? ────────────────────────
-// Used to force-treat any old row as finished even if DB says 'upcoming'.
+// ── Utility: is a match's date strictly before today (local calendar day)? ───
+// CRITICAL: We compare local YYYY-MM-DD strings, NOT UTC timestamps.
+// A match at 10:00 UTC on March 15 is "today" in Croatia (UTC+1/+2),
+// but if we zero out UTC hours we get March 14 midnight UTC which is
+// "yesterday" — this was making all of today's matches appear as finished.
+// toLocaleDateString('en-CA') returns YYYY-MM-DD in the browser's local timezone.
 function isBeforeToday(match) {
   if (!match.date) return false;
-  const d = new Date(match.date);
-  d.setHours(0, 0, 0, 0);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return d < today;
+  const matchDayLocal = new Date(match.date).toLocaleDateString('en-CA'); // YYYY-MM-DD local
+  const todayLocal    = new Date().toLocaleDateString('en-CA');            // YYYY-MM-DD local
+  return matchDayLocal < todayLocal;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
