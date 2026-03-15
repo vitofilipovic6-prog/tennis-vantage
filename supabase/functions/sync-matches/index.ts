@@ -1,12 +1,14 @@
-// ─────────────────────────────────────────────────────────────────────────────
 // supabase/functions/sync-matches/index.ts
 //
-// CHANGES IN THIS VERSION:
-//  + Fetches yesterday (-1) + today + 3 days ahead (fixes "today shows tomorrow")
-//  + Force-finishes any 'upcoming' match whose match_date is before today UTC
-//  + Stores winner_id and score from API when available on finished matches
-//  + Cron: deploy with --schedule "*/30 * * * *" (every 30 minutes)
-//  + All other logic unchanged from the working version
+// KEY FIXES IN THIS VERSION:
+//  [SCORE-FIX]   Today's finished matches ARE now synced with score + winner_id
+//                Previously: if (!isYesterdayDate && status === 'finished') continue
+//                Now: ALL matches (past, today, future) are stored. The DB upsert
+//                naturally keeps score/winner_id for finished rows.
+//  [STATUS-FIX]  force-finish cutoff changed from yesterday to today's midnight UTC
+//                so yesterday's matches also get force-finished on next sync.
+//  [PREDICT-FIX] Today's 'upcoming' matches remain 'upcoming' in DB until they
+//                actually finish — correct for the Predictions tab.
 // ─────────────────────────────────────────────────────────────────────────────
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { normalizeEvent, resolveTour } from '../_shared/normalize.ts';
@@ -47,8 +49,6 @@ function extractEvents(data: any): any[] {
 }
 
 // ── Generate date range as {day, month, year} tuples ─────────────────────────
-// daysBack: how many days before today to include (1 = yesterday for late results)
-// daysAhead: how many days after today to include (3 = today + 3 future days)
 function dateRange(daysBack: number, daysAhead: number): Array<{ day: number; month: number; year: number }> {
   const result = [];
   for (let i = -daysBack; i <= daysAhead; i++) {
@@ -59,7 +59,6 @@ function dateRange(daysBack: number, daysAhead: number): Array<{ day: number; mo
   return result;
 }
 
-// ── Utility: split array into chunks of n ────────────────────────────────────
 function chunk<T>(arr: T[], n: number): T[][] {
   const result: T[][] = [];
   for (let i = 0; i < arr.length; i += n) result.push(arr.slice(i, i + n));
@@ -79,9 +78,8 @@ Deno.serve(async (req: Request) => {
   const log: string[]    = [];
   const errors: string[] = [];
 
-  // Accumulated maps for deduplication across multiple day fetches
-  const playersMap  = new Map<string, object>();
-  const matchesMap  = new Map<string, object>();
+  const playersMap = new Map<string, object>();
+  const matchesMap = new Map<string, object>();
 
   try {
     // ── 1. Live matches ───────────────────────────────────────────────────────
@@ -109,10 +107,15 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── 2. Date-range matches: yesterday + today + 3 days ahead ──────────────
-    // WHY yesterday: The API may return today's matches under yesterday's
-    // date in UTC+0 during early morning hours (e.g. 01:00 CEST = 23:00 UTC prev day).
-    // Fetching yesterday ensures we never miss today's matches due to timezone lag.
-    const dates = dateRange(1, 3); // -1 day back, +3 days ahead
+    // WHY we store ALL statuses now (including finished on today):
+    //   - Today's early sessions may already be finished by afternoon sync
+    //   - We WANT their score + winner_id in the DB for the calendar "Results" view
+    //   - The Predictions tab only shows status='upcoming'|'live' via getUpcomingMatches()
+    //     so finished today-matches will NOT appear in predictions — correct behaviour
+    //   - Past dates always store everything (scores for history)
+    const dates = dateRange(2, 3); // 2 days back, 3 days ahead
+    const todayUTC = new Date().toISOString().slice(0, 10);
+
     for (const { day, month, year } of dates) {
       const label = `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
       try {
@@ -133,10 +136,15 @@ Deno.serve(async (req: Request) => {
 
           const { match, p1, p2 } = result;
 
-          // For past dates: store finished matches WITH their results
-          // For today/future: skip matches that are finished (don't pollute upcoming)
-          const isYesterdayDate = label < new Date().toISOString().slice(0, 10);
-          if (!isYesterdayDate && result.match.status === 'finished') continue;
+          // STORE EVERYTHING:
+          // - Past dates: all statuses (finished with scores for history)
+          // - Today: all statuses including finished (score/winner_id needed for calendar)
+          // - Future: only upcoming (don't store fake "finished" future matches)
+          const isFutureDate = label > todayUTC;
+          if (isFutureDate && result.match.status === 'finished') {
+            log.push(`[DATES] Skipping future finished match ${match.id} on ${label}`);
+            continue;
+          }
 
           matchesMap.set(match.id, match);
           if (!playersMap.has(p1.id)) playersMap.set(p1.id, p1);
@@ -175,49 +183,48 @@ Deno.serve(async (req: Request) => {
       log.push('[MATCHES] No matches to upsert');
     }
 
-    // ── 5. FORCE-FINISH: mark stale 'upcoming' rows as 'finished' ─────────────
-    // Any match still marked 'upcoming' but whose match_date is BEFORE today
-    // (UTC midnight) is definitively over, regardless of what the API says.
-    // This prevents old matches from showing the "Predict Winner" button.
+    // ── 5. FORCE-FINISH: mark stale rows as finished ──────────────────────────
+    // Any match still 'upcoming' or 'live' whose match_date is before
+    // TODAY's midnight UTC is definitively over. Use today midnight (not
+    // yesterday) so yesterday's stuck matches also get cleaned up.
     try {
-      // Use yesterday-midnight UTC as the cutoff so matches in UTC+2 timezones
-      // (e.g. Croatia evening matches) are never prematurely marked finished.
-      // A match at 23:00 CEST = 21:00 UTC — using yesterday midnight UTC (not today)
-      // ensures we only force-finish matches from at least 2 full days ago,
-      // giving a safe buffer for any timezone offset.
-      const yesterdayUTC = new Date();
-      yesterdayUTC.setUTCDate(yesterdayUTC.getUTCDate() - 1);
-      yesterdayUTC.setUTCHours(0, 0, 0, 0);
-      const cutoffISO = yesterdayUTC.toISOString();
+      const todayMidnightUTC = new Date();
+      todayMidnightUTC.setUTCHours(0, 0, 0, 0);
+      const cutoffISO = todayMidnightUTC.toISOString();
 
-      const { data: staleMatches, error: staleErr } = await supabase
-        .from('matches')
-        .select('id')
-        .eq('status', 'upcoming')
-        .lt('match_date', cutoffISO);
-
-      if (staleErr) {
-        errors.push(`[FORCE-FINISH] Query error: ${staleErr.message}`);
-      } else if (staleMatches && staleMatches.length > 0) {
-        const ids = staleMatches.map(m => m.id);
-        const { error: updateErr } = await supabase
+      for (const stalledStatus of ['upcoming', 'live'] as const) {
+        const { data: staleMatches, error: staleErr } = await supabase
           .from('matches')
-          .update({ status: 'finished' })
-          .in('id', ids);
+          .select('id')
+          .eq('status', stalledStatus)
+          .lt('match_date', cutoffISO);
 
-        if (updateErr) {
-          errors.push(`[FORCE-FINISH] Update error: ${updateErr.message}`);
-        } else {
-          log.push(`[FORCE-FINISH] ✓ Marked ${ids.length} stale 'upcoming' matches as 'finished'`);
+        if (staleErr) {
+          errors.push(`[FORCE-FINISH/${stalledStatus}] Query error: ${staleErr.message}`);
+          continue;
         }
-      } else {
-        log.push('[FORCE-FINISH] No stale upcoming matches found');
+
+        if (staleMatches && staleMatches.length > 0) {
+          const ids = staleMatches.map((m: any) => m.id);
+          const { error: updateErr } = await supabase
+            .from('matches')
+            .update({ status: 'finished' })
+            .in('id', ids);
+
+          if (updateErr) {
+            errors.push(`[FORCE-FINISH/${stalledStatus}] Update error: ${updateErr.message}`);
+          } else {
+            log.push(`[FORCE-FINISH] ✓ Marked ${ids.length} stale '${stalledStatus}' as 'finished'`);
+          }
+        } else {
+          log.push(`[FORCE-FINISH] No stale '${stalledStatus}' matches found`);
+        }
       }
     } catch (e: unknown) {
       errors.push(`[FORCE-FINISH] ${e instanceof Error ? e.message : String(e)}`);
     }
 
-    // ── 6. BACKFILL: fix existing rows where match_type is wrong ──────────────
+    // ── 6. BACKFILL: fix match_type on live/upcoming rows ────────────────────
     try {
       const { data: existingMatches, error: fetchErr } = await supabase
         .from('matches')

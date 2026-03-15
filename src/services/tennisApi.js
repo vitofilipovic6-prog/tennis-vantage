@@ -1,20 +1,9 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// src/services/tennisApi.js – TennisVantage API service layer
-//
-// STALE-LIVE FIX: The previous version added .gte('match_date', sixHoursAgo)
-// to getLiveMatches which broke today's morning matches (Indian Wells sessions
-// starting at 11am were >6h old by evening and got filtered out).
-//
-// Correct fix: NO date filter in getLiveMatches. The stale-row guard lives
-// in MatchesTab (Dashboard.jsx) — it compares local calendar date strings
-// so only matches from a *previous day* are dropped. Today's matches at any
-// hour are always shown.
-// ─────────────────────────────────────────────────────────────────────────────
+// src/services/tennisApi.js
 import { supabase } from './supabase';
 
-// ── Shared select string — single query, no N+1 ───────────────────────────────
+// ── Shared select string — includes winner_id for finished match display ───────
 const MATCH_SELECT = `
-  id, status, tournament, round, surface, score, match_date, match_type,
+  id, status, tournament, round, surface, score, match_date, match_type, winner_id,
   player1:players!player1_id (
     id, name, country, flag, rank, wins, losses,
     ace_avg, surface_pref, first_serve_pct, recent_form
@@ -27,7 +16,6 @@ const MATCH_SELECT = `
 
 // ─────────────────────────────────────────────────────────────────────────────
 // deriveMatchType — CLIENT-SIDE safety net
-//
 // Priority order:
 //  1. Slash in player name  → doubles branch
 //  2. wtaPlayerIds Set      → WTA (most reliable for combined events)
@@ -40,10 +28,8 @@ export function deriveMatchType(m, wtaPlayerIds = new Set()) {
   const tournament = (m.tournament ?? '').toLowerCase();
   const stored     = m.match_type ?? 'atp_singles';
 
-  // ── Doubles detection (slash in name is 100% reliable) ────────────────────
   const isDoubles = p1Name.includes('/') || p2Name.includes('/');
 
-  // ── WTA detection ──────────────────────────────────────────────────────────
   const p1IsWta         = wtaPlayerIds.size > 0 && wtaPlayerIds.has(m.player1?.id);
   const p2IsWta         = wtaPlayerIds.size > 0 && wtaPlayerIds.has(m.player2?.id);
   const isWtaByRankings = p1IsWta || p2IsWta;
@@ -57,7 +43,6 @@ export function deriveMatchType(m, wtaPlayerIds = new Set()) {
   const isMixedByStored = stored === 'mixed_doubles';
   const isWta           = isWtaByRankings || isWtaByTournament || isWtaByStored;
 
-  // ── Resolve final type ─────────────────────────────────────────────────────
   if (isDoubles) {
     if (isMixedByStored) return 'mixed_doubles';
     if (isWta)           return 'wta_doubles';
@@ -65,7 +50,7 @@ export function deriveMatchType(m, wtaPlayerIds = new Set()) {
   }
 
   if (isWta) return 'wta_singles';
-  return stored; // trust DB for ATP singles / mixed that aren't doubles
+  return stored;
 }
 
 // ── Normalise a raw Supabase match row into the shape the UI expects ──────────
@@ -84,14 +69,26 @@ function normaliseMatch(m, wtaPlayerIds = new Set()) {
     player2:    m.player2 ?? { id: 'p2', name: 'TBD', flag: '🏳️', rank: 999 },
   };
 
-  // Re-derive match_type as a safety net over whatever the DB stored
   base.match_type = deriveMatchType(base, wtaPlayerIds);
   return base;
 }
 
+// ── Helper: get today's date boundaries in ISO (UTC) ─────────────────────────
+// We use a ±12h window to safely capture matches stored with any UTC offset.
+// This means a match at 23:00 CEST (21:00 UTC) is ALWAYS in "today".
+function getTodayWindow() {
+  const now   = new Date();
+  const year  = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day   = String(now.getDate()).padStart(2, '0');
+  // Use local calendar date string for start/end
+  return {
+    start: `${year}-${month}-${day}T00:00:00.000Z`,
+    end:   `${year}-${month}-${day}T23:59:59.999Z`,
+  };
+}
+
 // ── Live matches ──────────────────────────────────────────────────────────────
-// No date filter — return everything Supabase has as "live".
-// The UI (MatchesTab) handles stale-row filtering via calendar day comparison.
 export async function getLiveMatches(wtaPlayerIds = new Set()) {
   try {
     const { data, error } = await supabase
@@ -105,34 +102,49 @@ export async function getLiveMatches(wtaPlayerIds = new Set()) {
   } catch (e) {
     if (e?.name === 'AbortError') return [];
     console.error('[getLiveMatches]', e.message);
-    return MOCK_DATA.matches.filter(m => m.status === 'live');
+    return [];
   }
 }
 
 // ── Upcoming matches ──────────────────────────────────────────────────────────
+// Fetches:
+//  - All 'upcoming' matches from NOW onwards (future + today's unstarted)
+//  - All 'live' matches (belt-and-suspenders; live hook also gets these)
+// This is used for the Predictions tab match picker.
 export async function getUpcomingMatches(wtaPlayerIds = new Set()) {
   try {
+    const nowISO = new Date().toISOString();
+
     const { data, error } = await supabase
       .from('matches')
       .select(MATCH_SELECT)
-      .eq('status', 'upcoming')
+      .in('status', ['upcoming', 'live'])
+      .gte('match_date', nowISO)          // only future/current matches
       .order('match_date', { ascending: true })
-      .limit(50);
+      .limit(60);
 
     if (error) throw error;
     return (data ?? []).map(m => normaliseMatch(m, wtaPlayerIds));
   } catch (e) {
     if (e?.name === 'AbortError') return [];
     console.error('[getUpcomingMatches]', e.message);
-    return MOCK_DATA.matches.filter(m => m.status === 'upcoming');
+    return [];
   }
 }
 
-// ── Matches by date ───────────────────────────────────────────────────────────
+// ── Matches by date (for calendar view) ───────────────────────────────────────
+// IMPORTANT: We fetch a ±1 day window and then filter client-side by
+// local date string. This prevents UTC timezone edge cases from hiding
+// matches that are "today" locally but stored as "yesterday" in UTC.
 export async function getMatchesByDate(dateString, wtaPlayerIds = new Set()) {
   try {
-    const start = `${dateString}T00:00:00.000Z`;
-    const end   = `${dateString}T23:59:59.999Z`;
+    // Build a generous window: dateString day in UTC, ±1 day buffer
+    const d     = new Date(`${dateString}T12:00:00.000Z`); // noon UTC anchor
+    const prev  = new Date(d); prev.setUTCDate(d.getUTCDate() - 1);
+    const next  = new Date(d); next.setUTCDate(d.getUTCDate() + 1);
+
+    const start = `${prev.toISOString().slice(0, 10)}T00:00:00.000Z`;
+    const end   = `${next.toISOString().slice(0, 10)}T23:59:59.999Z`;
 
     const { data, error } = await supabase
       .from('matches')
@@ -142,11 +154,20 @@ export async function getMatchesByDate(dateString, wtaPlayerIds = new Set()) {
       .order('match_date', { ascending: true });
 
     if (error) throw error;
-    return (data ?? []).map(m => normaliseMatch(m, wtaPlayerIds));
+
+    const all = (data ?? []).map(m => normaliseMatch(m, wtaPlayerIds));
+
+    // Client-side filter: only keep rows whose LOCAL date matches dateString.
+    // en-CA locale gives YYYY-MM-DD format which we can directly compare.
+    return all.filter(m => {
+      if (!m.date) return false;
+      const localDate = new Date(m.date).toLocaleDateString('en-CA');
+      return localDate === dateString;
+    });
   } catch (e) {
     if (e?.name === 'AbortError') return [];
     console.error('[getMatchesByDate]', e.message);
-    return MOCK_DATA.matches;
+    return [];
   }
 }
 
@@ -179,7 +200,7 @@ export async function getRankings(tour = 'ATP') {
     }));
   } catch (e) {
     console.error('[getRankings]', e.message);
-    return MOCK_DATA.rankings;
+    return [];
   }
 }
 
@@ -196,7 +217,7 @@ export async function getPlayerStats(playerId) {
     return data;
   } catch (e) {
     console.error('[getPlayerStats]', e.message);
-    return MOCK_DATA.players.find(p => p.id === playerId) ?? null;
+    return null;
   }
 }
 
@@ -253,52 +274,35 @@ export async function getPrediction(match) {
               : Math.abs(p1WinPct - 50) > 10 ? 'Medium' : 'Low',
     key_factors: [
       `Ranking: #${p1.rank} vs #${p2.rank}`,
-      `Surface advantage: ${match.surface === p1.surface_pref ? p1.name : match.surface === p2.surface_pref ? p2.name : 'Neutral'}`,
+      `Surface advantage: ${
+        match.surface === p1.surface_pref ? p1.name
+        : match.surface === p2.surface_pref ? p2.name
+        : 'Neutral'
+      }`,
       `Recent form: ${p1.recent_form ?? '---'} vs ${p2.recent_form ?? '---'}`,
     ],
+    predicted_winner: p1WinPct >= 50 ? p1.name : p2.name,
   };
 }
 
 // ── AI Chat ───────────────────────────────────────────────────────────────────
-export async function sendChatMessage(messages, systemContext = '') {
-  const response = await fetch('/api/chat', {
+export async function sendChatMessage(messages) {
+  const res = await fetch('/api/chat', {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ messages, systemContext }),
+    body:    JSON.stringify({ messages }),
   });
-  if (!response.ok) throw new Error(`Chat API error: ${response.status}`);
-  return response.json();
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Chat error ${res.status}: ${text.slice(0, 200)}`);
+  }
+  const data = await res.json();
+  return data.reply ?? data.content ?? '';
 }
 
-// ── Mock data (fallback when Supabase is unavailable) ─────────────────────────
+// ── Mock data fallback (minimal — only used if ALL queries fail) ──────────────
 export const MOCK_DATA = {
-  get players() {
-    return [
-      { id:'p1', name:'Carlos Alcaraz',    flag:'🇪🇸', country:'ESP', rank:1,  wins:45, losses:8,  ace_avg:6.2, surface_pref:'Clay', first_serve_pct:68, recent_form:'W W W L W' },
-      { id:'p2', name:'Novak Djokovic',    flag:'🇷🇸', country:'SRB', rank:2,  wins:42, losses:9,  ace_avg:5.8, surface_pref:'Hard', first_serve_pct:65, recent_form:'W L W W W' },
-      { id:'p3', name:'Jannik Sinner',     flag:'🇮🇹', country:'ITA', rank:3,  wins:48, losses:7,  ace_avg:5.1, surface_pref:'Hard', first_serve_pct:67, recent_form:'W W W W L' },
-      { id:'p4', name:'Alexander Zverev',  flag:'🇩🇪', country:'GER', rank:4,  wins:38, losses:12, ace_avg:7.4, surface_pref:'Clay', first_serve_pct:62, recent_form:'L W W L W' },
-      { id:'p5', name:'Daniil Medvedev',   flag:'🇷🇺', country:'RUS', rank:5,  wins:36, losses:13, ace_avg:4.9, surface_pref:'Hard', first_serve_pct:64, recent_form:'W W L W W' },
-      { id:'p6', name:'Andrey Rublev',     flag:'🇷🇺', country:'RUS', rank:6,  wins:32, losses:14, ace_avg:4.5, surface_pref:'Hard', first_serve_pct:61, recent_form:'L L W W W' },
-      { id:'p7', name:'Holger Rune',       flag:'🇩🇰', country:'DEN', rank:7,  wins:29, losses:15, ace_avg:5.6, surface_pref:'Clay', first_serve_pct:63, recent_form:'W L W W L' },
-      { id:'p8', name:'Stefanos Tsitsipas',flag:'🇬🇷', country:'GRE', rank:8,  wins:31, losses:16, ace_avg:5.3, surface_pref:'Clay', first_serve_pct:63, recent_form:'W W L W L' },
-    ];
-  },
-  get matches() {
-    const p = this.players;
-    return [
-      { id:'m1', status:'live',     match_type:'atp_singles', tournament:'Indian Wells', round:'QF', surface:'Hard', score:'6-4, 3-2', winner_id:null, date:new Date().toISOString(), player1:p[0], player2:p[2] },
-      { id:'m2', status:'live',     match_type:'atp_singles', tournament:'Indian Wells', round:'QF', surface:'Hard', score:'7-6, 2-1', winner_id:null, date:new Date().toISOString(), player1:p[1], player2:p[3] },
-      { id:'m3', status:'upcoming', match_type:'atp_singles', tournament:'Miami Open',   round:'R2', surface:'Hard', score:null,        winner_id:null, date:new Date(Date.now()+86400000).toISOString(), player1:p[1], player2:p[3] },
-      { id:'m4', status:'upcoming', match_type:'atp_singles', tournament:'Miami Open',   round:'SF', surface:'Hard', score:null,        winner_id:null, date:new Date(Date.now()+86400000).toISOString(), player1:p[4], player2:p[5] },
-      { id:'m5', status:'upcoming', match_type:'atp_singles', tournament:'Monte-Carlo',  round:'R32',surface:'Clay', score:null,        winner_id:null, date:new Date(Date.now()+172800000).toISOString(), player1:p[6], player2:p[7] },
-    ];
-  },
-  get rankings() {
-    return this.players.map((p, i) => ({
-      ...p,
-      points:    Math.round(11000 / (i + 1)),
-      prev_rank: p.rank,
-    }));
-  },
+  matches:  [],
+  players:  [],
+  rankings: [],
 };
