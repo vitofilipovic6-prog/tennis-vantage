@@ -34,18 +34,8 @@ const MATCH_FILTERS = [
   { id: 'mixed_doubles', label: 'Mixed Doubles', shortLabel: 'Mixed',  color: '#34d399' },
 ];
 
-// ── Utility: is a match's date strictly before today (local calendar day)? ───
-// CRITICAL: We compare local YYYY-MM-DD strings, NOT UTC timestamps.
-// A match at 10:00 UTC on March 15 is "today" in Croatia (UTC+1/+2),
-// but if we zero out UTC hours we get March 14 midnight UTC which is
-// "yesterday" — this was making all of today's matches appear as finished.
-// toLocaleDateString('en-CA') returns YYYY-MM-DD in the browser's local timezone.
-function isBeforeToday(match) {
-  if (!match.date) return false;
-  const matchDayLocal = new Date(match.date).toLocaleDateString('en-CA'); // YYYY-MM-DD local
-  const todayLocal    = new Date().toLocaleDateString('en-CA');            // YYYY-MM-DD local
-  return matchDayLocal < todayLocal;
-}
+// isBeforeToday() REMOVED — caused timezone bugs in Croatia (UTC+2).
+// Trust the DB status field only. sync-matches force-finishes stale rows.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LAYOUT SHELL
@@ -513,7 +503,7 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = 
   const matchTypeDef  = MATCH_FILTERS.find(f => f.id === effectiveType) ?? null;
 
   // [PAST-FIX] Treat anything before today as finished, regardless of DB status
-  const isFinished = m.status === 'finished' || isBeforeToday(m);
+  const isFinished = m.status === 'finished';
   const isLive     = m.status === 'live' && !isFinished;
 
   return (
@@ -671,7 +661,7 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
     now.setHours(0, 0, 0, 0);
     return allMatches.filter(m => {
       if (m.status === 'live') return true;
-      if (m.status === 'finished' || isBeforeToday(m)) return false;
+      if (m.status === 'finished') return false;
       if (m.date) {
         const d = new Date(m.date);
         d.setHours(0, 0, 0, 0);

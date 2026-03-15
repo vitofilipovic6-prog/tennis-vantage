@@ -180,15 +180,21 @@ Deno.serve(async (req: Request) => {
     // (UTC midnight) is definitively over, regardless of what the API says.
     // This prevents old matches from showing the "Predict Winner" button.
     try {
-      const todayUTC = new Date();
-      todayUTC.setUTCHours(0, 0, 0, 0);
-      const todayISO = todayUTC.toISOString();
+      // Use yesterday-midnight UTC as the cutoff so matches in UTC+2 timezones
+      // (e.g. Croatia evening matches) are never prematurely marked finished.
+      // A match at 23:00 CEST = 21:00 UTC — using yesterday midnight UTC (not today)
+      // ensures we only force-finish matches from at least 2 full days ago,
+      // giving a safe buffer for any timezone offset.
+      const yesterdayUTC = new Date();
+      yesterdayUTC.setUTCDate(yesterdayUTC.getUTCDate() - 1);
+      yesterdayUTC.setUTCHours(0, 0, 0, 0);
+      const cutoffISO = yesterdayUTC.toISOString();
 
       const { data: staleMatches, error: staleErr } = await supabase
         .from('matches')
         .select('id')
         .eq('status', 'upcoming')
-        .lt('match_date', todayISO);
+        .lt('match_date', cutoffISO);
 
       if (staleErr) {
         errors.push(`[FORCE-FINISH] Query error: ${staleErr.message}`);
