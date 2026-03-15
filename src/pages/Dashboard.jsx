@@ -655,18 +655,23 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
   const [h2h, setH2h]               = useState(null);
   const [h2hLoading, setH2hLoading] = useState(false);
 
-  // Only today + future matches are predictable
+  // Only live + today/future upcoming matches are predictable.
+  // We use toLocaleDateString('en-CA') for date comparison — this gives
+  // YYYY-MM-DD in the browser's LOCAL timezone, avoiding UTC offset bugs
+  // (e.g. a 17:00 UTC match is correctly "today" in Croatia UTC+2).
   const predictableMatches = useMemo(() => {
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
+    const todayLocal = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD local
     return allMatches.filter(m => {
+      // Live matches are always predictable
       if (m.status === 'live') return true;
+      // Finished matches are never predictable
       if (m.status === 'finished') return false;
+      // For upcoming: only allow today or future (local calendar day)
       if (m.date) {
-        const d = new Date(m.date);
-        d.setHours(0, 0, 0, 0);
-        return d >= now;
+        const matchLocal = new Date(m.date).toLocaleDateString('en-CA');
+        return matchLocal >= todayLocal;
       }
+      // No date info — allow it (safe default)
       return true;
     });
   }, [allMatches]);
