@@ -27,15 +27,15 @@ import PlayerSearchModal from '../components/PlayerSearchModal';
 // MATCH TYPE FILTER DEFINITIONS
 // ─────────────────────────────────────────────────────────────────────────────
 const MATCH_FILTERS = [
-  { id: 'atp_singles',       label: 'ATP',           shortLabel: 'ATP',    color: '#60a5fa' },
-  { id: 'wta_singles',       label: 'WTA',           shortLabel: 'WTA',    color: '#f472b6' },
-  { id: 'itf_men_singles',   label: 'ITF Men',       shortLabel: 'ITF M',  color: '#fb923c' },
-  { id: 'itf_women_singles', label: 'ITF Women',     shortLabel: 'ITF W',  color: '#f59e0b' },
-  { id: 'utr_men_singles',   label: 'UTR Men',       shortLabel: 'UTR M',  color: '#a78bfa' },
-  { id: 'utr_women_singles', label: 'UTR Women',     shortLabel: 'UTR W',  color: '#e879f9' },
-  { id: 'atp_doubles',       label: 'ATP Doubles',   shortLabel: 'ATP 2×', color: '#818cf8' },
-  { id: 'wta_doubles',       label: 'WTA Doubles',   shortLabel: 'WTA 2×', color: '#fb7185' },
-  { id: 'mixed_doubles',     label: 'Mixed Doubles', shortLabel: 'Mixed',  color: '#34d399' },
+  { id: 'atp_singles', label: 'ATP', shortLabel: 'ATP', color: '#60a5fa' },
+  { id: 'wta_singles', label: 'WTA', shortLabel: 'WTA', color: '#f472b6' },
+  { id: 'itf_men_singles', label: 'ITF Men', shortLabel: 'ITF M', color: '#fb923c' },
+  { id: 'itf_women_singles', label: 'ITF Women', shortLabel: 'ITF W', color: '#f59e0b' },
+  { id: 'utr_men_singles', label: 'UTR Men', shortLabel: 'UTR M', color: '#a78bfa' },
+  { id: 'utr_women_singles', label: 'UTR Women', shortLabel: 'UTR W', color: '#e879f9' },
+  { id: 'atp_doubles', label: 'ATP Doubles', shortLabel: 'ATP 2×', color: '#818cf8' },
+  { id: 'wta_doubles', label: 'WTA Doubles', shortLabel: 'WTA 2×', color: '#fb7185' },
+  { id: 'mixed_doubles', label: 'Mixed Doubles', shortLabel: 'Mixed', color: '#34d399' },
 ];
 
 // isBeforeToday() REMOVED — caused timezone bugs in Croatia (UTC+2).
@@ -139,7 +139,7 @@ export default function Dashboard({ showToast }) {
         {/* Spacer */}
         <div style={{ flex: 1 }} />
 
-        {/* Search button */}
+        {/* Search button — constrained so it doesn't push avatar off screen */}
         <button
           onClick={() => setSearchOpen(true)}
           style={{
@@ -148,24 +148,26 @@ export default function Dashboard({ showToast }) {
             background: 'var(--bg-glass)', border: '1px solid var(--border)',
             color: 'var(--text-muted)', fontFamily: 'var(--font-body)',
             fontSize: '13px', cursor: 'pointer', transition: 'var(--t)',
-            flex: '1', maxWidth: '220px',
+            minWidth: 0,           // allows shrinking
+            maxWidth: '220px',
+            flex: '1',
           }}
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0 }}>
             <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
           </svg>
           <span className="hide-sm">Search players…</span>
         </button>
 
         {/* Desktop: avatar + logout */}
-        <div className="hide-md" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div className="hide-md" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
           <div style={{
             width: '32px', height: '32px', borderRadius: '50%',
             background: 'linear-gradient(135deg, var(--lime), var(--clay))',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontSize: '13px', fontWeight: 800, color: '#070B14', flexShrink: 0,
           }}>
-            {firstName?.[0]?.toUpperCase() ?? 'P'}
+            {firstName?.[0]?.toUpperCase() ?? profile?.full_name?.[0]?.toUpperCase() ?? 'P'}
           </div>
           <button
             onClick={handleLogout}
@@ -177,6 +179,22 @@ export default function Dashboard({ showToast }) {
             }}
           >
             Sign Out
+          </button>
+        </div>
+
+        {/* Mobile: avatar only (show-md means visible on mobile ≤900px) */}
+        <div className="show-md" style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+          <button
+            onClick={() => setProfileOpen(true)}
+            style={{
+              width: '32px', height: '32px', borderRadius: '50%', padding: 0,
+              background: 'linear-gradient(135deg, var(--lime), var(--clay))',
+              border: 'none', display: 'flex', alignItems: 'center',
+              justifyContent: 'center', fontSize: '13px', fontWeight: 800,
+              color: '#070B14', cursor: 'pointer', flexShrink: 0,
+            }}
+          >
+            {firstName?.[0]?.toUpperCase() ?? profile?.full_name?.[0]?.toUpperCase() ?? 'P'}
           </button>
         </div>
       </nav>
@@ -344,11 +362,11 @@ function FilterPills({ activeFilter, onSelect, size = 'normal' }) {
 //             date is selected, filter by that day. Past days → fetch from DB.
 // ─────────────────────────────────────────────────────────────────────────────
 function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wtaPlayerIds }) {
-  const [calendarDate, setCalendarDate]     = useState(null);
+  const [calendarDate, setCalendarDate] = useState(null);
   const [calendarDateStr, setCalendarDateStr] = useState(null);
-  const [activeFilter, setActiveFilter]     = useState('atp_singles');
-  const [dateMatches, setDateMatches]       = useState([]);
-  const [dateLoading, setDateLoading]       = useState(false);
+  const [activeFilter, setActiveFilter] = useState('atp_singles');
+  const [dateMatches, setDateMatches] = useState([]);
+  const [dateLoading, setDateLoading] = useState(false);
 
   const today = useMemo(() => {
     const d = new Date();
@@ -365,8 +383,8 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
     return d;
   }, [calendarDate]);
 
-  const isToday     = !selectedDay || selectedDay.getTime() === today.getTime();
-  const isPastDay   = selectedDay && selectedDay < today;
+  const isToday = !selectedDay || selectedDay.getTime() === today.getTime();
+  const isPastDay = selectedDay && selectedDay < today;
   const isFutureDay = selectedDay && selectedDay > today;
 
   // Fetch from DB for ALL dates (past, today, and future)
@@ -377,13 +395,13 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
     setDateLoading(true);
     getMatchesByDate(calendarDateStr, wtaPlayerIds)
       .then(data => { if (!cancelled) setDateMatches(data ?? []); })
-      .catch(()   => { if (!cancelled) setDateMatches([]); })
+      .catch(() => { if (!cancelled) setDateMatches([]); })
       .finally(() => { if (!cancelled) setDateLoading(false); });
     return () => { cancelled = true; };
   }, [calendarDateStr, wtaPlayerIds]);
 
   if (loading) return <LoadingGrid />;
-  if (error)   return <ErrorMessage msg={error} onRetry={refresh} />;
+  if (error) return <ErrorMessage msg={error} onRetry={refresh} />;
 
   // For today: merge DB date matches + live matches (live is most up-to-date)
   // Live matches override their DB counterpart since they have fresher status/score
@@ -405,7 +423,7 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
   const byType = (arr) => arr.filter(m => deriveMatchType(m, wtaPlayerIds) === activeFilter);
   const activeFilterDef = MATCH_FILTERS.find(f => f.id === activeFilter);
 
-  const filteredLive    = isToday ? byType(trulyLive) : [];
+  const filteredLive = isToday ? byType(trulyLive) : [];
   const filteredNonLive = byType(
     isToday
       ? displayMatches.filter(m => m.status !== 'live')
