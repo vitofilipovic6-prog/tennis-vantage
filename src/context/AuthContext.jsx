@@ -14,23 +14,23 @@ import { supabase } from '../services/supabase';
 
 // ── State shape ───────────────────────────────────────────────────────────────
 const initialState = {
-  user:        null,
-  profile:     null,
-  loading:     true,
+  user: null,
+  profile: null,
+  loading: true,
   authLoading: false,
-  error:       null,
+  error: null,
 };
 
 function reducer(state, action) {
   switch (action.type) {
-    case 'AUTH_START':    return { ...state, authLoading: true,  error: null };
-    case 'AUTH_END':      return { ...state, authLoading: false };
-    case 'SET_USER':      return { ...state, user: action.user, profile: action.profile, loading: false, authLoading: false, error: null };
-    case 'CLEAR_USER':    return { ...state, user: null, profile: null, loading: false, authLoading: false };
-    case 'SET_ERROR':     return { ...state, error: action.error, authLoading: false };
-    case 'CLEAR_ERROR':   return { ...state, error: null };
-    case 'LOADING_DONE':  return { ...state, loading: false };
-    default:              return state;
+    case 'AUTH_START': return { ...state, authLoading: true, error: null };
+    case 'AUTH_END': return { ...state, authLoading: false };
+    case 'SET_USER': return { ...state, user: action.user, profile: action.profile, loading: false, authLoading: false, error: null };
+    case 'CLEAR_USER': return { ...state, user: null, profile: null, loading: false, authLoading: false };
+    case 'SET_ERROR': return { ...state, error: action.error, authLoading: false };
+    case 'CLEAR_ERROR': return { ...state, error: null };
+    case 'LOADING_DONE': return { ...state, loading: false };
+    default: return state;
   }
 }
 
@@ -74,24 +74,32 @@ export function AuthProvider({ children }) {
         if (event === 'INITIAL_SESSION') {
           clearTimeout(safetyTimeout);
           if (session?.user) {
-            const profile = await loadProfile(session.user.id);
-            if (mountedRef.current) {
-              dispatch({ type: 'SET_USER', user: session.user, profile });
-            }
+            // ── FAST PATH: unblock the UI immediately with a minimal profile ──
+            // The session is already restored from localStorage — no need to
+            // wait for a DB round-trip before showing the dashboard.
+            const cachedName = session.user.user_metadata?.full_name ?? 'Player';
+            dispatch({
+              type: 'SET_USER',
+              user: session.user,
+              profile: { full_name: cachedName, avatar_url: null },
+            });
+            // ── BACKGROUND: load the real profile without blocking render ─────
+            loadProfile(session.user.id).then(profile => {
+              if (mountedRef.current) {
+                dispatch({ type: 'SET_USER', user: session.user, profile });
+              }
+            });
           } else {
             if (mountedRef.current) dispatch({ type: 'LOADING_DONE' });
           }
           return;
         }
 
-        // This fires when: email+password login, Google OAuth callback,
-        // AND magic link click. All three are handled identically here.
         if (event === 'SIGNED_IN' && session?.user) {
           const profile = await loadProfile(session.user.id);
           if (mountedRef.current) {
             dispatch({ type: 'SET_USER', user: session.user, profile });
           }
-          // Clean up auth tokens/hash from URL after magic link sign-in
           if (window.location.hash || window.location.search.includes('token')) {
             window.history.replaceState(null, '', window.location.pathname);
           }
@@ -115,9 +123,8 @@ export function AuthProvider({ children }) {
       mountedRef.current = false;
       subscription.unsubscribe();
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
   // ── Email + password login ─────────────────────────────────────────────────
   const login = useCallback(async (email, password) => {
     dispatch({ type: 'AUTH_START' });
