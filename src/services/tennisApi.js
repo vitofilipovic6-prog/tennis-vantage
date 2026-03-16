@@ -105,21 +105,25 @@ export async function getLiveMatches(wtaPlayerIds = new Set()) {
 }
 
 // ── Upcoming matches ──────────────────────────────────────────────────────────
-// Fetches:
-//  - All 'upcoming' matches from NOW onwards (future + today's unstarted)
-//  - All 'live' matches (belt-and-suspenders; live hook also gets these)
-// This is used for the Predictions tab match picker.
+// FIX: use start-of-today (local) instead of NOW as the cutoff.
+// Previously used new Date().toISOString() which cut off matches that started
+// earlier today but are still status='upcoming' in the DB (e.g. a 17:00 UTC
+// match checked at 20:00 UTC = already past the filter, hidden from UI).
+// Now we show all of today's upcoming matches regardless of start time.
 export async function getUpcomingMatches(wtaPlayerIds = new Set()) {
   try {
-    const nowISO = new Date().toISOString();
+    // Start of today in UTC — keeps all today's matches visible all day
+    const now   = new Date();
+    const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const startISO = start.toISOString();
 
     const { data, error } = await supabase
       .from('matches')
       .select(MATCH_SELECT)
       .in('status', ['upcoming', 'live'])
-      .gte('match_date', nowISO)          // only future/current matches
+      .gte('match_date', startISO)
       .order('match_date', { ascending: true })
-      .limit(60);
+      .limit(100);
 
     if (error) throw error;
     return (data ?? []).map(m => normaliseMatch(m, wtaPlayerIds));
@@ -130,20 +134,46 @@ export async function getUpcomingMatches(wtaPlayerIds = new Set()) {
   }
 }
 
-// ── Matches by date (for calendar view) ───────────────────────────────────────
-// Uses local_date column (Europe/Paris timezone) stored at sync time.
-// A match starting 22:00 CEST has local_date = that same day, even if
-// match_date UTC is the next calendar day. No client-side timezone math needed.
+// ── Matches by date (for calendar view) ──────────────────────────────────────
+// Uses local_date column if available (set by sync from Europe/Paris TZ).
+// Falls back to a ±1 day UTC window + client-side local date filter for any
+// rows that predate the local_date migration.
 export async function getMatchesByDate(dateString, wtaPlayerIds = new Set()) {
   try {
-    const { data, error } = await supabase
+    // Primary query: use local_date column (accurate, timezone-aware)
+    const { data: byLocalDate, error: e1 } = await supabase
       .from('matches')
       .select(MATCH_SELECT)
       .eq('local_date', dateString)
       .order('match_date', { ascending: true });
 
+    if (!e1 && byLocalDate && byLocalDate.length > 0) {
+      return byLocalDate.map(m => normaliseMatch(m, wtaPlayerIds));
+    }
+
+    // Fallback: ±1 day UTC window + client-side filter (for pre-migration rows)
+    const d    = new Date(`${dateString}T12:00:00.000Z`);
+    const prev = new Date(d); prev.setUTCDate(d.getUTCDate() - 1);
+    const next = new Date(d); next.setUTCDate(d.getUTCDate() + 1);
+
+    const { data, error } = await supabase
+      .from('matches')
+      .select(MATCH_SELECT)
+      .gte('match_date', `${prev.toISOString().slice(0, 10)}T00:00:00.000Z`)
+      .lte('match_date', `${next.toISOString().slice(0, 10)}T23:59:59.999Z`)
+      .order('match_date', { ascending: true });
+
     if (error) throw error;
-    return (data ?? []).map(m => normaliseMatch(m, wtaPlayerIds));
+
+    const all = (data ?? []).map(m => normaliseMatch(m, wtaPlayerIds));
+
+    // Client-side filter by local date
+    return all.filter(m => {
+      if (!m.date) return false;
+      // Prefer stored local_date if present
+      if (m.local_date) return m.local_date === dateString;
+      return new Date(m.date).toLocaleDateString('en-CA') === dateString;
+    });
   } catch (e) {
     if (e?.name === 'AbortError') return [];
     console.error('[getMatchesByDate]', e.message);
