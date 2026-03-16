@@ -21,13 +21,20 @@ export function deriveMatchType(m, wtaPlayerIds = new Set()) {
 
   const isDoubles = p1Name.includes('/') || p2Name.includes('/');
 
-  // ITF check — trust stored value first, then tournament name
-  const isItfStored = stored.startsWith('itf_');
+  // Trust stored value for ITF and UTR — it was set correctly at sync time
+  if (stored.startsWith('itf_') || stored.startsWith('utr_')) return stored;
+
+  // UTR by name (fallback for old rows)
+  if (tournament.includes('utr')) {
+    const isWomen = tournament.includes('women');
+    return isWomen ? 'utr_women_singles' : 'utr_men_singles';
+  }
+
+  // ITF by name (fallback for old rows)
   const isItfByName = tournament.includes('itf') ||
     /\bw\d{2}\b/.test(tournament) ||
     /\bm\d{2}\b/.test(tournament);
 
-  if (isItfStored) return stored;
   if (isItfByName) {
     const isWomen = tournament.includes('women') || /\bw\d{2}\b/.test(tournament);
     if (isDoubles) return isWomen ? 'itf_women_doubles' : 'itf_men_doubles';

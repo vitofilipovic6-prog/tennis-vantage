@@ -27,13 +27,15 @@ import PlayerSearchModal from '../components/PlayerSearchModal';
 // MATCH TYPE FILTER DEFINITIONS
 // ─────────────────────────────────────────────────────────────────────────────
 const MATCH_FILTERS = [
-  { id: 'atp_singles',       label: 'ATP',           shortLabel: 'ATP',      color: '#60a5fa' },
-  { id: 'wta_singles',       label: 'WTA',           shortLabel: 'WTA',      color: '#f472b6' },
-  { id: 'itf_men_singles',   label: 'ITF Men',       shortLabel: 'ITF M',    color: '#fb923c' },
-  { id: 'itf_women_singles', label: 'ITF Women',     shortLabel: 'ITF W',    color: '#f59e0b' },
-  { id: 'atp_doubles',       label: 'ATP Doubles',   shortLabel: 'ATP 2×',   color: '#818cf8' },
-  { id: 'wta_doubles',       label: 'WTA Doubles',   shortLabel: 'WTA 2×',   color: '#fb7185' },
-  { id: 'mixed_doubles',     label: 'Mixed Doubles', shortLabel: 'Mixed',    color: '#34d399' },
+  { id: 'atp_singles',       label: 'ATP',           shortLabel: 'ATP',    color: '#60a5fa' },
+  { id: 'wta_singles',       label: 'WTA',           shortLabel: 'WTA',    color: '#f472b6' },
+  { id: 'itf_men_singles',   label: 'ITF Men',       shortLabel: 'ITF M',  color: '#fb923c' },
+  { id: 'itf_women_singles', label: 'ITF Women',     shortLabel: 'ITF W',  color: '#f59e0b' },
+  { id: 'utr_men_singles',   label: 'UTR Men',       shortLabel: 'UTR M',  color: '#a78bfa' },
+  { id: 'utr_women_singles', label: 'UTR Women',     shortLabel: 'UTR W',  color: '#e879f9' },
+  { id: 'atp_doubles',       label: 'ATP Doubles',   shortLabel: 'ATP 2×', color: '#818cf8' },
+  { id: 'wta_doubles',       label: 'WTA Doubles',   shortLabel: 'WTA 2×', color: '#fb7185' },
+  { id: 'mixed_doubles',     label: 'Mixed Doubles', shortLabel: 'Mixed',  color: '#34d399' },
 ];
 
 // isBeforeToday() REMOVED — caused timezone bugs in Croatia (UTC+2).

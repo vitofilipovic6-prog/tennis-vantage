@@ -39,11 +39,12 @@ export interface MatchRow {
   player2_id: string;
   winner_id: string | null;
   match_type:
-  | 'atp_singles' | 'wta_singles'
-  | 'itf_men_singles' | 'itf_women_singles'
-  | 'atp_doubles' | 'wta_doubles'
-  | 'itf_men_doubles' | 'itf_women_doubles'
-  | 'mixed_doubles';
+    | 'atp_singles' | 'wta_singles'
+    | 'itf_men_singles' | 'itf_women_singles'
+    | 'utr_men_singles' | 'utr_women_singles'
+    | 'atp_doubles' | 'wta_doubles'
+    | 'itf_men_doubles' | 'itf_women_doubles'
+    | 'mixed_doubles';
 }
 
 export interface RankingRow {
@@ -141,7 +142,7 @@ function computeLocalDate(timestampSeconds: number): string {
   return `${y}-${m}-${d}`;
 }
 
-export function resolveTour(event: any): 'ATP' | 'WTA' | 'ITF' | null {
+export function resolveTour(event: any): 'ATP' | 'WTA' | 'ITF' | 'UTR' | null {
   const homeGender = String(event?.homeTeam?.gender ?? '').toUpperCase();
   const awayGender = String(event?.awayTeam?.gender ?? '').toUpperCase();
 
@@ -156,7 +157,7 @@ export function resolveTour(event: any): 'ATP' | 'WTA' | 'ITF' | null {
     event?.tournament?.uniqueTournament?.category?.slug ?? ''
   ).toLowerCase();
 
-  // Block only truly irrelevant circuits
+  // ── Hard block: junk we never want ───────────────────────────────────────
   const hardBlocked = [
     'junior', 'u18', 'u16', 'u14',
     'wheelchair', 'exhibition', 'invitational', 'legends',
@@ -165,7 +166,32 @@ export function resolveTour(event: any): 'ATP' | 'WTA' | 'ITF' | null {
     if (tournamentName.includes(kw) || categorySlug.includes(kw)) return null;
   }
 
-  // ITF detection (includes W15, W25, M15, M25 futures)
+  // ── UTR detection ─────────────────────────────────────────────────────────
+  if (tournamentName.includes('utr') || categorySlug.includes('utr')) return 'UTR';
+
+  // ── GENDER CHECK FIRST — critical for Miami WTA qualifying ────────────────
+  // Miami WTA qualifying has ITF-like slugs but gender='F' on players.
+  // We must resolve gender before checking ITF name patterns.
+  const bothFemale = homeGender === 'F' && awayGender === 'F';
+  const bothMale   = homeGender === 'M' && awayGender === 'M';
+  const mixed      = (homeGender === 'M' && awayGender === 'F') ||
+                     (homeGender === 'F' && awayGender === 'M');
+
+  if (bothFemale) return 'WTA';
+  if (bothMale)   return 'ATP';
+  if (mixed)      return 'ATP'; // mixed doubles
+
+  // ── Category slug (before ITF name check) ────────────────────────────────
+  if (categorySlug.includes('wta')) return 'WTA';
+  if (categorySlug.includes('atp')) return 'ATP';
+
+  // ── Tournament name fallback ──────────────────────────────────────────────
+  if (tournamentName.includes('wta') || tournamentName.includes('women') ||
+      tournamentName.includes('ladies')) return 'WTA';
+
+  // ── ITF detection — only when gender is unknown ───────────────────────────
+  // Intentionally AFTER gender check so WTA qualifying at ITF venues
+  // is caught by gender='F' above, not incorrectly tagged as ITF.
   const isItf =
     tournamentName.includes('itf') ||
     categorySlug.includes('itf') ||
@@ -174,22 +200,7 @@ export function resolveTour(event: any): 'ATP' | 'WTA' | 'ITF' | null {
 
   if (isItf) return 'ITF';
 
-  // Gender is ground truth for ATP/WTA
-  const bothFemale = homeGender === 'F' && awayGender === 'F';
-  const bothMale = homeGender === 'M' && awayGender === 'M';
-  const mixed = (homeGender === 'M' && awayGender === 'F') ||
-    (homeGender === 'F' && awayGender === 'M');
-
-  if (bothFemale) return 'WTA';
-  if (bothMale) return 'ATP';
-  if (mixed) return 'ATP';
-
-  if (categorySlug.includes('wta')) return 'WTA';
-  if (categorySlug.includes('atp')) return 'ATP';
-
-  if (tournamentName.includes('wta') || tournamentName.includes('women') ||
-    tournamentName.includes('ladies')) return 'WTA';
-
+  // ── Last resort ───────────────────────────────────────────────────────────
   if (event?.homeTeam?.name && event?.awayTeam?.name) return 'ATP';
 
   return null;
@@ -207,6 +218,7 @@ export function resolveTour(event: any): 'ATP' | 'WTA' | 'ITF' | null {
 export function resolveMatchType(
   event: any
 ): 'atp_singles' | 'wta_singles' | 'itf_men_singles' | 'itf_women_singles' |
+   'utr_men_singles' | 'utr_women_singles' |
    'atp_doubles' | 'wta_doubles' | 'itf_men_doubles' | 'itf_women_doubles' |
    'mixed_doubles' {
 
@@ -225,37 +237,56 @@ export function resolveMatchType(
 
   const isDoubles = homeName.includes('/') || awayName.includes('/');
 
+  // ── UTR ───────────────────────────────────────────────────────────────────
+  const isUtr = tournamentName.includes('utr') || categorySlug.includes('utr');
+  if (isUtr) {
+    const isWomen = homeGender === 'F' || awayGender === 'F' ||
+      tournamentName.includes('women');
+    return isWomen ? 'utr_women_singles' : 'utr_men_singles';
+  }
+
+  // ── ITF (only when not WTA/ATP by gender) ────────────────────────────────
   const isItf =
     tournamentName.includes('itf') ||
     categorySlug.includes('itf') ||
     /\bw\d{2}\b/.test(tournamentName) ||
     /\bm\d{2}\b/.test(tournamentName);
 
-  if (isItf) {
-    // Determine men vs women by gender field, fall back to tournament name
-    const isWomen =
-      (homeGender === 'F' || awayGender === 'F') ||
-      tournamentName.includes('women') ||
+  // Check gender first — if both female, it's WTA even at ITF venue
+  const bothFemale   = homeGender === 'F' && awayGender === 'F';
+  const bothMale     = homeGender === 'M' && awayGender === 'M';
+  const eitherFemale = homeGender === 'F' || awayGender === 'F';
+
+  if (isItf && !bothFemale && !bothMale) {
+    // Gender unknown — use tournament name pattern
+    const isWomen = eitherFemale || tournamentName.includes('women') ||
       /\bw\d{2}\b/.test(tournamentName);
     if (isDoubles) return isWomen ? 'itf_women_doubles' : 'itf_men_doubles';
     return isWomen ? 'itf_women_singles' : 'itf_men_singles';
   }
 
+  if (isItf && bothFemale) {
+    if (isDoubles) return 'itf_women_doubles';
+    return 'itf_women_singles';
+  }
+
+  if (isItf && bothMale) {
+    if (isDoubles) return 'itf_men_doubles';
+    return 'itf_men_singles';
+  }
+
+  // ── ATP/WTA doubles ───────────────────────────────────────────────────────
   if (isDoubles) {
-    const bothFemale = homeGender === 'F' && awayGender === 'F';
-    const bothMale   = homeGender === 'M' && awayGender === 'M';
-    const isMixed    = (homeGender === 'M' && awayGender === 'F') ||
-                       (homeGender === 'F' && awayGender === 'M');
-    if (isMixed)    return 'mixed_doubles';
-    if (bothFemale) return 'wta_doubles';
-    if (bothMale)   return 'atp_doubles';
-    const catSlug = String(event?.tournament?.category?.slug ?? '').toLowerCase();
-    if (catSlug.includes('wta')) return 'wta_doubles';
+    const isMixed = (homeGender === 'M' && awayGender === 'F') ||
+                    (homeGender === 'F' && awayGender === 'M');
+    if (isMixed)      return 'mixed_doubles';
+    if (bothFemale)   return 'wta_doubles';
+    if (bothMale)     return 'atp_doubles';
+    if (categorySlug.includes('wta')) return 'wta_doubles';
     return 'atp_doubles';
   }
 
-  const bothFemale   = homeGender === 'F' && awayGender === 'F';
-  const eitherFemale = homeGender === 'F' || awayGender === 'F';
+  // ── ATP/WTA singles ───────────────────────────────────────────────────────
   if (bothFemale) return 'wta_singles';
   if (eitherFemale && (homeGender === '' || awayGender === '')) return 'wta_singles';
   return 'atp_singles';
