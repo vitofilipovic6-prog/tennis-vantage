@@ -131,7 +131,7 @@ export async function getUpcomingMatches(wtaPlayerIds = new Set()) {
       .in('status', ['upcoming', 'live'])
       .gte('match_date', startISO)
       .order('match_date', { ascending: true })
-      .limit(100);
+      .limit(500);
 
     if (error) throw error;
     return (data ?? []).map(m => normaliseMatch(m, wtaPlayerIds));
@@ -148,7 +148,7 @@ export async function getUpcomingMatches(wtaPlayerIds = new Set()) {
 // rows that predate the local_date migration.
 export async function getMatchesByDate(dateString, wtaPlayerIds = new Set()) {
   try {
-    // Primary query: use local_date column (accurate, timezone-aware)
+    // Primary: use local_date column
     const { data: byLocalDate, error: e1 } = await supabase
       .from('matches')
       .select(MATCH_SELECT)
@@ -159,7 +159,7 @@ export async function getMatchesByDate(dateString, wtaPlayerIds = new Set()) {
       return byLocalDate.map(m => normaliseMatch(m, wtaPlayerIds));
     }
 
-    // Fallback: ±1 day UTC window + client-side filter (for pre-migration rows)
+    // Fallback: ±1 day UTC window + client-side filter
     const d    = new Date(`${dateString}T12:00:00.000Z`);
     const prev = new Date(d); prev.setUTCDate(d.getUTCDate() - 1);
     const next = new Date(d); next.setUTCDate(d.getUTCDate() + 1);
@@ -173,12 +173,8 @@ export async function getMatchesByDate(dateString, wtaPlayerIds = new Set()) {
 
     if (error) throw error;
 
-    const all = (data ?? []).map(m => normaliseMatch(m, wtaPlayerIds));
-
-    // Client-side filter by local date
-    return all.filter(m => {
+    return (data ?? []).map(m => normaliseMatch(m, wtaPlayerIds)).filter(m => {
       if (!m.date) return false;
-      // Prefer stored local_date if present
       if (m.local_date) return m.local_date === dateString;
       return new Date(m.date).toLocaleDateString('en-CA') === dateString;
     });

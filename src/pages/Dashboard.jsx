@@ -344,17 +344,19 @@ function FilterPills({ activeFilter, onSelect, size = 'normal' }) {
 //             date is selected, filter by that day. Past days → fetch from DB.
 // ─────────────────────────────────────────────────────────────────────────────
 function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wtaPlayerIds }) {
-  const [calendarDate, setCalendarDate] = useState(null);
+  const [calendarDate, setCalendarDate]     = useState(null);
   const [calendarDateStr, setCalendarDateStr] = useState(null);
-  const [activeFilter, setActiveFilter] = useState('atp_singles');
-  const [pastMatches, setPastMatches] = useState([]);
-  const [pastLoading, setPastLoading] = useState(false);
+  const [activeFilter, setActiveFilter]     = useState('atp_singles');
+  const [dateMatches, setDateMatches]       = useState([]);
+  const [dateLoading, setDateLoading]       = useState(false);
 
   const today = useMemo(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
     return d;
   }, []);
+
+  const todayStr = useMemo(() => today.toLocaleDateString('en-CA'), [today]);
 
   const selectedDay = useMemo(() => {
     if (!calendarDate) return null;
@@ -363,63 +365,64 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
     return d;
   }, [calendarDate]);
 
-  // Is the selected day strictly before today?
-  const isPastDay = selectedDay && selectedDay < today;
-  // Is it today or future? (null = no selection = also show today's matches)
-  const isToday = !selectedDay || selectedDay.getTime() === today.getTime();
+  const isToday     = !selectedDay || selectedDay.getTime() === today.getTime();
+  const isPastDay   = selectedDay && selectedDay < today;
   const isFutureDay = selectedDay && selectedDay > today;
 
-  // Fetch past-day matches from DB when a past day is selected
+  // Fetch from DB for ALL dates (past, today, and future)
+  // This is reliable regardless of UTC offsets or sync timing
   useEffect(() => {
-    if (!isPastDay || !calendarDateStr) { setPastMatches([]); return; }
+    if (!calendarDateStr) return;
     let cancelled = false;
-    setPastLoading(true);
+    setDateLoading(true);
     getMatchesByDate(calendarDateStr, wtaPlayerIds)
-      .then(data => { if (!cancelled) setPastMatches(data ?? []); })
-      .catch(() => { if (!cancelled) setPastMatches([]); })
-      .finally(() => { if (!cancelled) setPastLoading(false); });
+      .then(data => { if (!cancelled) setDateMatches(data ?? []); })
+      .catch(()   => { if (!cancelled) setDateMatches([]); })
+      .finally(() => { if (!cancelled) setDateLoading(false); });
     return () => { cancelled = true; };
-  }, [calendarDateStr, isPastDay, wtaPlayerIds]);
+  }, [calendarDateStr, wtaPlayerIds]);
 
   if (loading) return <LoadingGrid />;
-  if (error) return <ErrorMessage msg={error} onRetry={refresh} />;
+  if (error)   return <ErrorMessage msg={error} onRetry={refresh} />;
 
-  // ── Drop stale "live" rows from a previous calendar day ───────────────────
-  const todayStr = today.toLocaleDateString('en-CA');
+  // For today: merge DB date matches + live matches (live is most up-to-date)
+  // Live matches override their DB counterpart since they have fresher status/score
   const trulyLive = live.filter(m => {
     if (!m.date) return true;
-    return new Date(m.date).toLocaleDateString('en-CA') >= todayStr;
+    const d = m.local_date ?? new Date(m.date).toLocaleDateString('en-CA');
+    return d >= todayStr;
   });
 
-  // ── Filter by match type ──────────────────────────────────────────────────
-  const byType = (arr) =>
-    arr.filter(m => deriveMatchType(m, wtaPlayerIds) === activeFilter);
+  const displayMatches = isToday ? (() => {
+    const map = new Map();
+    dateMatches.forEach(m => map.set(m.id, m));
+    trulyLive.forEach(m => map.set(m.id, m)); // live overrides
+    return [...map.values()].sort((a, b) =>
+      new Date(a.date ?? 0).getTime() - new Date(b.date ?? 0).getTime()
+    );
+  })() : dateMatches;
 
-  const filteredLive = byType(trulyLive);
-
-  // For a specific future date: filter upcoming by that day
-  // For today or no selection: show all upcoming (don't filter by date —
-  // today's matches may have slightly different UTC dates)
-  const calendarFiltered = isFutureDay
-    ? upcoming.filter(m => {
-      if (!m.date) return false;
-      const d = new Date(m.date);
-      d.setHours(0, 0, 0, 0);
-      return d.getTime() === selectedDay.getTime();
-    })
-    : upcoming;
-
-  const filteredUpcoming = byType(calendarFiltered);
-  const filteredPast = byType(pastMatches);
+  const byType = (arr) => arr.filter(m => deriveMatchType(m, wtaPlayerIds) === activeFilter);
   const activeFilterDef = MATCH_FILTERS.find(f => f.id === activeFilter);
+
+  const filteredLive    = isToday ? byType(trulyLive) : [];
+  const filteredNonLive = byType(
+    isToday
+      ? displayMatches.filter(m => m.status !== 'live')
+      : displayMatches
+  );
+
+  const sectionLabel = (() => {
+    if (isToday) return `${activeFilterDef?.label} — Today's Matches`;
+    if (!selectedDay) return `${activeFilterDef?.label} — Today's Matches`;
+    return `${activeFilterDef?.label} — ${selectedDay.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })}`;
+  })();
 
   return (
     <div className="tv-fade-up">
 
-      {/* Filter pills */}
       <FilterPills activeFilter={activeFilter} onSelect={setActiveFilter} />
 
-      {/* Calendar */}
       <MatchCalendar
         onSelectDate={(date, dateStr) => {
           setCalendarDate(date);
@@ -427,31 +430,11 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
         }}
       />
 
-      {/* PAST DAY */}
-      {isPastDay ? (
-        <section>
-          <SectionHeading label={`${activeFilterDef?.label} — ${selectedDay.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })}`} />
-          {pastLoading ? (
-            <LoadingGrid />
-          ) : filteredPast.length === 0 ? (
-            <EmptyState
-              icon="📅"
-              title={`No ${activeFilterDef?.label} results`}
-              desc="No matches found for this filter on this day."
-            />
-          ) : (
-            <div style={gridStyle}>
-              {filteredPast.map((m, i) => (
-                <div key={m.id} className={`tv-fade-up d${Math.min(i + 1, 5)}`}>
-                  <MatchCard match={m} onPredict={() => onSelectMatch(m)} wtaPlayerIds={wtaPlayerIds} />
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
+      {dateLoading ? (
+        <LoadingGrid />
       ) : (
         <>
-          {/* Live section */}
+          {/* Live section — today only */}
           {filteredLive.length > 0 && (
             <section style={{ marginBottom: '40px' }}>
               <SectionHeading label="Live Now" dot />
@@ -463,22 +446,20 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
             </section>
           )}
 
-          {/* Upcoming / today section */}
+          {/* Main matches section */}
           <section>
-            <SectionHeading label={
-              isFutureDay
-                ? `Upcoming — ${selectedDay.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })}`
-                : `${activeFilterDef?.label} — Today's Matches`
-            } />
-            {filteredUpcoming.length === 0 ? (
+            <SectionHeading label={sectionLabel} />
+            {filteredNonLive.length === 0 ? (
               <EmptyState
-                icon="🎾"
+                icon={isToday ? '🎾' : '📅'}
                 title={`No ${activeFilterDef?.label} matches`}
-                desc={isToday ? 'No matches scheduled today for this filter.' : 'Try a different filter or check another date.'}
+                desc={isToday
+                  ? 'No matches found for this filter today.'
+                  : 'No matches found for this filter on this day.'}
               />
             ) : (
               <div style={gridStyle}>
-                {filteredUpcoming.map((m, i) => (
+                {filteredNonLive.map((m, i) => (
                   <div key={m.id} className={`tv-fade-up d${Math.min(i + 1, 5)}`}>
                     <MatchCard match={m} onPredict={() => onSelectMatch(m)} wtaPlayerIds={wtaPlayerIds} />
                   </div>
