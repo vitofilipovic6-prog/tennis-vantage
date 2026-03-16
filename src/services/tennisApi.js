@@ -13,6 +13,156 @@ const MATCH_SELECT = `
   )
 `;
 
+// ── Complete world flag map ───────────────────────────────────────────────────
+// Covers full country names, 3-letter ISO (ATP/WTA style), 2-letter ISO
+export const FLAG_MAP = {
+  // ── Full names ──
+  'Afghanistan': '🇦🇫', 'Albania': '🇦🇱', 'Algeria': '🇩🇿', 'Andorra': '🇦🇩',
+  'Angola': '🇦🇴', 'Antigua and Barbuda': '🇦🇬', 'Argentina': '🇦🇷', 'Armenia': '🇦🇲',
+  'Australia': '🇦🇺', 'Austria': '🇦🇹', 'Azerbaijan': '🇦🇿', 'Bahamas': '🇧🇸',
+  'Bahrain': '🇧🇭', 'Bangladesh': '🇧🇩', 'Barbados': '🇧🇧', 'Belarus': '🇧🇾',
+  'Belgium': '🇧🇪', 'Belize': '🇧🇿', 'Benin': '🇧🇯', 'Bhutan': '🇧🇹',
+  'Bolivia': '🇧🇴', 'Bosnia and Herzegovina': '🇧🇦', 'Bosnia': '🇧🇦', 'Botswana': '🇧🇼',
+  'Brazil': '🇧🇷', 'Brunei': '🇧🇳', 'Bulgaria': '🇧🇬', 'Burkina Faso': '🇧🇫',
+  'Burundi': '🇧🇮', 'Cambodia': '🇰🇭', 'Cameroon': '🇨🇲', 'Canada': '🇨🇦',
+  'Cape Verde': '🇨🇻', 'Central African Republic': '🇨🇫', 'Chad': '🇹🇩', 'Chile': '🇨🇱',
+  'China': '🇨🇳', 'Colombia': '🇨🇴', 'Comoros': '🇰🇲', 'Congo': '🇨🇬',
+  'Costa Rica': '🇨🇷', 'Croatia': '🇭🇷', 'Cuba': '🇨🇺', 'Cyprus': '🇨🇾',
+  'Czech Republic': '🇨🇿', 'Czechia': '🇨🇿', 'Denmark': '🇩🇰', 'Djibouti': '🇩🇯',
+  'Dominican Republic': '🇩🇴', 'Ecuador': '🇪🇨', 'Egypt': '🇪🇬', 'El Salvador': '🇸🇻',
+  'Equatorial Guinea': '🇬🇶', 'Eritrea': '🇪🇷', 'Estonia': '🇪🇪', 'Eswatini': '🇸🇿',
+  'Ethiopia': '🇪🇹', 'Fiji': '🇫🇯', 'Finland': '🇫🇮', 'France': '🇫🇷',
+  'Gabon': '🇬🇦', 'Gambia': '🇬🇲', 'Georgia': '🇬🇪', 'Germany': '🇩🇪',
+  'Ghana': '🇬🇭', 'Greece': '🇬🇷', 'Grenada': '🇬🇩', 'Guatemala': '🇬🇹',
+  'Guinea': '🇬🇳', 'Guinea-Bissau': '🇬🇼', 'Guyana': '🇬🇾', 'Haiti': '🇭🇹',
+  'Honduras': '🇭🇳', 'Hungary': '🇭🇺', 'Iceland': '🇮🇸', 'India': '🇮🇳',
+  'Indonesia': '🇮🇩', 'Iran': '🇮🇷', 'Iraq': '🇮🇶', 'Ireland': '🇮🇪',
+  'Israel': '🇮🇱', 'Italy': '🇮🇹', 'Ivory Coast': '🇨🇮', 'Jamaica': '🇯🇲',
+  'Japan': '🇯🇵', 'Jordan': '🇯🇴', 'Kazakhstan': '🇰🇿', 'Kenya': '🇰🇪',
+  'Kosovo': '🇽🇰', 'Kuwait': '🇰🇼', 'Kyrgyzstan': '🇰🇬', 'Laos': '🇱🇦',
+  'Latvia': '🇱🇻', 'Lebanon': '🇱🇧', 'Lesotho': '🇱🇸', 'Liberia': '🇱🇷',
+  'Libya': '🇱🇾', 'Liechtenstein': '🇱🇮', 'Lithuania': '🇱🇹', 'Luxembourg': '🇱🇺',
+  'Madagascar': '🇲🇬', 'Malawi': '🇲🇼', 'Malaysia': '🇲🇾', 'Maldives': '🇲🇻',
+  'Mali': '🇲🇱', 'Malta': '🇲🇹', 'Mauritania': '🇲🇷', 'Mauritius': '🇲🇺',
+  'Mexico': '🇲🇽', 'Moldova': '🇲🇩', 'Monaco': '🇲🇨', 'Mongolia': '🇲🇳',
+  'Montenegro': '🇲🇪', 'Morocco': '🇲🇦', 'Mozambique': '🇲🇿', 'Myanmar': '🇲🇲',
+  'Namibia': '🇳🇦', 'Nepal': '🇳🇵', 'Netherlands': '🇳🇱', 'New Zealand': '🇳🇿',
+  'Nicaragua': '🇳🇮', 'Niger': '🇳🇪', 'Nigeria': '🇳🇬', 'North Korea': '🇰🇵',
+  'North Macedonia': '🇲🇰', 'Norway': '🇳🇴', 'Oman': '🇴🇲', 'Pakistan': '🇵🇰',
+  'Palestine': '🇵🇸', 'Panama': '🇵🇦', 'Papua New Guinea': '🇵🇬', 'Paraguay': '🇵🇾',
+  'Peru': '🇵🇪', 'Philippines': '🇵🇭', 'Poland': '🇵🇱', 'Portugal': '🇵🇹',
+  'Puerto Rico': '🇵🇷', 'Qatar': '🇶🇦', 'Romania': '🇷🇴', 'Russia': '🇷🇺',
+  'Rwanda': '🇷🇼', 'Saudi Arabia': '🇸🇦', 'Senegal': '🇸🇳', 'Serbia': '🇷🇸',
+  'Sierra Leone': '🇸🇱', 'Singapore': '🇸🇬', 'Slovakia': '🇸🇰', 'Slovenia': '🇸🇮',
+  'Somalia': '🇸🇴', 'South Africa': '🇿🇦', 'South Korea': '🇰🇷', 'Korea': '🇰🇷',
+  'South Sudan': '🇸🇸', 'Spain': '🇪🇸', 'Sri Lanka': '🇱🇰', 'Sudan': '🇸🇩',
+  'Suriname': '🇸🇷', 'Sweden': '🇸🇪', 'Switzerland': '🇨🇭', 'Syria': '🇸🇾',
+  'Taiwan': '🇹🇼', 'Tajikistan': '🇹🇯', 'Tanzania': '🇹🇿', 'Thailand': '🇹🇭',
+  'Timor-Leste': '🇹🇱', 'Togo': '🇹🇬', 'Trinidad and Tobago': '🇹🇹',
+  'Tunisia': '🇹🇳', 'Turkey': '🇹🇷', 'Turkmenistan': '🇹🇲', 'Uganda': '🇺🇬',
+  'Ukraine': '🇺🇦', 'United Arab Emirates': '🇦🇪', 'UAE': '🇦🇪',
+  'United Kingdom': '🇬🇧', 'Great Britain': '🇬🇧', 'England': '🇬🇧',
+  'Scotland': '🏴󠁧󠁢󠁳󠁣󠁴󠁿', 'Wales': '🏴󠁧󠁢󠁷󠁬󠁳󠁿',
+  'United States': '🇺🇸', 'USA': '🇺🇸', 'United States of America': '🇺🇸',
+  'Uruguay': '🇺🇾', 'Uzbekistan': '🇺🇿', 'Venezuela': '🇻🇪', 'Vietnam': '🇻🇳',
+  'Yemen': '🇾🇪', 'Zambia': '🇿🇲', 'Zimbabwe': '🇿🇼',
+
+  // ── 3-letter ISO (ATP/WTA API format) ──
+  'AFG': '🇦🇫', 'ALB': '🇦🇱', 'ALG': '🇩🇿', 'DZA': '🇩🇿', 'AND': '🇦🇩',
+  'ANG': '🇦🇴', 'AGO': '🇦🇴', 'ARG': '🇦🇷', 'ARM': '🇦🇲', 'AUS': '🇦🇺',
+  'AUT': '🇦🇹', 'AZE': '🇦🇿', 'BAH': '🇧🇸', 'BHS': '🇧🇸', 'BRN': '🇧🇭',
+  'BAN': '🇧🇩', 'BGD': '🇧🇩', 'BRB': '🇧🇧', 'BLR': '🇧🇾', 'BEL': '🇧🇪',
+  'BLZ': '🇧🇿', 'BEN': '🇧🇯', 'BTN': '🇧🇹', 'BOL': '🇧🇴', 'BIH': '🇧🇦',
+  'BOT': '🇧🇼', 'BWA': '🇧🇼', 'BRA': '🇧🇷', 'BRU': '🇧🇳', 'BUL': '🇧🇬',
+  'BGR': '🇧🇬', 'BFA': '🇧🇫', 'BDI': '🇧🇮', 'KHM': '🇰🇭', 'CMR': '🇨🇲',
+  'CAN': '🇨🇦', 'CPV': '🇨🇻', 'CAF': '🇨🇫', 'TCD': '🇹🇩', 'CHI': '🇨🇱',
+  'CHL': '🇨🇱', 'CHN': '🇨🇳', 'COL': '🇨🇴', 'COM': '🇰🇲', 'CGO': '🇨🇬',
+  'COG': '🇨🇬', 'CRC': '🇨🇷', 'CRO': '🇭🇷', 'HRV': '🇭🇷', 'CUB': '🇨🇺',
+  'CYP': '🇨🇾', 'CZE': '🇨🇿', 'DEN': '🇩🇰', 'DNK': '🇩🇰', 'DJI': '🇩🇯',
+  'DOM': '🇩🇴', 'ECU': '🇪🇨', 'EGY': '🇪🇬', 'SLV': '🇸🇻', 'GNQ': '🇬🇶',
+  'ERI': '🇪🇷', 'EST': '🇪🇪', 'SWZ': '🇸🇿', 'ETH': '🇪🇹', 'FIJ': '🇫🇯',
+  'FJI': '🇫🇯', 'FIN': '🇫🇮', 'FRA': '🇫🇷', 'GAB': '🇬🇦', 'GMB': '🇬🇲',
+  'GEO': '🇬🇪', 'GER': '🇩🇪', 'DEU': '🇩🇪', 'GHA': '🇬🇭', 'GRE': '🇬🇷',
+  'GRC': '🇬🇷', 'GRD': '🇬🇩', 'GTM': '🇬🇹', 'GUI': '🇬🇳', 'GNB': '🇬🇼',
+  'GUY': '🇬🇾', 'HAI': '🇭🇹', 'HTI': '🇭🇹', 'HON': '🇭🇳', 'HND': '🇭🇳',
+  'HUN': '🇭🇺', 'ISL': '🇮🇸', 'IND': '🇮🇳', 'INA': '🇮🇩', 'IDN': '🇮🇩',
+  'IRI': '🇮🇷', 'IRN': '🇮🇷', 'IRQ': '🇮🇶', 'IRL': '🇮🇪', 'ISR': '🇮🇱',
+  'ITA': '🇮🇹', 'CIV': '🇨🇮', 'JAM': '🇯🇲', 'JPN': '🇯🇵', 'JOR': '🇯🇴',
+  'KAZ': '🇰🇿', 'KEN': '🇰🇪', 'KOS': '🇽🇰', 'XKX': '🇽🇰', 'KUW': '🇰🇼',
+  'KWT': '🇰🇼', 'KGZ': '🇰🇬', 'LAO': '🇱🇦', 'LAT': '🇱🇻', 'LVA': '🇱🇻',
+  'LIB': '🇱🇧', 'LBN': '🇱🇧', 'LES': '🇱🇸', 'LSO': '🇱🇸', 'LBR': '🇱🇷',
+  'LBA': '🇱🇾', 'LBY': '🇱🇾', 'LIE': '🇱🇮', 'LTU': '🇱🇹', 'LUX': '🇱🇺',
+  'MAD': '🇲🇬', 'MDG': '🇲🇬', 'MAW': '🇲🇼', 'MWI': '🇲🇼', 'MAS': '🇲🇾',
+  'MYS': '🇲🇾', 'MDV': '🇲🇻', 'MLI': '🇲🇱', 'MLT': '🇲🇹', 'MTN': '🇲🇷',
+  'MRT': '🇲🇷', 'MRI': '🇲🇺', 'MUS': '🇲🇺', 'MEX': '🇲🇽', 'MDA': '🇲🇩',
+  'MCO': '🇲🇨', 'MGL': '🇲🇳', 'MNG': '🇲🇳', 'MNE': '🇲🇪', 'MAR': '🇲🇦',
+  'MOZ': '🇲🇿', 'MYA': '🇲🇲', 'MMR': '🇲🇲', 'NAM': '🇳🇦', 'NEP': '🇳🇵',
+  'NED': '🇳🇱', 'NLD': '🇳🇱', 'NZL': '🇳🇿', 'NCA': '🇳🇮', 'NIC': '🇳🇮',
+  'NGR': '🇳🇬', 'NGA': '🇳🇬', 'PRK': '🇰🇵', 'MKD': '🇲🇰', 'NOR': '🇳🇴',
+  'OMA': '🇴🇲', 'OMN': '🇴🇲', 'PAK': '🇵🇰', 'PLE': '🇵🇸', 'PSE': '🇵🇸',
+  'PAN': '🇵🇦', 'PNG': '🇵🇬', 'PAR': '🇵🇾', 'PRY': '🇵🇾', 'PER': '🇵🇪',
+  'PHI': '🇵🇭', 'PHL': '🇵🇭', 'POL': '🇵🇱', 'POR': '🇵🇹', 'PRT': '🇵🇹',
+  'PUR': '🇵🇷', 'QAT': '🇶🇦', 'ROU': '🇷🇴', 'RUS': '🇷🇺', 'RWA': '🇷🇼',
+  'KSA': '🇸🇦', 'SAU': '🇸🇦', 'SEN': '🇸🇳', 'SRB': '🇷🇸', 'SLE': '🇸🇱',
+  'SGP': '🇸🇬', 'SVK': '🇸🇰', 'SVN': '🇸🇮', 'SOM': '🇸🇴', 'RSA': '🇿🇦',
+  'ZAF': '🇿🇦', 'KOR': '🇰🇷', 'SSD': '🇸🇸', 'ESP': '🇪🇸', 'SRI': '🇱🇰',
+  'LKA': '🇱🇰', 'SUD': '🇸🇩', 'SDN': '🇸🇩', 'SUR': '🇸🇷', 'SWE': '🇸🇪',
+  'SUI': '🇨🇭', 'CHE': '🇨🇭', 'SYR': '🇸🇾', 'TWN': '🇹🇼', 'TPE': '🇹🇼',
+  'TJK': '🇹🇯', 'TAN': '🇹🇿', 'TZA': '🇹🇿', 'THA': '🇹🇭', 'TLS': '🇹🇱',
+  'TOG': '🇹🇬', 'TTO': '🇹🇹', 'TUN': '🇹🇳', 'TUR': '🇹🇷', 'TKM': '🇹🇲',
+  'UGA': '🇺🇬', 'UKR': '🇺🇦', 'UAE': '🇦🇪', 'GBR': '🇬🇧', 'USA': '🇺🇸',
+  'URU': '🇺🇾', 'URY': '🇺🇾', 'UZB': '🇺🇿', 'VEN': '🇻🇪', 'VIE': '🇻🇳',
+  'VNM': '🇻🇳', 'YEM': '🇾🇪', 'ZAM': '🇿🇲', 'ZMB': '🇿🇲', 'ZIM': '🇿🇼',
+  'ZWE': '🇿🇼',
+
+  // ── 2-letter ISO ──
+  'AF': '🇦🇫', 'AL': '🇦🇱', 'DZ': '🇩🇿', 'AD': '🇦🇩', 'AO': '🇦🇴',
+  'AG': '🇦🇬', 'AR': '🇦🇷', 'AM': '🇦🇲', 'AU': '🇦🇺', 'AT': '🇦🇹',
+  'AZ': '🇦🇿', 'BS': '🇧🇸', 'BH': '🇧🇭', 'BD': '🇧🇩', 'BB': '🇧🇧',
+  'BY': '🇧🇾', 'BE': '🇧🇪', 'BZ': '🇧🇿', 'BJ': '🇧🇯', 'BT': '🇧🇹',
+  'BO': '🇧🇴', 'BA': '🇧🇦', 'BW': '🇧🇼', 'BR': '🇧🇷', 'BN': '🇧🇳',
+  'BG': '🇧🇬', 'BF': '🇧🇫', 'BI': '🇧🇮', 'KH': '🇰🇭', 'CM': '🇨🇲',
+  'CA': '🇨🇦', 'CV': '🇨🇻', 'CF': '🇨🇫', 'TD': '🇹🇩', 'CL': '🇨🇱',
+  'CN': '🇨🇳', 'CO': '🇨🇴', 'KM': '🇰🇲', 'CG': '🇨🇬', 'CR': '🇨🇷',
+  'HR': '🇭🇷', 'CU': '🇨🇺', 'CY': '🇨🇾', 'CZ': '🇨🇿', 'DK': '🇩🇰',
+  'DJ': '🇩🇯', 'DO': '🇩🇴', 'EC': '🇪🇨', 'EG': '🇪🇬', 'SV': '🇸🇻',
+  'GQ': '🇬🇶', 'ER': '🇪🇷', 'EE': '🇪🇪', 'SZ': '🇸🇿', 'ET': '🇪🇹',
+  'FJ': '🇫🇯', 'FI': '🇫🇮', 'FR': '🇫🇷', 'GA': '🇬🇦', 'GM': '🇬🇲',
+  'GE': '🇬🇪', 'DE': '🇩🇪', 'GH': '🇬🇭', 'GR': '🇬🇷', 'GD': '🇬🇩',
+  'GT': '🇬🇹', 'GN': '🇬🇳', 'GW': '🇬🇼', 'GY': '🇬🇾', 'HT': '🇭🇹',
+  'HN': '🇭🇳', 'HU': '🇭🇺', 'IS': '🇮🇸', 'IN': '🇮🇳', 'ID': '🇮🇩',
+  'IR': '🇮🇷', 'IQ': '🇮🇶', 'IE': '🇮🇪', 'IL': '🇮🇱', 'IT': '🇮🇹',
+  'CI': '🇨🇮', 'JM': '🇯🇲', 'JP': '🇯🇵', 'JO': '🇯🇴', 'KZ': '🇰🇿',
+  'KE': '🇰🇪', 'XK': '🇽🇰', 'KW': '🇰🇼', 'KG': '🇰🇬', 'LA': '🇱🇦',
+  'LV': '🇱🇻', 'LB': '🇱🇧', 'LS': '🇱🇸', 'LR': '🇱🇷', 'LY': '🇱🇾',
+  'LI': '🇱🇮', 'LT': '🇱🇹', 'LU': '🇱🇺', 'MG': '🇲🇬', 'MW': '🇲🇼',
+  'MY': '🇲🇾', 'MV': '🇲🇻', 'ML': '🇲🇱', 'MT': '🇲🇹', 'MR': '🇲🇷',
+  'MU': '🇲🇺', 'MX': '🇲🇽', 'MD': '🇲🇩', 'MC': '🇲🇨', 'MN': '🇲🇳',
+  'ME': '🇲🇪', 'MA': '🇲🇦', 'MZ': '🇲🇿', 'MM': '🇲🇲', 'NA': '🇳🇦',
+  'NP': '🇳🇵', 'NL': '🇳🇱', 'NZ': '🇳🇿', 'NI': '🇳🇮', 'NE': '🇳🇪',
+  'NG': '🇳🇬', 'KP': '🇰🇵', 'MK': '🇲🇰', 'NO': '🇳🇴', 'OM': '🇴🇲',
+  'PK': '🇵🇰', 'PS': '🇵🇸', 'PA': '🇵🇦', 'PG': '🇵🇬', 'PY': '🇵🇾',
+  'PE': '🇵🇪', 'PH': '🇵🇭', 'PL': '🇵🇱', 'PT': '🇵🇹', 'PR': '🇵🇷',
+  'QA': '🇶🇦', 'RO': '🇷🇴', 'RU': '🇷🇺', 'RW': '🇷🇼', 'SA': '🇸🇦',
+  'SN': '🇸🇳', 'RS': '🇷🇸', 'SL': '🇸🇱', 'SG': '🇸🇬', 'SK': '🇸🇰',
+  'SI': '🇸🇮', 'SO': '🇸🇴', 'ZA': '🇿🇦', 'KR': '🇰🇷', 'SS': '🇸🇸',
+  'ES': '🇪🇸', 'LK': '🇱🇰', 'SD': '🇸🇩', 'SR': '🇸🇷', 'SE': '🇸🇪',
+  'CH': '🇨🇭', 'SY': '🇸🇾', 'TW': '🇹🇼', 'TJ': '🇹🇯', 'TZ': '🇹🇿',
+  'TH': '🇹🇭', 'TL': '🇹🇱', 'TG': '🇹🇬', 'TT': '🇹🇹', 'TN': '🇹🇳',
+  'TR': '🇹🇷', 'TM': '🇹🇲', 'UG': '🇺🇬', 'UA': '🇺🇦', 'AE': '🇦🇪',
+  'GB': '🇬🇧', 'US': '🇺🇸', 'UY': '🇺🇾', 'UZ': '🇺🇿', 'VE': '🇻🇪',
+  'VN': '🇻🇳', 'YE': '🇾🇪', 'ZM': '🇿🇲', 'ZW': '🇿🇼',
+};
+
+export function resolveFlag(raw) {
+  if (!raw) return '🏳️';
+  const trimmed = raw.trim();
+  return FLAG_MAP[trimmed]
+    ?? FLAG_MAP[trimmed.toUpperCase()]
+    ?? FLAG_MAP[trimmed.toLowerCase().replace(/\b\w/g, c => c.toUpperCase())]
+    ?? '🏳️';
+}
+
 export function deriveMatchType(m, wtaPlayerIds = new Set()) {
   const p1Name     = m.player1?.name ?? '';
   const p2Name     = m.player2?.name ?? '';
@@ -21,7 +171,7 @@ export function deriveMatchType(m, wtaPlayerIds = new Set()) {
 
   const isDoubles = p1Name.includes('/') || p2Name.includes('/');
 
-  // Trust stored value for ITF and UTR — it was set correctly at sync time
+  // Trust stored value for ITF and UTR — set correctly at sync time
   if (stored.startsWith('itf_') || stored.startsWith('utr_')) return stored;
 
   // UTR by name (fallback for old rows)
@@ -61,7 +211,14 @@ export function deriveMatchType(m, wtaPlayerIds = new Set()) {
 }
 
 function normaliseMatch(m, wtaPlayerIds = new Set()) {
-  const base = {
+  // Patch missing flags on the fly
+  const patchFlag = (p) => {
+    if (!p) return p;
+    const flag = p.flag && p.flag !== '🏳️' ? p.flag : resolveFlag(p.country ?? '');
+    return { ...p, flag };
+  };
+
+  return {
     id:         m.id,
     status:     m.status,
     tournament: m.tournament,
@@ -69,28 +226,11 @@ function normaliseMatch(m, wtaPlayerIds = new Set()) {
     surface:    m.surface,
     score:      m.score ?? null,
     date:       m.match_date,
-    local_date: m.local_date ?? null,   // ← ADD THIS
+    local_date: m.local_date ?? null,
     match_type: m.match_type ?? 'atp_singles',
     winner_id:  m.winner_id ?? null,
-    player1:    m.player1 ?? { id: 'p1', name: 'TBD', flag: '🏳️', rank: 999 },
-    player2:    m.player2 ?? { id: 'p2', name: 'TBD', flag: '🏳️', rank: 999 },
-  };
-  base.match_type = deriveMatchType(base, wtaPlayerIds);
-  return base;
-}
-
-// ── Helper: get today's date boundaries in ISO (UTC) ─────────────────────────
-// We use a ±12h window to safely capture matches stored with any UTC offset.
-// This means a match at 23:00 CEST (21:00 UTC) is ALWAYS in "today".
-function getTodayWindow() {
-  const now   = new Date();
-  const year  = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day   = String(now.getDate()).padStart(2, '0');
-  // Use local calendar date string for start/end
-  return {
-    start: `${year}-${month}-${day}T00:00:00.000Z`,
-    end:   `${year}-${month}-${day}T23:59:59.999Z`,
+    player1:    patchFlag(m.player1 ?? { id: 'p1', name: 'TBD', flag: '🏳️', rank: 999 }),
+    player2:    patchFlag(m.player2 ?? { id: 'p2', name: 'TBD', flag: '🏳️', rank: 999 }),
   };
 }
 
@@ -101,7 +241,8 @@ export async function getLiveMatches(wtaPlayerIds = new Set()) {
       .from('matches')
       .select(MATCH_SELECT)
       .eq('status', 'live')
-      .order('match_date', { ascending: true });
+      .order('match_date', { ascending: true })
+      .limit(30);
 
     if (error) throw error;
     return (data ?? []).map(m => normaliseMatch(m, wtaPlayerIds));
@@ -113,25 +254,16 @@ export async function getLiveMatches(wtaPlayerIds = new Set()) {
 }
 
 // ── Upcoming matches ──────────────────────────────────────────────────────────
-// FIX: use start-of-today (local) instead of NOW as the cutoff.
-// Previously used new Date().toISOString() which cut off matches that started
-// earlier today but are still status='upcoming' in the DB (e.g. a 17:00 UTC
-// match checked at 20:00 UTC = already past the filter, hidden from UI).
-// Now we show all of today's upcoming matches regardless of start time.
 export async function getUpcomingMatches(wtaPlayerIds = new Set()) {
   try {
-    // Start of today in UTC — keeps all today's matches visible all day
-    const now   = new Date();
-    const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-    const startISO = start.toISOString();
-
+    const now = new Date().toISOString();
     const { data, error } = await supabase
       .from('matches')
       .select(MATCH_SELECT)
-      .in('status', ['upcoming', 'live'])
-      .gte('match_date', startISO)
+      .eq('status', 'upcoming')
+      .gte('match_date', now)
       .order('match_date', { ascending: true })
-      .limit(500);
+      .limit(50);
 
     if (error) throw error;
     return (data ?? []).map(m => normaliseMatch(m, wtaPlayerIds));
@@ -142,10 +274,7 @@ export async function getUpcomingMatches(wtaPlayerIds = new Set()) {
   }
 }
 
-// ── Matches by date (for calendar view) ──────────────────────────────────────
-// Uses local_date column if available (set by sync from Europe/Paris TZ).
-// Falls back to a ±1 day UTC window + client-side local date filter for any
-// rows that predate the local_date migration.
+// ── Matches by date ───────────────────────────────────────────────────────────
 export async function getMatchesByDate(dateString, wtaPlayerIds = new Set()) {
   try {
     // Primary: use local_date column
@@ -185,15 +314,13 @@ export async function getMatchesByDate(dateString, wtaPlayerIds = new Set()) {
   }
 }
 
-// ── Rankings ──────────────────────────────────────────────────────────────────
+// ── Rankings (ATP/WTA from rankings table) ────────────────────────────────────
 export async function getRankings(tour = 'ATP') {
   try {
     const { data, error } = await supabase
       .from('rankings')
       .select(`
-        rank,
-        points,
-        prev_rank,
+        rank, points, prev_rank,
         players (
           id, name, country, flag,
           wins, losses, ace_avg,
@@ -202,12 +329,15 @@ export async function getRankings(tour = 'ATP') {
       `)
       .eq('tour', tour)
       .order('rank', { ascending: true })
-      .limit(50);
+      .limit(100);
 
     if (error) throw error;
 
     return (data ?? []).map(r => ({
       ...r.players,
+      flag: r.players?.flag && r.players.flag !== '🏳️'
+        ? r.players.flag
+        : resolveFlag(r.players?.country ?? ''),
       rank:      r.rank,
       points:    r.points,
       prev_rank: r.prev_rank,
@@ -271,35 +401,129 @@ export async function getHeadToHead(p1Id, p2Id) {
   }
 }
 
-// ── Prediction engine ─────────────────────────────────────────────────────────
+// ── AI-Powered Prediction engine ──────────────────────────────────────────────
+// Uses /api/chat (Gemini) for intelligent, multi-factor analysis.
+// Falls back to algorithmic prediction if AI is unavailable.
 export async function getPrediction(match) {
   const p1 = match.player1;
   const p2 = match.player2;
-  const rankEdge    = (p2.rank - p1.rank) * 1.2;
-  const surfaceEdge = match.surface === p1.surface_pref ? 6
-                    : match.surface === p2.surface_pref ? -6 : 0;
-  const raw      = 50 + rankEdge + surfaceEdge;
-  const p1WinPct = Math.min(88, Math.max(12, Math.round(raw)));
 
-  return {
-    player1_win_pct: p1WinPct,
-    player2_win_pct: 100 - p1WinPct,
-    confidence: Math.abs(p1WinPct - 50) > 20 ? 'High'
-              : Math.abs(p1WinPct - 50) > 10 ? 'Medium' : 'Low',
-    key_factors: [
-      `Ranking: #${p1.rank} vs #${p2.rank}`,
-      `Surface advantage: ${
-        match.surface === p1.surface_pref ? p1.name
-        : match.surface === p2.surface_pref ? p2.name
-        : 'Neutral'
-      }`,
-      `Recent form: ${p1.recent_form ?? '---'} vs ${p2.recent_form ?? '---'}`,
-    ],
-    predicted_winner: p1WinPct >= 50 ? p1.name : p2.name,
+  // ── Algorithmic baseline (always computed — used as fallback + AI seed) ──
+  const rankDiff    = (p2.rank ?? 100) - (p1.rank ?? 100);
+  const rankEdge    = Math.min(25, Math.max(-25, rankDiff * 0.8));
+  const surfaceEdge = match.surface === p1.surface_pref ? 7
+                    : match.surface === p2.surface_pref ? -7 : 0;
+
+  // Recent form: count W's in last 5
+  const countWins = (form) => (form ?? '').split('').filter(c => c === 'W').length;
+  const p1FormWins = countWins(p1.recent_form);
+  const p2FormWins = countWins(p2.recent_form);
+  const formEdge   = (p1FormWins - p2FormWins) * 2;
+
+  // Serve stats
+  const p1ServeEdge = ((p1.first_serve_pct ?? 60) - (p2.first_serve_pct ?? 60)) * 0.15;
+  const p1AceEdge   = ((p1.ace_avg ?? 5) - (p2.ace_avg ?? 5)) * 0.5;
+
+  const rawPct   = 50 + rankEdge + surfaceEdge + formEdge + p1ServeEdge + p1AceEdge;
+  const basePct  = Math.min(88, Math.max(12, Math.round(rawPct)));
+
+  const baseFactors = [
+    `Ranking: #${p1.rank ?? '?'} vs #${p2.rank ?? '?'} (${rankDiff > 0 ? '+' : ''}${rankDiff} diff)`,
+    `Surface: ${match.surface ?? 'Hard'} — ${
+      match.surface === p1.surface_pref ? `${p1.name?.split(' ').pop()} prefers this surface (+7%)`
+      : match.surface === p2.surface_pref ? `${p2.name?.split(' ').pop()} prefers this surface (-7%)`
+      : 'Neutral for both players'
+    }`,
+    `Recent form: ${p1.recent_form ?? '-----'} vs ${p2.recent_form ?? '-----'}`,
+    p1.first_serve_pct || p2.first_serve_pct
+      ? `1st serve %: ${p1.first_serve_pct ?? '--'}% vs ${p2.first_serve_pct ?? '--'}%`
+      : null,
+  ].filter(Boolean);
+
+  const baseResult = {
+    player1_win_pct:  basePct,
+    player2_win_pct:  100 - basePct,
+    confidence:       Math.abs(basePct - 50) > 20 ? 'High' : Math.abs(basePct - 50) > 10 ? 'Medium' : 'Low',
+    key_factors:      baseFactors,
+    predicted_winner: basePct >= 50 ? p1.name : p2.name,
+    ai_analysis:      null,
+    source:           'algorithmic',
   };
+
+  // ── Try AI enhancement via /api/chat ──────────────────────────────────────
+  try {
+    const prompt = `You are a professional tennis prediction model. Analyze this match and provide a win probability.
+
+MATCH: ${p1.name ?? 'Player 1'} vs ${p2.name ?? 'Player 2'}
+TOURNAMENT: ${match.tournament ?? 'Unknown'} (${match.round ?? ''})
+SURFACE: ${match.surface ?? 'Hard'}
+
+PLAYER 1 - ${p1.name}:
+- ATP/WTA Rank: #${p1.rank ?? 'Unranked'}
+- Country: ${p1.country ?? 'Unknown'}
+- Surface preference: ${p1.surface_pref ?? 'Hard'}
+- Recent form (last 5): ${p1.recent_form ?? 'N/A'}
+- 1st serve %: ${p1.first_serve_pct ?? 'N/A'}%
+- Aces per match: ${p1.ace_avg ?? 'N/A'}
+- Season W/L: ${p1.wins ?? 0}W / ${p1.losses ?? 0}L
+
+PLAYER 2 - ${p2.name}:
+- ATP/WTA Rank: #${p2.rank ?? 'Unranked'}
+- Country: ${p2.country ?? 'Unknown'}
+- Surface preference: ${p2.surface_pref ?? 'Hard'}
+- Recent form (last 5): ${p2.recent_form ?? 'N/A'}
+- 1st serve %: ${p2.first_serve_pct ?? 'N/A'}%
+- Aces per match: ${p2.ace_avg ?? 'N/A'}
+- Season W/L: ${p2.wins ?? 0}W / ${p2.losses ?? 0}L
+
+ALGORITHMIC BASELINE: ${p1.name} has ${basePct}% win probability.
+
+Respond with ONLY valid JSON (no markdown, no extra text):
+{
+  "player1_win_pct": <integer 12-88>,
+  "confidence": "<High|Medium|Low>",
+  "predicted_winner": "<player name>",
+  "key_factors": ["<factor 1>", "<factor 2>", "<factor 3>"],
+  "ai_analysis": "<2-3 sentence expert analysis explaining the prediction>"
+}`;
+
+    const response = await sendChatMessage(
+      [{ role: 'user', content: prompt }],
+      'You are a professional tennis analytics AI. Respond only with valid JSON.'
+    );
+
+    const rawText = response?.content?.[0]?.text ?? '';
+    // Strip any markdown code fences
+    const cleaned = rawText.replace(/```json\s*/gi, '').replace(/```/g, '').trim();
+    const parsed  = JSON.parse(cleaned);
+
+    // Validate the AI response has required fields
+    if (
+      typeof parsed.player1_win_pct === 'number' &&
+      parsed.player1_win_pct >= 5 &&
+      parsed.player1_win_pct <= 95 &&
+      parsed.confidence &&
+      parsed.ai_analysis
+    ) {
+      const aiPct = Math.min(92, Math.max(8, Math.round(parsed.player1_win_pct)));
+      return {
+        player1_win_pct:  aiPct,
+        player2_win_pct:  100 - aiPct,
+        confidence:       parsed.confidence,
+        key_factors:      parsed.key_factors ?? baseFactors,
+        predicted_winner: aiPct >= 50 ? p1.name : p2.name,
+        ai_analysis:      parsed.ai_analysis,
+        source:           'ai',
+      };
+    }
+  } catch (e) {
+    // AI failed — log and fall through to algorithmic result
+    console.warn('[getPrediction] AI failed, using algorithmic fallback:', e.message);
+  }
+
+  return baseResult;
 }
 
-// ── AI Chat ───────────────────────────────────────────────────────────────────
 // ── AI Chat ───────────────────────────────────────────────────────────────────
 export async function sendChatMessage(messages, systemContext = '') {
   const res = await fetch('/api/chat', {
@@ -311,13 +535,10 @@ export async function sendChatMessage(messages, systemContext = '') {
     const text = await res.text();
     throw new Error(`Chat error ${res.status}: ${text.slice(0, 200)}`);
   }
-  // Return the full response object so hooks.js can extract content correctly.
-  // api/chat.js returns { content: [{ text: "..." }] }
-  // hooks.js reads: response?.content?.[0]?.text
   return res.json();
 }
 
-// ── Mock data fallback (minimal — only used if ALL queries fail) ──────────────
+// ── Mock data fallback ────────────────────────────────────────────────────────
 export const MOCK_DATA = {
   matches:  [],
   players:  [],

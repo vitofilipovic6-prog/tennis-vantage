@@ -174,6 +174,9 @@ export function useActiveDates(startDate, endDate) {
 }
 
 // ── useRankings ───────────────────────────────────────────────────────────────
+// Now supports: ATP, WTA, ITF_MEN, ITF_WOMEN, UTR_MEN, UTR_WOMEN
+// ITF/UTR pull from the players table joined via matches (match_type filter).
+// ATP/WTA pull from the rankings table as before.
 const rankingsCache = {};
 
 export function useRankings(tour = 'ATP') {
@@ -191,7 +194,12 @@ export function useRankings(tour = 'ATP') {
     let cancelled = false;
     setLoading(true);
     setRankings([]);
-    getRankings(tour)
+
+    const fetchFn = ['ITF_MEN', 'ITF_WOMEN', 'UTR_MEN', 'UTR_WOMEN'].includes(tour)
+      ? fetchAltRankings(tour)
+      : getRankings(tour);
+
+    fetchFn
       .then(data => {
         if (!cancelled) {
           rankingsCache[tour] = data;
@@ -204,7 +212,128 @@ export function useRankings(tour = 'ATP') {
     return () => { cancelled = true; };
   }, [tour]);
 
-  return { rankings, loading, error };
+  // Allow cache-busting from outside
+  const refresh = useCallback(() => {
+    delete rankingsCache[tour];
+    setLoading(true);
+    setRankings([]);
+    const fetchFn = ['ITF_MEN', 'ITF_WOMEN', 'UTR_MEN', 'UTR_WOMEN'].includes(tour)
+      ? fetchAltRankings(tour)
+      : getRankings(tour);
+    fetchFn
+      .then(data => { rankingsCache[tour] = data; setRankings(data); setError(null); })
+      .catch(e => setError(e.message ?? 'Failed'))
+      .finally(() => setLoading(false));
+  }, [tour]);
+
+  return { rankings, loading, error, refresh };
+}
+
+// Fetch ITF/UTR "rankings" — derives a pseudo-ranking from players
+// who appear in matches of the corresponding match_type.
+// Since ITF/UTR don't have a real rankings table, we pull distinct players
+// from those matches and sort by win count descending.
+async function fetchAltRankings(tour) {
+  const typeMap = {
+    ITF_MEN:   ['itf_men_singles', 'itf_men_doubles'],
+    ITF_WOMEN: ['itf_women_singles', 'itf_women_doubles'],
+    UTR_MEN:   ['utr_men_singles'],
+    UTR_WOMEN: ['utr_women_singles'],
+  };
+  const types = typeMap[tour] ?? [];
+
+  try {
+    // Pull all finished matches of this type, with player info
+    const { data, error } = await supabase
+      .from('matches')
+      .select(`
+        winner_id,
+        player1:players!player1_id(id, name, country, flag, rank, wins, losses, surface_pref, recent_form),
+        player2:players!player2_id(id, name, country, flag, rank, wins, losses, surface_pref, recent_form)
+      `)
+      .in('match_type', types)
+      .order('match_date', { ascending: false })
+      .limit(500);
+
+    if (error) throw error;
+
+    // Build win-count map keyed by player id
+    const playerMap = new Map();
+    const winCount  = new Map();
+
+    for (const m of (data ?? [])) {
+      for (const p of [m.player1, m.player2]) {
+        if (!p?.id || p.name?.includes('/')) continue; // skip doubles pairs
+        if (!playerMap.has(p.id)) {
+          playerMap.set(p.id, p);
+          winCount.set(p.id, 0);
+        }
+      }
+      if (m.winner_id) {
+        winCount.set(m.winner_id, (winCount.get(m.winner_id) ?? 0) + 1);
+      }
+    }
+
+    // Sort by wins desc, assign pseudo-rank
+    return [...playerMap.values()]
+      .sort((a, b) => (winCount.get(b.id) ?? 0) - (winCount.get(a.id) ?? 0))
+      .map((p, i) => ({
+        ...p,
+        rank:   i + 1,
+        points: winCount.get(p.id) ?? 0, // "points" = match wins in ITF/UTR context
+        prev_rank: null,
+      }));
+  } catch (e) {
+    console.error(`[fetchAltRankings:${tour}]`, e.message);
+    return [];
+  }
+}
+
+// ── useAllPlayers ─────────────────────────────────────────────────────────────
+// Fetches ALL players from the DB (not just those in today's matches).
+// This feeds PlayerSearchModal so users can find Alcaraz, Sinner etc.
+let allPlayersCache     = null;
+let allPlayersCacheTime = 0;
+const ALL_PLAYERS_TTL   = 10 * 60 * 1000; // 10 min
+
+export function useAllPlayers() {
+  const isStale = Date.now() - allPlayersCacheTime > ALL_PLAYERS_TTL;
+  const [players, setPlayers] = useState(allPlayersCache && !isStale ? allPlayersCache : []);
+  const [loading, setLoading] = useState(!allPlayersCache || isStale);
+
+  useEffect(() => {
+    const stale = Date.now() - allPlayersCacheTime > ALL_PLAYERS_TTL;
+    if (allPlayersCache && !stale) {
+      setPlayers(allPlayersCache);
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLoading(true);
+
+    // Fetch top 500 ranked players — covers all ATP/WTA stars + ITF/UTR players
+    supabase
+      .from('players')
+      .select('id, name, country, flag, rank, wins, losses, surface_pref, first_serve_pct, recent_form')
+      .not('name', 'is', null)
+      .order('rank', { ascending: true, nullsLast: true })
+      .limit(500)
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) { setLoading(false); return; }
+        const sorted = (data ?? []).filter(p => p.name && !p.name.includes('/'));
+        allPlayersCache     = sorted;
+        allPlayersCacheTime = Date.now();
+        setPlayers(sorted);
+        setLoading(false);
+      })
+      .catch(() => { if (!cancelled) setLoading(false); });
+
+    return () => { cancelled = true; };
+  }, []);
+
+  return { players, loading };
 }
 
 // ── usePrediction ─────────────────────────────────────────────────────────────
@@ -245,12 +374,13 @@ export function usePlayerSearch() {
 
     supabase
       .from('players')
-      .select('id, name, country, flag, rank')
+      .select('id, name, country, flag, rank, surface_pref, recent_form')
       .ilike('name', `%${query}%`)
-      .order('rank', { ascending: true })
+      .not('name', 'is', null)
+      .order('rank', { ascending: true, nullsLast: true })
       .limit(20)
       .then(({ data }) => {
-        if (!cancelled) setResults(data ?? []);
+        if (!cancelled) setResults((data ?? []).filter(p => p.name && !p.name.includes('/')));
       })
       .catch(() => { if (!cancelled) setResults([]); })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -263,7 +393,7 @@ export function usePlayerSearch() {
 
 // ── useAiChat ─────────────────────────────────────────────────────────────────
 export function useAiChat(contextMatch = null) {
-  const GREETING = "Hi! I'm your AI tennis analyst. Ask me anything about match predictions, player stats, or tournament strategies.";
+  const GREETING = "Hi! I'm your AI tennis analyst powered by Gemini. Ask me anything about match predictions, player stats, head-to-head records, surface analysis, or tournament strategies.";
 
   const [messages, setMessages] = useState([{ role: 'assistant', content: GREETING }]);
   const [typing, setTyping]     = useState(false);
@@ -284,8 +414,8 @@ export function useAiChat(contextMatch = null) {
 
     try {
       const systemContext = contextMatch
-        ? `You are a professional tennis analyst. Context: ${contextMatch.player1.name} vs ${contextMatch.player2.name} on ${contextMatch.surface} at ${contextMatch.tournament}, ${contextMatch.round}.`
-        : 'You are a professional tennis analyst. Provide insightful, data-driven analysis.';
+        ? `You are a professional tennis analyst for TennisVantage. Current match context: ${contextMatch.player1?.name ?? 'Player 1'} (Rank #${contextMatch.player1?.rank ?? '?'}, ${contextMatch.player1?.country ?? ''}) vs ${contextMatch.player2?.name ?? 'Player 2'} (Rank #${contextMatch.player2?.rank ?? '?'}, ${contextMatch.player2?.country ?? ''}) on ${contextMatch.surface ?? 'Hard'} at ${contextMatch.tournament ?? 'Unknown tournament'}, ${contextMatch.round ?? ''}. P1 recent form: ${contextMatch.player1?.recent_form ?? 'N/A'}. P2 recent form: ${contextMatch.player2?.recent_form ?? 'N/A'}. Give concise, expert analysis.`
+        : `You are a professional tennis analyst for TennisVantage, an ATP/WTA analytics app. Provide insightful, data-driven analysis. Cover ATP, WTA, ITF and UTR tennis. Be concise and expert. Use stats, surface analysis, head-to-head records, and current form to inform your answers.`;
 
       const history  = [...messagesRef.current, userMsg].map(m => ({ role: m.role, content: m.content }));
       const response = await sendChatMessage(history, systemContext);
