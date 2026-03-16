@@ -22,6 +22,7 @@ import { Logo, Btn, Badge, Card } from '../components/ui';
 import MatchCalendar from '../components/MatchCalendar';
 import PlayerBioModal from '../components/PlayerBioModal';
 import PlayerSearchModal from '../components/PlayerSearchModal';
+import ProfilePage from './ProfilePage';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MATCH TYPE FILTER DEFINITIONS
@@ -51,6 +52,7 @@ export default function Dashboard({ showToast }) {
   const [selectedMatch, setSelectedMatch] = useState(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [bioPlayer, setBioPlayer] = useState(null);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   const { live, upcoming, loading: matchesLoading, error: matchesError, refresh } = useMatches();
   const allMatches = useMemo(() => [...live, ...upcoming], [live, upcoming]);
@@ -197,6 +199,15 @@ export default function Dashboard({ showToast }) {
             {firstName?.[0]?.toUpperCase() ?? profile?.full_name?.[0]?.toUpperCase() ?? 'P'}
           </button>
         </div>
+        {/* Profile page — opened from mobile avatar button */}
+        {profileOpen && (
+          <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'var(--bg)', overflowY: 'auto' }}>
+            <ProfilePage
+              onBack={() => setProfileOpen(false)}
+              showToast={showToast}
+            />
+          </div>
+        )}
       </nav>
 
       {/* ── Main content ─────────────────────────────────────────────────── */}
@@ -249,7 +260,7 @@ export default function Dashboard({ showToast }) {
       {/* ── Modals ───────────────────────────────────────────────────────── */}
       {searchOpen && (
         <PlayerSearchModal
-          players={allPlayersForSearch}
+          allPlayers={allPlayersForSearch}
           onClose={() => setSearchOpen(false)}
           onSelectPlayer={p => { setBioPlayer(p); setSearchOpen(false); }}
         />
