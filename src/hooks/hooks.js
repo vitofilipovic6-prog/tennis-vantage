@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   getLiveMatches, getUpcomingMatches, getRankings,
-  getMatchesByDate, getPrediction, sendChatMessage, MOCK_DATA,
+  getMatchesByDate, getPrediction, sendChatMessage,
 } from '../services/tennisApi';
 import { supabase } from '../services/supabase';
 
@@ -22,10 +22,6 @@ export function detectTour(tournamentNameOrMatch) {
 }
 
 // ── useMatches ────────────────────────────────────────────────────────────────
-// Returns:
-//  live     — all currently live matches
-//  upcoming — upcoming + live matches from now onwards (for Predictions tab)
-//  loading, error, refresh
 export function useMatches() {
   const [live, setLive]         = useState([]);
   const [upcoming, setUpcoming] = useState([]);
@@ -144,8 +140,7 @@ export function useActiveDates(startDate, endDate) {
   const [loading, setLoading] = useState(!activeDatesCache || isStale);
 
   useEffect(() => {
-    const now   = Date.now();
-    const stale = now - activeDatesCacheTime > ACTIVE_DATES_TTL;
+    const stale = Date.now() - activeDatesCacheTime > ACTIVE_DATES_TTL;
 
     if (activeDatesCache && !stale) {
       setActiveDates(activeDatesCache);
@@ -221,18 +216,14 @@ export function usePrediction(match) {
   const matchId = match?.id ?? null;
 
   useEffect(() => {
-    if (!match) { setPrediction(null); setError(null); return; }
-
+    if (!matchId) { setPrediction(null); setError(null); return; }
     let cancelled = false;
     setLoading(true);
     setError(null);
-    setPrediction(null);
-
     getPrediction(match)
-      .then(data => { if (!cancelled) setPrediction(data); })
+      .then(data => { if (!cancelled) { setPrediction(data); setError(null); } })
       .catch(e   => { if (!cancelled) setError(e.message ?? 'Prediction failed'); })
       .finally(() => { if (!cancelled) setLoading(false); });
-
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [matchId]);
@@ -240,35 +231,94 @@ export function usePrediction(match) {
   return { prediction, loading, error };
 }
 
-// ── useAiChat ─────────────────────────────────────────────────────────────────
-export function useAiChat() {
-  const [messages, setMessages] = useState([]);
-  const [loading, setLoading]   = useState(false);
-  const [error, setError]       = useState(null);
+// ── usePlayerSearch ───────────────────────────────────────────────────────────
+export function usePlayerSearch() {
+  const [query, setQuery]     = useState('');
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
 
-  const send = useCallback(async (text) => {
-    if (!text.trim()) return;
+  useEffect(() => {
+    if (!query.trim()) { setResults([]); return; }
 
-    const userMsg = { role: 'user', content: text };
-    const next    = [...messages, userMsg];
-    setMessages(next);
+    let cancelled = false;
     setLoading(true);
-    setError(null);
+
+    supabase
+      .from('players')
+      .select('id, name, country, flag, rank')
+      .ilike('name', `%${query}%`)
+      .order('rank', { ascending: true })
+      .limit(20)
+      .then(({ data }) => {
+        if (!cancelled) setResults(data ?? []);
+      })
+      .catch(() => { if (!cancelled) setResults([]); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+
+    return () => { cancelled = true; };
+  }, [query]);
+
+  return { query, setQuery, results, loading };
+}
+
+// ── useAiChat ─────────────────────────────────────────────────────────────────
+export function useAiChat(contextMatch = null) {
+  const GREETING = "Hi! I'm your AI tennis analyst. Ask me anything about match predictions, player stats, or tournament strategies.";
+
+  const [messages, setMessages] = useState([{ role: 'assistant', content: GREETING }]);
+  const [typing, setTyping]     = useState(false);
+  const bottomRef               = useRef(null);
+  const messagesRef             = useRef(messages);
+
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, typing]);
+
+  const sendMessage = useCallback(async (text) => {
+    if (!text.trim()) return;
+    const userMsg = { role: 'user', content: text };
+    setMessages(prev => [...prev, userMsg]);
+    setTyping(true);
 
     try {
-      const reply = await sendChatMessage(next);
-      setMessages(prev => [...prev, { role: 'assistant', content: reply }]);
-    } catch (e) {
-      setError(e.message ?? 'Chat failed');
+      const systemContext = contextMatch
+        ? `You are a professional tennis analyst. Context: ${contextMatch.player1.name} vs ${contextMatch.player2.name} on ${contextMatch.surface} at ${contextMatch.tournament}, ${contextMatch.round}.`
+        : 'You are a professional tennis analyst. Provide insightful, data-driven analysis.';
+
+      const history  = [...messagesRef.current, userMsg].map(m => ({ role: m.role, content: m.content }));
+      const response = await sendChatMessage(history, systemContext);
+      const aiText   = response?.content?.[0]?.text ?? response?.reply ?? "Sorry, I couldn't process that.";
+      setMessages(prev => [...prev, { role: 'assistant', content: aiText }]);
+    } catch {
+      setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ Connection error. Please try again.' }]);
     } finally {
-      setLoading(false);
+      setTyping(false);
     }
-  }, [messages]);
+  }, [contextMatch]);
 
   const reset = useCallback(() => {
-    setMessages([]);
-    setError(null);
+    setMessages([{ role: 'assistant', content: 'New session started. Ask me anything about tennis!' }]);
   }, []);
 
-  return { messages, loading, error, send, reset };
+  return { messages, typing, sendMessage, reset, bottomRef };
+}
+
+// ── useToast ──────────────────────────────────────────────────────────────────
+export function useToast() {
+  const [toasts, setToasts] = useState([]);
+  const idRef               = useRef(0);
+
+  const show = useCallback((message, type = 'info', duration = 4000) => {
+    const id = ++idRef.current;
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), duration);
+  }, []);
+
+  const dismiss = useCallback((id) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+
+  return { toasts, show, dismiss };
 }
