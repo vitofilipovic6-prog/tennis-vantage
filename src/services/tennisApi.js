@@ -13,14 +13,6 @@ const MATCH_SELECT = `
   )
 `;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// deriveMatchType — CLIENT-SIDE safety net
-// Priority order:
-//  1. Slash in player name  → doubles branch
-//  2. wtaPlayerIds Set      → WTA (most reliable for combined events)
-//  3. Tournament name       → WTA keyword check
-//  4. stored match_type     → trust the DB as final fallback
-// ─────────────────────────────────────────────────────────────────────────────
 export function deriveMatchType(m, wtaPlayerIds = new Set()) {
   const p1Name     = m.player1?.name ?? '';
   const p2Name     = m.player2?.name ?? '';
@@ -29,18 +21,27 @@ export function deriveMatchType(m, wtaPlayerIds = new Set()) {
 
   const isDoubles = p1Name.includes('/') || p2Name.includes('/');
 
+  // ITF check — trust stored value first, then tournament name
+  const isItfStored = stored.startsWith('itf_');
+  const isItfByName = tournament.includes('itf') ||
+    /\bw\d{2}\b/.test(tournament) ||
+    /\bm\d{2}\b/.test(tournament);
+
+  if (isItfStored) return stored;
+  if (isItfByName) {
+    const isWomen = tournament.includes('women') || /\bw\d{2}\b/.test(tournament);
+    if (isDoubles) return isWomen ? 'itf_women_doubles' : 'itf_men_doubles';
+    return isWomen ? 'itf_women_singles' : 'itf_men_singles';
+  }
+
   const p1IsWta         = wtaPlayerIds.size > 0 && wtaPlayerIds.has(m.player1?.id);
   const p2IsWta         = wtaPlayerIds.size > 0 && wtaPlayerIds.has(m.player2?.id);
   const isWtaByRankings = p1IsWta || p2IsWta;
-
-  const isWtaByTournament =
-    tournament.includes('wta') ||
-    tournament.includes('women') ||
-    tournament.includes('ladies');
-
+  const isWtaByTournament = tournament.includes('wta') ||
+    tournament.includes('women') || tournament.includes('ladies');
   const isWtaByStored   = stored === 'wta_singles' || stored === 'wta_doubles';
   const isMixedByStored = stored === 'mixed_doubles';
-  const isWta           = isWtaByRankings || isWtaByTournament || isWtaByStored;
+  const isWta = isWtaByRankings || isWtaByTournament || isWtaByStored;
 
   if (isDoubles) {
     if (isMixedByStored) return 'mixed_doubles';
