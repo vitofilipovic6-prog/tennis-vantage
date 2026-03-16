@@ -27,11 +27,11 @@ import PlayerSearchModal from '../components/PlayerSearchModal';
 // MATCH TYPE FILTER DEFINITIONS
 // ─────────────────────────────────────────────────────────────────────────────
 const MATCH_FILTERS = [
-  { id: 'atp_singles',   label: 'ATP',           shortLabel: 'ATP',    color: '#60a5fa' },
-  { id: 'wta_singles',   label: 'WTA',           shortLabel: 'WTA',    color: '#f472b6' },
-  { id: 'atp_doubles',   label: 'ATP Doubles',   shortLabel: 'ATP 2×', color: '#818cf8' },
-  { id: 'wta_doubles',   label: 'WTA Doubles',   shortLabel: 'WTA 2×', color: '#fb7185' },
-  { id: 'mixed_doubles', label: 'Mixed Doubles', shortLabel: 'Mixed',  color: '#34d399' },
+  { id: 'atp_singles', label: 'ATP', shortLabel: 'ATP', color: '#60a5fa' },
+  { id: 'wta_singles', label: 'WTA', shortLabel: 'WTA', color: '#f472b6' },
+  { id: 'atp_doubles', label: 'ATP Doubles', shortLabel: 'ATP 2×', color: '#818cf8' },
+  { id: 'wta_doubles', label: 'WTA Doubles', shortLabel: 'WTA 2×', color: '#fb7185' },
+  { id: 'mixed_doubles', label: 'Mixed Doubles', shortLabel: 'Mixed', color: '#34d399' },
 ];
 
 // isBeforeToday() REMOVED — caused timezone bugs in Croatia (UTC+2).
@@ -43,10 +43,10 @@ const MATCH_FILTERS = [
 export default function Dashboard({ showToast }) {
   const { user, firstName, logout } = useAuth();
 
-  const [activeTab, setActiveTab]         = useState('matches');
+  const [activeTab, setActiveTab] = useState('matches');
   const [selectedMatch, setSelectedMatch] = useState(null);
-  const [searchOpen, setSearchOpen]       = useState(false);
-  const [bioPlayer, setBioPlayer]         = useState(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [bioPlayer, setBioPlayer] = useState(null);
 
   const { live, upcoming, loading: matchesLoading, error: matchesError, refresh } = useMatches();
   const allMatches = useMemo(() => [...live, ...upcoming], [live, upcoming]);
@@ -70,10 +70,10 @@ export default function Dashboard({ showToast }) {
   }, [allMatches]);
 
   const tabs = [
-    { id: 'matches',     label: 'Matches',  icon: '🎾' },
-    { id: 'predictions', label: 'Predict',  icon: '🔮' },
-    { id: 'rankings',    label: 'Rankings', icon: '🏆' },
-    { id: 'chat',        label: 'AI Chat',  icon: '🤖' },
+    { id: 'matches', label: 'Matches', icon: '🎾' },
+    { id: 'predictions', label: 'Predict', icon: '🔮' },
+    { id: 'rankings', label: 'Rankings', icon: '🏆' },
+    { id: 'chat', label: 'AI Chat', icon: '🤖' },
   ];
 
   async function handleLogout() {
@@ -148,7 +148,7 @@ export default function Dashboard({ showToast }) {
           }}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+            <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
           </svg>
           <span className="hide-sm">Search players…</span>
         </button>
@@ -182,7 +182,7 @@ export default function Dashboard({ showToast }) {
         flex: 1, padding: 'clamp(16px,3vw,32px) clamp(12px,3vw,32px)',
         maxWidth: '1200px', margin: '0 auto', width: '100%',
       }}>
-        {activeTab === 'matches'     && (
+        {activeTab === 'matches' && (
           <MatchesTab
             live={live}
             upcoming={upcoming}
@@ -202,10 +202,10 @@ export default function Dashboard({ showToast }) {
             wtaPlayerIds={wtaPlayerIds}
           />
         )}
-        {activeTab === 'rankings'    && (
+        {activeTab === 'rankings' && (
           <RankingsTab onSelectPlayer={p => { setBioPlayer(p); }} />
         )}
-        {activeTab === 'chat'        && (
+        {activeTab === 'chat' && (
           <AiChatTab contextMatch={selectedMatch} />
         )}
       </main>
@@ -343,8 +343,8 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
   const [calendarDate, setCalendarDate] = useState(null);
   const [calendarDateStr, setCalendarDateStr] = useState(null);
   const [activeFilter, setActiveFilter] = useState('atp_singles');
-  const [pastMatches, setPastMatches]   = useState([]);
-  const [pastLoading, setPastLoading]   = useState(false);
+  const [pastMatches, setPastMatches] = useState([]);
+  const [pastLoading, setPastLoading] = useState(false);
 
   const today = useMemo(() => {
     const d = new Date();
@@ -360,10 +360,10 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
   }, [calendarDate]);
 
   // Is the selected day strictly before today?
-  const isPastDay       = selectedDay && selectedDay < today;
+  const isPastDay = selectedDay && selectedDay < today;
   // Is it today or future? (null = no selection = also show today's matches)
-  const isToday         = !selectedDay || selectedDay.getTime() === today.getTime();
-  const isFutureDay     = selectedDay && selectedDay > today;
+  const isToday = !selectedDay || selectedDay.getTime() === today.getTime();
+  const isFutureDay = selectedDay && selectedDay > today;
 
   // Fetch past-day matches from DB when a past day is selected
   useEffect(() => {
@@ -372,16 +372,16 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
     setPastLoading(true);
     getMatchesByDate(calendarDateStr, wtaPlayerIds)
       .then(data => { if (!cancelled) setPastMatches(data ?? []); })
-      .catch(()   => { if (!cancelled) setPastMatches([]); })
+      .catch(() => { if (!cancelled) setPastMatches([]); })
       .finally(() => { if (!cancelled) setPastLoading(false); });
     return () => { cancelled = true; };
   }, [calendarDateStr, isPastDay, wtaPlayerIds]);
 
   if (loading) return <LoadingGrid />;
-  if (error)   return <ErrorMessage msg={error} onRetry={refresh} />;
+  if (error) return <ErrorMessage msg={error} onRetry={refresh} />;
 
   // ── Drop stale "live" rows from a previous calendar day ───────────────────
-  const todayStr  = today.toLocaleDateString('en-CA');
+  const todayStr = today.toLocaleDateString('en-CA');
   const trulyLive = live.filter(m => {
     if (!m.date) return true;
     return new Date(m.date).toLocaleDateString('en-CA') >= todayStr;
@@ -398,16 +398,16 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
   // today's matches may have slightly different UTC dates)
   const calendarFiltered = isFutureDay
     ? upcoming.filter(m => {
-        if (!m.date) return false;
-        const d = new Date(m.date);
-        d.setHours(0, 0, 0, 0);
-        return d.getTime() === selectedDay.getTime();
-      })
+      if (!m.date) return false;
+      const d = new Date(m.date);
+      d.setHours(0, 0, 0, 0);
+      return d.getTime() === selectedDay.getTime();
+    })
     : upcoming;
 
   const filteredUpcoming = byType(calendarFiltered);
-  const filteredPast     = byType(pastMatches);
-  const activeFilterDef  = MATCH_FILTERS.find(f => f.id === activeFilter);
+  const filteredPast = byType(pastMatches);
+  const activeFilterDef = MATCH_FILTERS.find(f => f.id === activeFilter);
 
   return (
     <div className="tv-fade-up">
@@ -497,10 +497,10 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
 // ─────────────────────────────────────────────────────────────────────────────
 const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = new Set() }) {
   const surfaceColors = { Clay: '#f97316', Hard: '#60a5fa', Grass: '#4ade80' };
-  const surfaceColor  = surfaceColors[m.surface] ?? '#94a3b8';
+  const surfaceColor = surfaceColors[m.surface] ?? '#94a3b8';
 
   const effectiveType = deriveMatchType(m, wtaPlayerIds);
-  const matchTypeDef  = MATCH_FILTERS.find(f => f.id === effectiveType) ?? null;
+  const matchTypeDef = MATCH_FILTERS.find(f => f.id === effectiveType) ?? null;
 
   // isFinished: DB status OR local calendar date already passed.
   // Using local date strings (en-CA = YYYY-MM-DD) avoids UTC offset bugs —
@@ -508,7 +508,7 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = 
   const todayLocal = new Date().toLocaleDateString('en-CA');
   const matchLocal = m.date ? new Date(m.date).toLocaleDateString('en-CA') : todayLocal;
   const isFinished = m.status === 'finished' || matchLocal < todayLocal;
-  const isLive     = m.status === 'live' && !isFinished;
+  const isLive = m.status === 'live' && !isFinished;
 
   return (
     <Card>
@@ -678,7 +678,7 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = 
 function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMatch, wtaPlayerIds }) {
   const [predFilter, setPredFilter] = useState('atp_singles');
   const { prediction, loading: predLoading, error: predError } = usePrediction(selectedMatch);
-  const [h2h, setH2h]               = useState(null);
+  const [h2h, setH2h] = useState(null);
   const [h2hLoading, setH2hLoading] = useState(false);
 
   // Only live + today/future upcoming matches are predictable.
@@ -715,8 +715,8 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
     let cancelled = false;
     setH2hLoading(true);
     getHeadToHead(selectedMatch.player1.id, selectedMatch.player2.id)
-      .then(data  => { if (!cancelled) setH2h(data); })
-      .catch(()   => { if (!cancelled) setH2h(null); })
+      .then(data => { if (!cancelled) setH2h(data); })
+      .catch(() => { if (!cancelled) setH2h(null); })
       .finally(() => { if (!cancelled) setH2hLoading(false); });
     return () => { cancelled = true; };
   }, [selectedMatch?.player1?.id, selectedMatch?.player2?.id]);
@@ -799,8 +799,8 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
 // ─────────────────────────────────────────────────────────────────────────────
 function MatchPickerRow({ match: m, selected, onSelect, wtaPlayerIds = new Set() }) {
   const effectiveType = deriveMatchType(m, wtaPlayerIds);
-  const matchTypeDef  = MATCH_FILTERS.find(f => f.id === effectiveType) ?? null;
-  const isLive        = m.status === 'live';
+  const matchTypeDef = MATCH_FILTERS.find(f => f.id === effectiveType) ?? null;
+  const isLive = m.status === 'live';
 
   return (
     <button
@@ -1018,7 +1018,7 @@ function H2HPanel({ h2h, match: m }) {
 //  - Points column is always shown (just narrower on mobile)
 // ─────────────────────────────────────────────────────────────────────────────
 function RankingsTab({ onSelectPlayer }) {
-  const [tour, setTour]     = useState('ATP');
+  const [tour, setTour] = useState('ATP');
   const [hovRow, setHovRow] = useState(null);
   const { rankings, loading, error } = useRankings(tour);
 
@@ -1247,6 +1247,49 @@ function AiChatTab({ contextMatch }) {
         borderRadius: 'var(--radius)', overflow: 'hidden',
       }}>
 
+        {/* ── Chat header with Clear button ── */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '12px 16px',
+          borderBottom: '1px solid var(--border)',
+          background: 'var(--bg-glass)',
+          flexShrink: 0,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '16px' }}>🤖</span>
+            <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text)' }}>
+              AI Tennis Analyst
+            </span>
+          </div>
+          {messages.length > 1 && (
+            <button
+              onClick={reset}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '5px',
+                padding: '5px 10px', borderRadius: '6px',
+                background: 'transparent', border: '1px solid var(--border)',
+                color: 'var(--text-faint)', fontFamily: 'var(--font-body)',
+                fontSize: '12px', cursor: 'pointer', transition: 'var(--t)',
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.borderColor = 'var(--clay)';
+                e.currentTarget.style.color = 'var(--clay)';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.borderColor = 'var(--border)';
+                e.currentTarget.style.color = 'var(--text-faint)';
+              }}
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4h6v2" />
+              </svg>
+              Clear chat
+            </button>
+          )}
+        </div>
+
+        {/* Messages — rest unchanged */}
+
         {/* Messages */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {messages.length === 0 && (
@@ -1350,7 +1393,7 @@ function AiChatTab({ contextMatch }) {
               }}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={input.trim() && !typing ? '#070B14' : 'var(--text-faint)'} strokeWidth="2.5">
-                <path d="m22 2-7 20-4-9-9-4 20-7z"/><path d="M22 2 11 13"/>
+                <path d="m22 2-7 20-4-9-9-4 20-7z" /><path d="M22 2 11 13" />
               </svg>
             </button>
           </form>

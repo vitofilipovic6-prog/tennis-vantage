@@ -1,9 +1,8 @@
 // src/services/tennisApi.js
 import { supabase } from './supabase';
 
-// ── Shared select string — includes winner_id for finished match display ───────
 const MATCH_SELECT = `
-  id, status, tournament, round, surface, score, match_date, match_type, winner_id,
+  id, status, tournament, round, surface, score, match_date, local_date, match_type, winner_id,
   player1:players!player1_id (
     id, name, country, flag, rank, wins, losses,
     ace_avg, surface_pref, first_serve_pct, recent_form
@@ -53,7 +52,6 @@ export function deriveMatchType(m, wtaPlayerIds = new Set()) {
   return stored;
 }
 
-// ── Normalise a raw Supabase match row into the shape the UI expects ──────────
 function normaliseMatch(m, wtaPlayerIds = new Set()) {
   const base = {
     id:         m.id,
@@ -63,12 +61,12 @@ function normaliseMatch(m, wtaPlayerIds = new Set()) {
     surface:    m.surface,
     score:      m.score ?? null,
     date:       m.match_date,
+    local_date: m.local_date ?? null,   // ← ADD THIS
     match_type: m.match_type ?? 'atp_singles',
     winner_id:  m.winner_id ?? null,
     player1:    m.player1 ?? { id: 'p1', name: 'TBD', flag: '🏳️', rank: 999 },
     player2:    m.player2 ?? { id: 'p2', name: 'TBD', flag: '🏳️', rank: 999 },
   };
-
   base.match_type = deriveMatchType(base, wtaPlayerIds);
   return base;
 }
@@ -133,37 +131,19 @@ export async function getUpcomingMatches(wtaPlayerIds = new Set()) {
 }
 
 // ── Matches by date (for calendar view) ───────────────────────────────────────
-// IMPORTANT: We fetch a ±1 day window and then filter client-side by
-// local date string. This prevents UTC timezone edge cases from hiding
-// matches that are "today" locally but stored as "yesterday" in UTC.
+// Uses local_date column (Europe/Paris timezone) stored at sync time.
+// A match starting 22:00 CEST has local_date = that same day, even if
+// match_date UTC is the next calendar day. No client-side timezone math needed.
 export async function getMatchesByDate(dateString, wtaPlayerIds = new Set()) {
   try {
-    // Build a generous window: dateString day in UTC, ±1 day buffer
-    const d     = new Date(`${dateString}T12:00:00.000Z`); // noon UTC anchor
-    const prev  = new Date(d); prev.setUTCDate(d.getUTCDate() - 1);
-    const next  = new Date(d); next.setUTCDate(d.getUTCDate() + 1);
-
-    const start = `${prev.toISOString().slice(0, 10)}T00:00:00.000Z`;
-    const end   = `${next.toISOString().slice(0, 10)}T23:59:59.999Z`;
-
     const { data, error } = await supabase
       .from('matches')
       .select(MATCH_SELECT)
-      .gte('match_date', start)
-      .lte('match_date', end)
+      .eq('local_date', dateString)
       .order('match_date', { ascending: true });
 
     if (error) throw error;
-
-    const all = (data ?? []).map(m => normaliseMatch(m, wtaPlayerIds));
-
-    // Client-side filter: only keep rows whose LOCAL date matches dateString.
-    // en-CA locale gives YYYY-MM-DD format which we can directly compare.
-    return all.filter(m => {
-      if (!m.date) return false;
-      const localDate = new Date(m.date).toLocaleDateString('en-CA');
-      return localDate === dateString;
-    });
+    return (data ?? []).map(m => normaliseMatch(m, wtaPlayerIds));
   } catch (e) {
     if (e?.name === 'AbortError') return [];
     console.error('[getMatchesByDate]', e.message);

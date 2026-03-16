@@ -1,14 +1,13 @@
-// ─────────────────────────────────────────────────────────────────────────────
 // supabase/functions/_shared/normalize.ts
 //
 // CHANGES IN THIS VERSION:
-//  + MatchRow interface now includes match_type and winner_id fields
-//  + resolveMatchType() — detects ATP/WTA/Mixed Doubles from player gender + name slash
-//  + resolveTour()      — fixed: uses homeTeam.gender first, so WTA Grand Slams are
-//                         not miscategorised as ATP (category.slug = "atp" for both)
-//  + normalizeEvent()   — new primary entry point for tennisapi1 response shape
-//  All prior helpers preserved: detectSurface, slugify, normalizeMatch (legacy),
-//  normalizePlayerFromMatch, normalizeRanking
+//  + MatchRow now includes local_date (Europe/Paris calendar day of match start)
+//  + normalizeEvent stores local_date via computeLocalDate()
+//  + resolveTour: REMOVED challenger/itf blocklist — this was dropping ATP/WTA
+//    qualifying matches. Qualifying rounds are valid ATP/WTA events.
+//  + resolveTour: qualifying fallback now passes through instead of returning null
+//  All prior logic preserved: full FLAG_MAP, detectSurface, resolveMatchType,
+//  normalizeMatch (legacy), normalizePlayerFromMatch, normalizeRanking
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface PlayerRow {
@@ -34,7 +33,8 @@ export interface MatchRow {
   round: string;
   surface: string;
   score: string | null;
-  match_date: string; // ISO string
+  match_date: string;
+  local_date: string;        // YYYY-MM-DD in Europe/Paris timezone
   player1_id: string;
   player2_id: string;
   winner_id: string | null;
@@ -121,18 +121,34 @@ function slugify(name: string): string {
   return name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
 }
 
+// ── Compute local_date in Europe/Paris timezone ───────────────────────────────
+// A match at 22:00 CEST = 20:00 UTC on Mar 15 → local_date = '2025-03-15'
+// A match at 22:30 UTC on Mar 15 = 00:30 CEST Mar 16 → local_date = '2025-03-16'
+// The key: we use the START time in local TZ, so a match stays on the day it began.
+function computeLocalDate(timestampSeconds: number): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Paris',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date(timestampSeconds * 1000));
+  const y = parts.find(p => p.type === 'year')?.value  ?? '';
+  const m = parts.find(p => p.type === 'month')?.value ?? '';
+  const d = parts.find(p => p.type === 'day')?.value   ?? '';
+  return `${y}-${m}-${d}`;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // resolveTour — ATP | WTA | null
 //
-// Strategy: gender first, then block junk circuits.
-// Both players must have a known gender to pass. If either is unknown we
-// fall back to category slug. If still unknown → null (skip the event).
+// Strategy: gender first, then category slug.
+// IMPORTANT CHANGE: removed the challenger/qualifying/itf blocklist.
+// Those keywords were silently dropping ATP and WTA qualifying rounds
+// (e.g. Indian Wells qualifying runs under "ATP Qualifying" category).
+// We now only block truly irrelevant circuits: juniors, wheelchair, exhibition.
 // ─────────────────────────────────────────────────────────────────────────────
 export function resolveTour(event: any): 'ATP' | 'WTA' | null {
   const homeGender = String(event?.homeTeam?.gender ?? '').toUpperCase();
   const awayGender = String(event?.awayTeam?.gender ?? '').toUpperCase();
 
-  // ── Block known junk circuits regardless of gender ────────────────────────
   const tournamentName = String(
     event?.tournament?.uniqueTournament?.name ??
     event?.tournament?.name ??
@@ -144,23 +160,18 @@ export function resolveTour(event: any): 'ATP' | 'WTA' | null {
     event?.tournament?.uniqueTournament?.category?.slug ?? ''
   ).toLowerCase();
 
-  const blockedKeywords = [
-    'challenger', 'itf', 'utr', 'futures',
-    'w15', 'w25', 'w35', 'w40', 'w50', 'w60', 'w75',
-    'm15', 'm25',
-    'junior', 'u18', 'u16',
-    'wheelchair', 'exhibition', 'invitational',
+  // ── Block only truly irrelevant circuits ──────────────────────────────────
+  // NOTE: 'challenger', 'itf', 'futures', 'qualifying' are REMOVED from this
+  // list because they include legitimate ATP/WTA events (qualifying rounds).
+  const hardBlocked = [
+    'junior', 'u18', 'u16', 'u14',
+    'wheelchair', 'exhibition', 'invitational', 'legends',
   ];
-
-  for (const kw of blockedKeywords) {
-    if (tournamentName.includes(kw) || categorySlug.includes(kw)) {
-      return null;
-    }
+  for (const kw of hardBlocked) {
+    if (tournamentName.includes(kw) || categorySlug.includes(kw)) return null;
   }
 
   // ── Gender is ground truth ────────────────────────────────────────────────
-  // Both female → WTA. Both male → ATP.
-  // One each → mixed doubles event, still valid (let resolveMatchType handle it)
   const bothFemale = homeGender === 'F' && awayGender === 'F';
   const bothMale   = homeGender === 'M' && awayGender === 'M';
   const mixed      = (homeGender === 'M' && awayGender === 'F') ||
@@ -174,14 +185,19 @@ export function resolveTour(event: any): 'ATP' | 'WTA' | null {
   if (categorySlug.includes('wta')) return 'WTA';
   if (categorySlug.includes('atp')) return 'ATP';
 
-  return null; // truly unknown — skip
-}
+  // ── Tournament name fallback ──────────────────────────────────────────────
+  if (tournamentName.includes('wta') || tournamentName.includes('women') ||
+      tournamentName.includes('ladies')) return 'WTA';
 
+  // ── Last resort: if valid player names exist, include as ATP ─────────────
+  if (event?.homeTeam?.name && event?.awayTeam?.name) return 'ATP';
+
+  return null;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // resolveMatchType — the exact pill value stored in the DB
 //
-// Pure gender logic — no tournament name guessing needed.
 //   Both F + slash in name  → wta_doubles
 //   Both M + slash in name  → atp_doubles
 //   One M one F + slash     → mixed_doubles
@@ -196,7 +212,6 @@ export function resolveMatchType(
   const homeGender = String(event?.homeTeam?.gender ?? '').toUpperCase();
   const awayGender = String(event?.awayTeam?.gender ?? '').toUpperCase();
 
-  // Doubles = slash in either player name (e.g. "Arevalo/Pavic")
   const isDoubles = homeName.includes('/') || awayName.includes('/');
 
   if (isDoubles) {
@@ -205,9 +220,9 @@ export function resolveMatchType(
     const isMixed    = (homeGender === 'M' && awayGender === 'F') ||
                        (homeGender === 'F' && awayGender === 'M');
 
-    if (isMixed)      return 'mixed_doubles';
-    if (bothFemale)   return 'wta_doubles';
-    if (bothMale)     return 'atp_doubles';
+    if (isMixed)    return 'mixed_doubles';
+    if (bothFemale) return 'wta_doubles';
+    if (bothMale)   return 'atp_doubles';
 
     // Gender missing on doubles — fall back to category
     const catSlug = String(event?.tournament?.category?.slug ?? '').toLowerCase();
@@ -215,32 +230,28 @@ export function resolveMatchType(
     return 'atp_doubles';
   }
 
-  // Singles — gender is the only signal we trust
-  const bothFemale = homeGender === 'F' && awayGender === 'F';
+  // Singles — both female = WTA; one female + unknown = WTA; else ATP
+  const bothFemale   = homeGender === 'F' && awayGender === 'F';
   const eitherFemale = homeGender === 'F' || awayGender === 'F';
 
-  // Must be BOTH female to call it WTA — one female might be mixed/bad data
   if (bothFemale) return 'wta_singles';
-
-  // One female, one unknown — still call WTA (Indian Wells WTA side)
   if (eitherFemale && (homeGender === '' || awayGender === '')) return 'wta_singles';
 
   return 'atp_singles';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// normalizeEvent — PRIMARY entry point for tennisapi1.p.rapidapi.com events
-// Handles both /events/{day}/{month}/{year} and /matches/live shapes
+// normalizeEvent — PRIMARY entry point for tennisapi1.p.rapidapi.com
 // ─────────────────────────────────────────────────────────────────────────────
 export function normalizeEvent(
   raw: any,
   statusOverride?: 'live' | 'upcoming' | 'finished'
 ): { match: MatchRow; p1: PlayerRow; p2: PlayerRow } | null {
-  const matchId  = String(raw?.id ?? '');
-  const p1Name   = String(raw?.homeTeam?.name ?? '');
-  const p2Name   = String(raw?.awayTeam?.name ?? '');
-  const p1Id     = String(raw?.homeTeam?.id ?? slugify(p1Name));
-  const p2Id     = String(raw?.awayTeam?.id ?? slugify(p2Name));
+  const matchId = String(raw?.id ?? '');
+  const p1Name  = String(raw?.homeTeam?.name ?? '');
+  const p2Name  = String(raw?.awayTeam?.name ?? '');
+  const p1Id    = String(raw?.homeTeam?.id ?? slugify(p1Name));
+  const p2Id    = String(raw?.awayTeam?.id ?? slugify(p2Name));
 
   if (!matchId || !p1Name || !p2Name) return null;
 
@@ -249,13 +260,13 @@ export function normalizeEvent(
   if (!statusOverride) {
     const type = String(raw?.status?.type ?? '').toLowerCase();
     const code = Number(raw?.status?.code ?? 0);
-    if (type === 'inprogress')                           status = 'live';
-    else if (type === 'finished' || code === 100)        status = 'finished';
-    else if (code === 31)                                status = 'finished'; // retired
-    else if (type === 'notstarted')                      status = 'upcoming';
+    if (type === 'inprogress')                    status = 'live';
+    else if (type === 'finished' || code === 100) status = 'finished';
+    else if (code === 31)                         status = 'finished'; // retired
+    else if (type === 'notstarted')               status = 'upcoming';
   }
 
-  // ── Tournament / Round ───────────────────────────────────────────────────
+  // ── Tournament / Round ────────────────────────────────────────────────────
   const tournamentName = String(
     raw?.tournament?.uniqueTournament?.name ??
     raw?.tournament?.name ??
@@ -266,8 +277,7 @@ export function normalizeEvent(
   // ── Surface ───────────────────────────────────────────────────────────────
   const groundType = String(
     raw?.tournament?.uniqueTournament?.groundType ??
-    raw?.groundType ??
-    ''
+    raw?.groundType ?? ''
   );
   const surface = detectSurface(tournamentName, groundType);
 
@@ -281,14 +291,9 @@ export function normalizeEvent(
       if (hSet == null && aSet == null) break;
       const hTb = raw.homeScore[`period${i}TieBreak`];
       const aTb = raw.awayScore[`period${i}TieBreak`];
-      // Show tiebreak score next to the loser's set score
-      if (hTb != null) {
-        sets.push(`${hSet}(${hTb})-${aSet}`);
-      } else if (aTb != null) {
-        sets.push(`${hSet}-${aSet}(${aTb})`);
-      } else {
-        sets.push(`${hSet}-${aSet}`);
-      }
+      if (hTb != null)      sets.push(`${hSet}(${hTb})-${aSet}`);
+      else if (aTb != null) sets.push(`${hSet}-${aSet}(${aTb})`);
+      else                  sets.push(`${hSet}-${aSet}`);
     }
     if (sets.length > 0) score = sets.join(', ');
     else if (raw.homeScore.current != null) {
@@ -296,11 +301,12 @@ export function normalizeEvent(
     }
   }
 
-  // ── Match date ────────────────────────────────────────────────────────────
+  // ── Match date + local_date ───────────────────────────────────────────────
   const ts = Number(raw?.startTimestamp ?? 0);
-  const match_date = ts > 0
-    ? new Date(ts * 1000).toISOString()
-    : new Date().toISOString();
+  const match_date = ts > 0 ? new Date(ts * 1000).toISOString() : new Date().toISOString();
+  const local_date = ts > 0
+    ? computeLocalDate(ts)
+    : new Date().toLocaleDateString('en-CA');
 
   // ── Winner ────────────────────────────────────────────────────────────────
   let winner_id: string | null = null;
@@ -314,41 +320,24 @@ export function normalizeEvent(
   // ── Build player rows ─────────────────────────────────────────────────────
   const buildPlayer = (team: any, id: string, name: string): PlayerRow => {
     const countryRaw = String(
-      team?.country?.alpha3 ??
-      team?.country?.alpha2 ??
-      team?.country?.name   ??
-      team?.country?.slug   ??
-      ''
+      team?.country?.alpha3 ?? team?.country?.alpha2 ??
+      team?.country?.name   ?? team?.country?.slug   ?? ''
     );
     return {
-      id,
-      name,
+      id, name,
       country:         countryRaw,
       flag:            resolveFlag(countryRaw),
       rank:            Number(team?.ranking ?? team?.currentRanking ?? 999),
-      wins:            0,
-      losses:          0,
-      ace_avg:         5.5,
-      surface_pref:    surface,
-      first_serve_pct: 60,
-      recent_form:     '- - - - -',
-      injury_notes:    null,
-      fatigue_score:   0,
+      wins:            0, losses: 0, ace_avg: 5.5,
+      surface_pref:    surface, first_serve_pct: 60,
+      recent_form:     '- - - - -', injury_notes: null, fatigue_score: 0,
     };
   };
 
   const match: MatchRow = {
-    id:         matchId,
-    status,
-    tournament: tournamentName,
-    round,
-    surface,
-    score,
-    match_date,
-    player1_id: p1Id,
-    player2_id: p2Id,
-    winner_id,
-    match_type,
+    id: matchId, status, tournament: tournamentName,
+    round, surface, score, match_date, local_date,
+    player1_id: p1Id, player2_id: p2Id, winner_id, match_type,
   };
 
   return {
@@ -359,7 +348,7 @@ export function normalizeEvent(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// normalizeMatch — LEGACY entry point (kept for backward compat with old API)
+// normalizeMatch — LEGACY entry point (kept for backward compat)
 // ─────────────────────────────────────────────────────────────────────────────
 export function normalizeMatch(
   raw: Record<string, unknown>,
@@ -390,17 +379,16 @@ export function normalizeMatch(
   const a = raw.match_awayteam_score ?? raw.away_score;
   if (h != null && a != null) score = `${h} - ${a}`;
 
-  const rawDate  = String(raw.match_date ?? raw.date ?? '');
-  const rawTime  = String(raw.match_time ?? raw.time ?? '00:00:00');
-  const match_date = rawDate
-    ? new Date(`${rawDate}T${rawTime}`).toISOString()
-    : new Date().toISOString();
+  const rawDate    = String(raw.match_date ?? raw.date ?? '');
+  const rawTime    = String(raw.match_time ?? raw.time ?? '00:00:00');
+  const match_date = rawDate ? new Date(`${rawDate}T${rawTime}`).toISOString() : new Date().toISOString();
+  const local_date = rawDate ? rawDate : new Date().toLocaleDateString('en-CA');
 
   return {
-    id: matchId, status, tournament, round, surface, score, match_date,
+    id: matchId, status, tournament, round, surface, score,
+    match_date, local_date,
     player1_id: p1Id, player2_id: p2Id,
-    winner_id: null,
-    match_type: 'atp_singles',
+    winner_id: null, match_type: 'atp_singles',
   };
 }
 
@@ -413,21 +401,18 @@ export function normalizePlayerFromMatch(
 ): PlayerRow {
   const pfx     = side === 'home' ? 'match_hometeam_' : 'match_awayteam_';
   const country = String(raw[`${pfx}country`] ?? raw.player_country ?? raw.country ?? '').toUpperCase().slice(0, 3);
-
   return {
-    id: playerId,
-    name: playerName,
-    country,
-    flag: resolveFlag(country),
-    rank: Number(raw[`${pfx}rank`] ?? raw.player_rank ?? raw.rank ?? 999),
-    wins: Number(raw[`${pfx}wins`] ?? raw.player_wins ?? 0),
-    losses: Number(raw[`${pfx}losses`] ?? raw.player_losses ?? 0),
-    ace_avg: Number(raw.ace_avg ?? 5.5),
-    surface_pref: String(raw.surface_pref ?? 'Hard'),
+    id: playerId, name: playerName, country,
+    flag:            resolveFlag(country),
+    rank:            Number(raw[`${pfx}rank`] ?? raw.player_rank ?? raw.rank ?? 999),
+    wins:            Number(raw[`${pfx}wins`] ?? raw.player_wins ?? 0),
+    losses:          Number(raw[`${pfx}losses`] ?? raw.player_losses ?? 0),
+    ace_avg:         Number(raw.ace_avg ?? 5.5),
+    surface_pref:    String(raw.surface_pref ?? 'Hard'),
     first_serve_pct: Number(raw.first_serve_pct ?? 60),
-    recent_form: String(raw.recent_form ?? '- - - - -'),
-    injury_notes: raw.injury_notes ? String(raw.injury_notes) : null,
-    fatigue_score: 0,
+    recent_form:     String(raw.recent_form ?? '- - - - -'),
+    injury_notes:    raw.injury_notes ? String(raw.injury_notes) : null,
+    fatigue_score:   0,
   };
 }
 
@@ -450,26 +435,25 @@ export function normalizeRanking(
   );
 
   const player: PlayerRow = {
-    id: playerId,
-    name,
-    country: countryRaw,
-    flag: resolveFlag(countryRaw),
+    id: playerId, name,
+    country:         countryRaw,
+    flag:            resolveFlag(countryRaw),
     rank,
-    wins: Number(raw.wins ?? 0),
-    losses: Number(raw.losses ?? 0),
-    ace_avg: 5.5,
-    surface_pref: 'Hard',
+    wins:            Number(raw.wins ?? 0),
+    losses:          Number(raw.losses ?? 0),
+    ace_avg:         5.5,
+    surface_pref:    'Hard',
     first_serve_pct: 60,
-    recent_form: '- - - - -',
-    injury_notes: null,
-    fatigue_score: 0,
+    recent_form:     '- - - - -',
+    injury_notes:    null,
+    fatigue_score:   0,
   };
 
   const ranking: RankingRow = {
     player_id: playerId,
     tour,
     rank,
-    points: Number(raw.points ?? raw.standing_points ?? raw.point ?? 0),
+    points:    Number(raw.points ?? raw.standing_points ?? raw.point ?? 0),
     prev_rank: raw.previousRanking ? Number(raw.previousRanking) : null,
   };
 
