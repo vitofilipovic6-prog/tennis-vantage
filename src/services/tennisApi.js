@@ -300,18 +300,21 @@ export async function getPrediction(match) {
 }
 
 // ── AI Chat ───────────────────────────────────────────────────────────────────
-export async function sendChatMessage(messages) {
+// ── AI Chat ───────────────────────────────────────────────────────────────────
+export async function sendChatMessage(messages, systemContext = '') {
   const res = await fetch('/api/chat', {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ messages }),
+    body:    JSON.stringify({ messages, systemContext }),
   });
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Chat error ${res.status}: ${text.slice(0, 200)}`);
   }
-  const data = await res.json();
-  return data.reply ?? data.content ?? '';
+  // Return the full response object so hooks.js can extract content correctly.
+  // api/chat.js returns { content: [{ text: "..." }] }
+  // hooks.js reads: response?.content?.[0]?.text
+  return res.json();
 }
 
 // ── Mock data fallback (minimal — only used if ALL queries fail) ──────────────
