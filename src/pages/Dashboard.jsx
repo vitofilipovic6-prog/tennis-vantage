@@ -557,7 +557,13 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
   const [dateMatches, setDateMatches] = useState([]);
   const [dateLoading, setDateLoading] = useState(false);
 
-  const todayStr = new Date().toLocaleDateString('en-CA');
+  const todayStr = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Europe/Paris',
+  year:     'numeric',
+  month:    '2-digit',
+  day:      '2-digit',
+}).format(new Date());
+
   const selectedDay = calendarDate;
   const isToday = !calendarDateStr || calendarDateStr === todayStr;
 
@@ -846,7 +852,13 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
   const [h2h, setH2h] = useState(null);
   const [h2hLoading, setH2hLoading] = useState(false);
 
-  const todayStr = new Date().toLocaleDateString('en-CA');
+  const todayStr = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Europe/Paris',
+  year:     'numeric',
+  month:    '2-digit',
+  day:      '2-digit',
+}).format(new Date());
+
   // AFTER — only today's matches + anything currently live
 const predictableMatches = allMatches.filter(m => {
   if (m.status === 'finished') return false;

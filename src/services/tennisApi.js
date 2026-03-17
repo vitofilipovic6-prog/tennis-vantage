@@ -254,18 +254,22 @@ export async function getLiveMatches(wtaPlayerIds = new Set()) {
 }
 
 // ── Upcoming matches ──────────────────────────────────────────────────────────
-// ── Upcoming matches ──────────────────────────────────────────────────────────
 export async function getUpcomingMatches(wtaPlayerIds = new Set()) {
   try {
-    // Use start-of-today UTC so matches scheduled earlier today aren't lost
-    const todayStart = new Date();
-    todayStart.setUTCHours(0, 0, 0, 0);
+    // Use local_date (Paris/CET timezone) for the cutoff — matches the same
+    // timezone used when writing local_date in the Edge Function
+    const todayLocalDate = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Europe/Paris',
+      year:     'numeric',
+      month:    '2-digit',
+      day:      '2-digit',
+    }).format(new Date()); // e.g. "2026-03-17"
 
     const { data, error } = await supabase
       .from('matches')
       .select(MATCH_SELECT)
       .eq('status', 'upcoming')
-      .gte('match_date', todayStart.toISOString()) // ← was: new Date().toISOString()
+      .gte('local_date', todayLocalDate) // ← compare dates not timestamps
       .order('match_date', { ascending: true })
       .limit(50);
 
