@@ -266,11 +266,12 @@ export function useActiveDates(startDate, endDate) {
 
     supabase
       .from('matches')
-      .select('match_date')
-      .gte('match_date', `${start}T00:00:00.000Z`)
-      .lte('match_date', `${end}T23:59:59.999Z`)
+      .select('local_date')                          // ← was: match_date
+      .gte('local_date', start)                      // ← was: match_date with T00:00:00Z
+      .lte('local_date', end)                        // ← was: match_date with T23:59:59Z
+      .not('local_date', 'is', null)
       .then(({ data }) => {
-        const set = new Set((data ?? []).map(r => r.match_date.slice(0, 10)));
+        const set = new Set((data ?? []).map(r => r.local_date));   // ← already YYYY-MM-DD, no slice needed
         activeDatesCache = set;
         activeDatesCacheTime = Date.now();
         setActiveDates(set);

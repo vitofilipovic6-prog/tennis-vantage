@@ -233,15 +233,13 @@ function slugify(name: string): string {
 }
 
 // ── Compute local_date in Europe/Paris timezone ───────────────────────────────
+// ── Compute local_date as UTC date (not Paris-local) ─────────────────────────
 function computeLocalDate(timestampSeconds: number): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Europe/Paris',
-    year: 'numeric', month: '2-digit', day: '2-digit',
-  }).formatToParts(new Date(timestampSeconds * 1000));
-  const y = parts.find(p => p.type === 'year')?.value ?? '';
-  const m = parts.find(p => p.type === 'month')?.value ?? '';
-  const d = parts.find(p => p.type === 'day')?.value ?? '';
-  return `${y}-${m}-${d}`;
+  const d = new Date(timestampSeconds * 1000);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 export function resolveTour(event: any): 'ATP' | 'WTA' | 'ITF' | 'UTR' | null {
