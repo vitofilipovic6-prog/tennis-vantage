@@ -195,10 +195,10 @@ Deno.serve(async (req: Request) => {
       log.push('[MATCHES] No matches to upsert');
     }
 
-    // ── 5. FORCE-FINISH stale matches ─────────────────────────────────────────
+    // ── 5. FORCE-FINISH stale matches ─────────────────────────────────────────────
+    // Uses local_date (Europe/Paris timezone) NOT match_date (UTC) to avoid
+    // killing matches that are still live in their local timezone.
     try {
-      // Use local_date (Paris timezone) not match_date (UTC) so we don't
-      // accidentally kill matches that are still live in their local timezone.
       const todayLocalDate = new Intl.DateTimeFormat('en-CA', {
         timeZone: 'Europe/Paris',
         year: 'numeric',
@@ -209,9 +209,10 @@ Deno.serve(async (req: Request) => {
       for (const stalledStatus of ['upcoming', 'live'] as const) {
         const { data: staleMatches, error: staleErr } = await supabase
           .from('matches')
-          .select('id')
+          .select('id, local_date, match_date')
           .eq('status', stalledStatus)
-          .lt('local_date', todayLocalDate); // ← was: .lt('match_date', cutoffISO)
+          .not('local_date', 'is', null)
+          .lt('local_date', todayLocalDate); // ← KEY: compare date strings, not timestamps
 
         if (staleErr) {
           errors.push(`[FORCE-FINISH/${stalledStatus}] ${staleErr.message}`);
@@ -220,20 +221,38 @@ Deno.serve(async (req: Request) => {
 
         if (staleMatches && staleMatches.length > 0) {
           const ids = staleMatches.map((m: any) => m.id);
+          log.push(`[FORCE-FINISH] Finishing ${ids.length} stale '${stalledStatus}' matches with local_date < ${todayLocalDate}`);
+
           const { error: updateErr } = await supabase
             .from('matches')
             .update({ status: 'finished' })
             .in('id', ids);
 
           if (updateErr) {
-            errors.push(`[FORCE-FINISH/${stalledStatus}] ${updateErr.message}`);
+            errors.push(`[FORCE-FINISH/${stalledStatus}] update error: ${updateErr.message}`);
           } else {
             log.push(`[FORCE-FINISH] ✓ Marked ${ids.length} '${stalledStatus}' as finished`);
           }
         } else {
-          log.push(`[FORCE-FINISH] No stale '${stalledStatus}' matches`);
+          log.push(`[FORCE-FINISH/${stalledStatus}] No stale matches found`);
         }
       }
+
+      // Also handle matches with NULL local_date as a safety net —
+      // fall back to UTC date comparison for these orphaned rows only
+      const { data: nullDateMatches } = await supabase
+        .from('matches')
+        .select('id, match_date')
+        .in('status', ['upcoming', 'live'])
+        .is('local_date', null)
+        .lt('match_date', new Date(new Date().setUTCHours(0, 0, 0, 0)).toISOString());
+
+      if (nullDateMatches && nullDateMatches.length > 0) {
+        const ids = nullDateMatches.map((m: any) => m.id);
+        await supabase.from('matches').update({ status: 'finished' }).in('id', ids);
+        log.push(`[FORCE-FINISH] ✓ Finished ${ids.length} null-local_date orphan matches`);
+      }
+
     } catch (e: unknown) {
       errors.push(`[FORCE-FINISH] ${e instanceof Error ? e.message : String(e)}`);
     }
