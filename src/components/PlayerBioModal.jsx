@@ -70,67 +70,16 @@ async function saveAiStatsToCache(playerId, playerName, aiData) {
 
 // ── AI stats fetch via /api/chat ──────────────────────────────────────────────
 async function fetchAiPlayerStats(player) {
-  const prompt = `You are a professional tennis analyst with deep knowledge of ATP and WTA tours.
-Generate comprehensive stats and analysis for this tennis player.
-Respond ONLY with valid JSON, no markdown fences, no extra text, no explanations.
-
-Player: ${player.name}
-Country: ${player.country ?? 'Unknown'}
-Current Rank: ${player.rank && player.rank < 999 ? `#${player.rank}` : 'Unknown'}
-Surface preference: ${player.surface_pref ?? 'Unknown'}
-
-Return this exact JSON structure (use real data you know, null only if truly unknown):
-{
-  "full_name": "full official name",
-  "turned_pro": "year as string e.g. '2015'",
-  "plays": "Right-handed or Left-handed",
-  "height": "e.g. 185 cm / 6'1\"",
-  "coach": "current coach name or null",
-  "career_titles": number,
-  "peak_rank": number,
-  "career_win_pct": number (0-100),
-  "grand_slams": {
-    "total_titles": number,
-    "australian_open": number,
-    "french_open": number,
-    "wimbledon": number,
-    "us_open": number
-  },
-  "current_season": {
-    "wins": number,
-    "losses": number,
-    "titles": number,
-    "form": "last 5 results e.g. W W L W W"
-  },
-  "surface_stats": {
-    "clay":  { "win_pct": number, "titles": number },
-    "hard":  { "win_pct": number, "titles": number },
-    "grass": { "win_pct": number, "titles": number }
-  },
-  "playing_style": "2-3 sentence description of playing style, strengths, game patterns",
-  "strengths": ["strength 1", "strength 2", "strength 3"],
-  "weaknesses": ["weakness 1", "weakness 2"],
-  "best_rivals": [
-    { "name": "rival name", "h2h": "e.g. 14-12 in your favor" }
-  ],
-  "career_highlight": "single most impressive career achievement in one sentence"
-}`;
-
-  const res = await fetch('/api/chat', {
-    method: 'POST',
+  const res = await fetch('/api/player-bio', {
+    method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      messages: [{ role: 'user', content: prompt }],
-      systemContext: 'You are a tennis statistics expert. Always respond with valid JSON only. No markdown. No explanations. Just the raw JSON object.',
-      model: 'gemini-2.5-pro',
-    }),
+    body:    JSON.stringify({ player }),
   });
 
-  if (!res.ok) throw new Error(`AI fetch failed: ${res.status}`);
+  if (!res.ok) throw new Error(`Player bio fetch failed: ${res.status}`);
   const data = await res.json();
-  const raw = data?.content?.[0]?.text ?? data?.reply ?? '';
-  const clean = raw.replace(/```json\s*/gi, '').replace(/```/g, '').trim();
-  return JSON.parse(clean);
+  if (!data?.data) throw new Error('Invalid response from player-bio API');
+  return data.data;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
