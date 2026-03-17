@@ -71,9 +71,9 @@ async function saveAiStatsToCache(playerId, playerName, aiData) {
 // ── AI stats fetch via /api/chat ──────────────────────────────────────────────
 async function fetchAiPlayerStats(player) {
   const res = await fetch('/api/player-bio', {
-    method:  'POST',
+    method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ player }),
+    body: JSON.stringify({ player }),
   });
 
   if (!res.ok) throw new Error(`Player bio fetch failed: ${res.status}`);
@@ -568,28 +568,6 @@ export default function PlayerBioModal({ player: p, onClose, onChat }) {
                 </div>
               </>
             )}
-
-            {/* ── Chat CTA ───────────────────────────────────────────────── */}
-            {onChat && (
-              <div style={{ padding: '0 0 20px' }}>
-                <button
-                  onClick={() => { onChat(p); onClose(); }}
-                  style={{
-                    width: '100%', padding: '13px 20px', borderRadius: 10,
-                    background: 'var(--lime)', border: 'none',
-                    color: '#070B14', fontFamily: 'var(--font-body)',
-                    fontWeight: 700, fontSize: 14, cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                    transition: 'opacity 0.15s',
-                  }}
-                  onMouseEnter={e => e.currentTarget.style.opacity = '0.88'}
-                  onMouseLeave={e => e.currentTarget.style.opacity = '1'}
-                >
-                  🤖 Ask AI about {p.name?.split(' ').pop()}
-                </button>
-              </div>
-            )}
-
             <div style={{ height: 'max(env(safe-area-inset-bottom), 20px)' }} />
           </div>
         </div>
