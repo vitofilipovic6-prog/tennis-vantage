@@ -46,6 +46,7 @@ export default function Dashboard({ showToast }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [bioPlayer, setBioPlayer] = useState(null);
   const [profileOpen, setProfileOpen] = useState(false);
+  const avatarMenuRefMobile = useRef(null);
 
   // Mobile avatar dropdown state
   const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
@@ -81,19 +82,18 @@ export default function Dashboard({ showToast }) {
   }, [allDbPlayers, allMatches]);
 
   // Close avatar menu on outside click
+  // Uses 'pointerup' instead of 'mousedown' so dropdown button onClick fires first
   useEffect(() => {
     if (!avatarMenuOpen) return;
     const handler = (e) => {
-      if (avatarMenuRef.current && !avatarMenuRef.current.contains(e.target)) {
+      const clickedInsideDesktop = avatarMenuRef.current?.contains(e.target);
+      const clickedInsideMobile  = avatarMenuRefMobile.current?.contains(e.target);
+      if (!clickedInsideDesktop && !clickedInsideMobile) {
         setAvatarMenuOpen(false);
       }
     };
-    document.addEventListener('mousedown', handler);
-    document.addEventListener('touchstart', handler);
-    return () => {
-      document.removeEventListener('mousedown', handler);
-      document.removeEventListener('touchstart', handler);
-    };
+    document.addEventListener('pointerup', handler);
+    return () => document.removeEventListener('pointerup', handler);
   }, [avatarMenuOpen]);
 
   // Keyboard shortcut: Cmd/Ctrl+K opens search
@@ -195,7 +195,7 @@ export default function Dashboard({ showToast }) {
           <span className="hide-sm">Search players…</span>
         </button>
 
-        {/* Desktop: avatar dropdown (Profile + Sign Out) */}
+        {/* Desktop: avatar dropdown — Profile + Sign Out */}
         <div className="hide-md" style={{ position: 'relative', flexShrink: 0 }} ref={avatarMenuRef}>
           <button
             onClick={() => setAvatarMenuOpen(prev => !prev)}
@@ -207,7 +207,6 @@ export default function Dashboard({ showToast }) {
               fontSize: '13px', fontWeight: 800, color: '#070B14',
               cursor: 'pointer', flexShrink: 0, transition: 'border-color 0.15s',
             }}
-            aria-label="Account menu"
           >
             {avatarInitial}
           </button>
@@ -235,10 +234,9 @@ export default function Dashboard({ showToast }) {
               <button
                 onClick={() => { setAvatarMenuOpen(false); setProfileOpen(true); }}
                 style={{
-                  width: '100%', textAlign: 'left',
-                  padding: '12px 16px', background: 'none', border: 'none',
-                  color: 'var(--text)', fontFamily: 'var(--font-body)',
-                  fontSize: '14px', cursor: 'pointer',
+                  width: '100%', textAlign: 'left', padding: '12px 16px',
+                  background: 'none', border: 'none', color: 'var(--text)',
+                  fontFamily: 'var(--font-body)', fontSize: '14px', cursor: 'pointer',
                   display: 'flex', alignItems: 'center', gap: '10px',
                   transition: 'background 0.1s',
                 }}
@@ -252,9 +250,8 @@ export default function Dashboard({ showToast }) {
               <button
                 onClick={handleLogout}
                 style={{
-                  width: '100%', textAlign: 'left',
-                  padding: '12px 16px', background: 'none', border: 'none',
-                  borderTop: '1px solid var(--border)',
+                  width: '100%', textAlign: 'left', padding: '12px 16px',
+                  background: 'none', border: 'none', borderTop: '1px solid var(--border)',
                   color: 'var(--clay)', fontFamily: 'var(--font-body)',
                   fontSize: '14px', cursor: 'pointer',
                   display: 'flex', alignItems: 'center', gap: '10px',
@@ -271,7 +268,7 @@ export default function Dashboard({ showToast }) {
         </div>
 
         {/* Mobile: avatar with dropdown (Profile + Sign Out) */}
-        <div className="show-md" style={{ position: 'relative', flexShrink: 0 }} ref={avatarMenuRef}>
+        <div className="show-md" style={{ position: 'relative', flexShrink: 0 }} ref={avatarMenuRefMobile}>
           <button
             onClick={() => setAvatarMenuOpen(prev => !prev)}
             style={{
