@@ -1184,28 +1184,31 @@ function H2HPanel({ h2h, match: m }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// RANKINGS TAB — Now with ITF Men, ITF Women, UTR Men, UTR Women tabs
+// RANKINGS TAB
+// Top 50 per tour. Only ATP + WTA rows are clickable (we have bio data for them).
+// ITF/UTR rows are display-only — no pointer, no hover, no modal.
 // ─────────────────────────────────────────────────────────────────────────────
 const RANKING_TOURS = [
-  { id: 'ATP', label: 'ATP', color: '#60a5fa', pointsLabel: 'Points' },
-  { id: 'WTA', label: 'WTA', color: '#f472b6', pointsLabel: 'Points' },
-  { id: 'ITF_MEN', label: 'ITF Men', color: '#fb923c', pointsLabel: 'Wins' },
-  { id: 'ITF_WOMEN', label: 'ITF Women', color: '#f59e0b', pointsLabel: 'Wins' },
-  { id: 'UTR_MEN', label: 'UTR Men', color: '#a78bfa', pointsLabel: 'Wins' },
-  { id: 'UTR_WOMEN', label: 'UTR Women', color: '#e879f9', pointsLabel: 'Wins' },
+  { id: 'ATP',       label: 'ATP',        color: '#60a5fa', pointsLabel: 'Points',  interactive: true  },
+  { id: 'WTA',       label: 'WTA',        color: '#f472b6', pointsLabel: 'Points',  interactive: true  },
+  { id: 'ITF_MEN',   label: 'ITF Men',    color: '#fb923c', pointsLabel: 'Wins',    interactive: false },
+  { id: 'ITF_WOMEN', label: 'ITF Women',  color: '#f59e0b', pointsLabel: 'Wins',    interactive: false },
+  { id: 'UTR_MEN',   label: 'UTR Men',    color: '#a78bfa', pointsLabel: 'Wins',    interactive: false },
+  { id: 'UTR_WOMEN', label: 'UTR Women',  color: '#e879f9', pointsLabel: 'Wins',    interactive: false },
 ];
 
 function RankingsTab({ onSelectPlayer }) {
-  const [tour, setTour] = useState('ATP');
+  const [tour,   setTour]   = useState('ATP');
   const [hovRow, setHovRow] = useState(null);
   const { rankings, loading, error } = useRankings(tour);
 
-  const tourDef = RANKING_TOURS.find(t => t.id === tour);
-  const isAltRanking = ['ITF_MEN', 'ITF_WOMEN', 'UTR_MEN', 'UTR_WOMEN'].includes(tour);
+  const tourDef     = RANKING_TOURS.find(t => t.id === tour);
+  const isAltTour   = !tourDef?.interactive;
 
   return (
     <div className="tv-fade-up">
-      {/* Tour tabs */}
+
+      {/* Tour selector pills */}
       <div className="tv-rankings-filters" style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
         {RANKING_TOURS.map(t => (
           <button
@@ -1225,19 +1228,27 @@ function RankingsTab({ onSelectPlayer }) {
         ))}
       </div>
 
-      {/* ITF/UTR note */}
-      {isAltRanking && (
-        <div style={{
-          padding: '10px 14px', borderRadius: '8px', marginBottom: '16px',
-          background: `${tourDef.color}10`, border: `1px solid ${tourDef.color}30`,
-        }}>
-          <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
-            <span style={{ color: tourDef.color, fontWeight: 700 }}>{tourDef.label}</span>
-            {' '}rankings are derived from match wins in our database.
-            {' '}Points column shows total {tourDef.label.includes('UTR') ? 'UTR' : 'ITF'} wins recorded.
-          </p>
-        </div>
-      )}
+      {/* Info banner — ATP/WTA: clickable hint | ITF/UTR: no-data notice */}
+      <div style={{
+        padding: '10px 14px', borderRadius: '8px', marginBottom: '16px',
+        background: `${tourDef?.color}10`,
+        border: `1px solid ${tourDef?.color}30`,
+        display: 'flex', alignItems: 'center', gap: '8px',
+      }}>
+        <span style={{ fontSize: '14px' }}>{isAltTour ? 'ℹ️' : '👆'}</span>
+        <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
+          {isAltTour ? (
+            <>
+              <span style={{ color: tourDef?.color, fontWeight: 700 }}>{tourDef?.label}</span>
+              {' '}rankings are derived from match wins in our database. Player profiles are not available for this tour.
+            </>
+          ) : (
+            <>
+              Showing <span style={{ color: tourDef?.color, fontWeight: 700 }}>Top 50</span> — click any player to view their full profile and stats.
+            </>
+          )}
+        </p>
+      </div>
 
       {loading ? (
         <LoadingGrid />
@@ -1247,19 +1258,20 @@ function RankingsTab({ onSelectPlayer }) {
         <EmptyState
           icon="📊"
           title={`No ${tourDef?.label} rankings yet`}
-          desc={isAltRanking
-            ? 'ITF/UTR rankings will appear once matches are synced.'
+          desc={isAltTour
+            ? 'Rankings will appear once matches of this type are synced.'
             : 'Rankings will appear after the next sync.'}
         />
       ) : (
         <Card style={{ overflow: 'hidden' }}>
-          {/* Header row */}
+          {/* Header */}
           <div style={{
             display: 'grid',
-            gridTemplateColumns: '36px minmax(0, 1fr) 70px 80px',
+            gridTemplateColumns: '36px minmax(0,1fr) 70px 80px',
             gap: '8px', padding: '10px 16px',
             borderBottom: '1px solid var(--border)',
-            fontSize: '11px', fontWeight: 700, color: 'var(--text-faint)',
+            fontSize: '11px', fontWeight: 700,
+            color: 'var(--text-faint)',
             textTransform: 'uppercase', letterSpacing: '0.07em',
           }}>
             <span>#</span>
@@ -1268,54 +1280,59 @@ function RankingsTab({ onSelectPlayer }) {
             <span className="rankings-wl" style={{ textAlign: 'right' }}>W / L</span>
           </div>
 
-          {/* Player rows */}
+          {/* Rows */}
           {rankings.map((p, i) => {
-            const rank = p.rank ?? (i + 1);
+            const rank    = p.rank ?? (i + 1);
+            const medal   = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : null;
+            const flag    = p.flag && p.flag !== '🏳️' ? p.flag : resolveFlag(p.country ?? '');
             const rankDir = p.prev_rank == null ? null
               : p.prev_rank > rank ? 'up'
-                : p.prev_rank < rank ? 'down' : 'same';
-            const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : null;
-            const flag = p.flag && p.flag !== '🏳️' ? p.flag : resolveFlag(p.country ?? '');
+              : p.prev_rank < rank ? 'down' : 'same';
+
+            // ATP/WTA: hoverable + clickable
+            // ITF/UTR: static display row, no interaction
+            const isClickable = tourDef?.interactive;
 
             return (
               <div
                 key={p.id ?? i}
-                onClick={() => onSelectPlayer?.(p)}
-                onMouseEnter={() => setHovRow(i)}
-                onMouseLeave={() => setHovRow(null)}
+                onClick={() => isClickable && onSelectPlayer?.(p)}
+                onMouseEnter={() => isClickable && setHovRow(i)}
+                onMouseLeave={() => isClickable && setHovRow(null)}
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: '36px minmax(0, 1fr) 70px 80px',
+                  gridTemplateColumns: '36px minmax(0,1fr) 70px 80px',
                   gap: '8px', padding: '12px 16px',
                   borderTop: '1px solid var(--border)',
-                  background: hovRow === i ? 'var(--bg-glass)' : 'transparent',
-                  cursor: 'pointer', transition: 'background 0.12s',
+                  background: isClickable && hovRow === i
+                    ? 'var(--bg-glass)'
+                    : 'transparent',
+                  // Only show pointer cursor for interactive tours
+                  cursor: isClickable ? 'pointer' : 'default',
+                  transition: 'background 0.12s',
                   alignItems: 'center',
+                  // Slightly dim ITF/UTR rows to visually signal non-interactive
+                  opacity: isAltTour ? 0.75 : 1,
                 }}
               >
-                {/* Rank */}
+                {/* Rank number */}
                 <span style={{
                   fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '14px',
-                  color: rank <= 3 ? tourDef.color : 'var(--text-muted)',
+                  color: rank <= 3 ? tourDef?.color : 'var(--text-muted)',
                 }}>
                   {medal ?? rank}
                 </span>
 
-                {/* Name + flag + movement */}
+                {/* Player name + flag + rank movement */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                  <span style={{ fontSize: '18px', flexShrink: 0 }}>{flag}</span>
-                  <div style={{ minWidth: 0 }}>
-                    <p style={{
-                      fontWeight: 600, fontSize: '14px', color: 'var(--text)',
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    }}>
-                      {p.name}
-                    </p>
-                    <p style={{ fontSize: '11px', color: 'var(--text-faint)', marginTop: '1px' }}>
-                      {p.country ?? ''}
-                      {p.surface_pref ? ` · ${p.surface_pref}` : ''}
-                    </p>
-                  </div>
+                  <span style={{ fontSize: '16px', flexShrink: 0 }}>{flag}</span>
+                  <span style={{
+                    fontWeight: 600, fontSize: '13px', color: 'var(--text)',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
+                    {p.name}
+                  </span>
+                  {/* Rank movement arrow — only for ATP/WTA which have prev_rank */}
                   {rankDir && rankDir !== 'same' && (
                     <span style={{
                       fontSize: '10px', fontWeight: 700, flexShrink: 0,
@@ -1326,7 +1343,7 @@ function RankingsTab({ onSelectPlayer }) {
                   )}
                 </div>
 
-                {/* Points */}
+                {/* Points / wins */}
                 <span style={{
                   fontFamily: 'var(--font-mono)', fontWeight: 600,
                   fontSize: '13px', color: 'var(--text-muted)', textAlign: 'right',
@@ -1334,14 +1351,27 @@ function RankingsTab({ onSelectPlayer }) {
                   {p.points != null ? p.points.toLocaleString() : '—'}
                 </span>
 
-                {/* W/L hidden on mobile */}
-                <span className="rankings-wl" style={{ fontSize: '13px', color: 'var(--text-muted)', textAlign: 'right' }}>
+                {/* W/L — hidden on mobile via CSS */}
+                <span className="rankings-wl" style={{
+                  fontSize: '13px', color: 'var(--text-muted)', textAlign: 'right',
+                }}>
                   <span style={{ color: 'var(--green)' }}>{p.wins ?? '—'}</span>
                   <span style={{ color: 'var(--text-faint)' }}>/{p.losses ?? 0}</span>
                 </span>
               </div>
             );
           })}
+
+          {/* Footer showing count */}
+          <div style={{
+            padding: '10px 16px', borderTop: '1px solid var(--border)',
+            fontSize: '11px', color: 'var(--text-faint)', textAlign: 'center',
+          }}>
+            Showing Top {rankings.length} · {isAltTour ? 'Derived from match wins' : 'Official rankings'}
+            {isClickable && (
+              <span style={{ color: tourDef?.color }}> · Click a player for full profile</span>
+            )}
+          </div>
         </Card>
       )}
     </div>
