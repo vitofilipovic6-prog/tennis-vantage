@@ -240,73 +240,90 @@ export function useActiveDates(startDate, endDate) {
 // Now supports: ATP, WTA, ITF_MEN, ITF_WOMEN, UTR_MEN, UTR_WOMEN
 // ITF/UTR pull from the players table joined via matches (match_type filter).
 // ATP/WTA pull from the rankings table as before.
+// ── useRankings ───────────────────────────────────────────────────────────────
 const rankingsCache = {};
 
 export function useRankings(tour = 'ATP') {
-  const [rankings, setRankings] = useState(rankingsCache[tour] ?? []);
-  const [loading, setLoading] = useState(!rankingsCache[tour]);
-  const [error, setError] = useState(null);
+  const [rankings, setRankings] = useState([]);
+  const [loading,  setLoading]  = useState(true);
+  const [error,    setError]    = useState(null);
 
   useEffect(() => {
-    if (rankingsCache[tour]) {
-      setRankings(rankingsCache[tour]);
+    // Check cache — but only use it if it has actual data
+    const cached = rankingsCache[tour];
+    if (cached && cached.length > 0) {
+      setRankings(cached);
       setLoading(false);
+      setError(null);
       return;
     }
 
     let cancelled = false;
     setLoading(true);
+    setError(null);
     setRankings([]);
 
-    const fetchFn = ['ITF_MEN', 'ITF_WOMEN', 'UTR_MEN', 'UTR_WOMEN'].includes(tour)
-      ? fetchAltRankings(tour)
-      : getRankings(tour);
+    const isAlt = ['ITF_MEN', 'ITF_WOMEN', 'UTR_MEN', 'UTR_WOMEN'].includes(tour);
+    const fetchPromise = isAlt ? fetchAltRankings(tour) : getRankings(tour);
 
-    fetchFn
+    fetchPromise
       .then(data => {
-        if (!cancelled) {
-          // Cap all ranking lists at Top 50
-          const capped = (data ?? []).slice(0, 50);
-          rankingsCache[tour] = capped;
-          setRankings(capped);
-          setError(null);
-        }
+        if (cancelled) return;
+        const capped = (data ?? []).slice(0, 50);
+        // Only cache if we got real data — don't cache empty results
+        if (capped.length > 0) rankingsCache[tour] = capped;
+        setRankings(capped);
+        setError(null);
+      })
+      .catch(e => {
+        if (cancelled) return;
+        console.error(`[useRankings:${tour}]`, e.message);
+        setError(e.message ?? 'Failed to load rankings');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
       });
+
     return () => { cancelled = true; };
   }, [tour]);
 
-  // Allow cache-busting from outside
   const refresh = useCallback(() => {
     delete rankingsCache[tour];
     setLoading(true);
+    setError(null);
     setRankings([]);
-    const fetchFn = ['ITF_MEN', 'ITF_WOMEN', 'UTR_MEN', 'UTR_WOMEN'].includes(tour)
-      ? fetchAltRankings(tour)
-      : getRankings(tour);
-    fetchFn
-      .then(data => { const capped = (data ?? []).slice(0, 50); rankingsCache[tour] = capped; setRankings(capped); setError(null); })
-      .catch(e => setError(e.message ?? 'Failed'))
+
+    const isAlt = ['ITF_MEN', 'ITF_WOMEN', 'UTR_MEN', 'UTR_WOMEN'].includes(tour);
+    const fetchPromise = isAlt ? fetchAltRankings(tour) : getRankings(tour);
+
+    fetchPromise
+      .then(data => {
+        const capped = (data ?? []).slice(0, 50);
+        if (capped.length > 0) rankingsCache[tour] = capped;
+        setRankings(capped);
+        setError(null);
+      })
+      .catch(e => setError(e.message ?? 'Failed to reload rankings'))
       .finally(() => setLoading(false));
   }, [tour]);
 
   return { rankings, loading, error, refresh };
 }
 
-// Fetch ITF/UTR "rankings" — derives a pseudo-ranking from players
-// who appear in matches of the corresponding match_type.
-// Since ITF/UTR don't have a real rankings table, we pull distinct players
-// from those matches and sort by win count descending.
+// ── fetchAltRankings ──────────────────────────────────────────────────────────
+// Derives ITF/UTR pseudo-rankings from match wins in the DB.
+// Returns empty array (never throws) so the UI shows EmptyState, not an error.
 async function fetchAltRankings(tour) {
   const typeMap = {
-    ITF_MEN: ['itf_men_singles', 'itf_men_doubles'],
+    ITF_MEN:   ['itf_men_singles', 'itf_men_doubles'],
     ITF_WOMEN: ['itf_women_singles', 'itf_women_doubles'],
-    UTR_MEN: ['utr_men_singles'],
+    UTR_MEN:   ['utr_men_singles'],
     UTR_WOMEN: ['utr_women_singles'],
   };
   const types = typeMap[tour] ?? [];
+  if (types.length === 0) return [];
 
   try {
-    // Pull all finished matches of this type, with player info
     const { data, error } = await supabase
       .from('matches')
       .select(`
@@ -318,85 +335,46 @@ async function fetchAltRankings(tour) {
       .order('match_date', { ascending: false })
       .limit(500);
 
-    if (error) throw error;
+    // If the query errored OR returned nothing, just return empty — don't throw
+    if (error) {
+      console.warn(`[fetchAltRankings:${tour}] query error:`, error.message);
+      return [];
+    }
 
-    // Build win-count map keyed by player id
+    if (!data || data.length === 0) return [];
+
     const playerMap = new Map();
-    const winCount = new Map();
+    const winCount  = new Map();
 
-    for (const m of (data ?? [])) {
+    for (const m of data) {
       for (const p of [m.player1, m.player2]) {
-        if (!p?.id || p.name?.includes('/')) continue; // skip doubles pairs
+        if (!p?.id || !p.name || p.name.includes('/')) continue;
         if (!playerMap.has(p.id)) {
           playerMap.set(p.id, p);
           winCount.set(p.id, 0);
         }
       }
-      if (m.winner_id) {
-        winCount.set(m.winner_id, (winCount.get(m.winner_id) ?? 0) + 1);
+      if (m.winner_id && winCount.has(m.winner_id)) {
+        winCount.set(m.winner_id, winCount.get(m.winner_id) + 1);
       }
     }
 
-    // Sort by wins desc, assign pseudo-rank
+    if (playerMap.size === 0) return [];
+
     return [...playerMap.values()]
       .sort((a, b) => (winCount.get(b.id) ?? 0) - (winCount.get(a.id) ?? 0))
       .map((p, i) => ({
         ...p,
-        rank: i + 1,
-        points: winCount.get(p.id) ?? 0, // "points" = match wins in ITF/UTR context
+        rank:      i + 1,
+        points:    winCount.get(p.id) ?? 0,
         prev_rank: null,
       }));
+
   } catch (e) {
-    console.error(`[fetchAltRankings:${tour}]`, e.message);
+    // Never let this crash the rankings tab
+    console.warn(`[fetchAltRankings:${tour}] unexpected error:`, e.message);
     return [];
   }
-}
-
-// ── useAllPlayers ─────────────────────────────────────────────────────────────
-// Fetches ALL players from the DB (not just those in today's matches).
-// This feeds PlayerSearchModal so users can find Alcaraz, Sinner etc.
-let allPlayersCache = null;
-let allPlayersCacheTime = 0;
-const ALL_PLAYERS_TTL = 10 * 60 * 1000; // 10 min
-
-export function useAllPlayers() {
-  const isStale = Date.now() - allPlayersCacheTime > ALL_PLAYERS_TTL;
-  const [players, setPlayers] = useState(allPlayersCache && !isStale ? allPlayersCache : []);
-  const [loading, setLoading] = useState(!allPlayersCache || isStale);
-
-  useEffect(() => {
-    const stale = Date.now() - allPlayersCacheTime > ALL_PLAYERS_TTL;
-    if (allPlayersCache && !stale) {
-      setPlayers(allPlayersCache);
-      setLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-    setLoading(true);
-
-    // Fetch top 500 ranked players — covers all ATP/WTA stars + ITF/UTR players
-    supabase
-      .from('players')
-      .select('id, name, country, flag, rank, wins, losses, surface_pref, first_serve_pct, recent_form')
-      .not('name', 'is', null)
-      .order('rank', { ascending: true, nullsLast: true })
-      .limit(500)
-      .then(({ data, error }) => {
-        if (cancelled) return;
-        if (error) { setLoading(false); return; }
-        const sorted = (data ?? []).filter(p => p.name && !p.name.includes('/'));
-        allPlayersCache = sorted;
-        allPlayersCacheTime = Date.now();
-        setPlayers(sorted);
-        setLoading(false);
-      })
-      .catch(() => { if (!cancelled) setLoading(false); });
-
-    return () => { cancelled = true; };
-  }, []);
-
-  return { players, loading };
 }
 
 // ── usePrediction ─────────────────────────────────────────────────────────────
