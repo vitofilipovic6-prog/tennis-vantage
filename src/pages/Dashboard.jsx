@@ -1285,12 +1285,27 @@ function RankingsTab({ onSelectPlayer }) {
 function AiChatTab({ contextMatch }) {
   const { messages, typing, sendMessage, reset, bottomRef } = useAiChat(contextMatch);
   const [input, setInput] = useState('');
+  const textareaRef = useRef(null);
 
   function submit(e) {
     e?.preventDefault();
     if (!input.trim() || typing) return;
     sendMessage(input);
     setInput('');
+    // Reset textarea height after clearing
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
+  }
+
+  // Auto-grow textarea up to 5 lines
+  function handleInputChange(e) {
+    const val = e.target.value.slice(0, CHAT_MAX_CHARS);
+    setInput(val);
+    // Auto-resize
+    const el = e.target;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 120) + 'px';
   }
 
   const charsLeft = CHAT_MAX_CHARS - input.length;
@@ -1304,18 +1319,19 @@ function AiChatTab({ contextMatch }) {
   ];
 
   return (
-    <div className="tv-fade-up tv-chat-layout" style={{
-      display: 'grid',
-      gridTemplateColumns: contextMatch ? '1fr' : '1fr',
-      gap: '20px',
-    }}>
-      <div style={{ display: 'flex', flexDirection: 'column', height: '70dvh', minHeight: '400px' }}>
+    <div className="tv-fade-up tv-chat-layout" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '20px' }}>
+
+      {/* ── Chat shell — height is controlled entirely by CSS class ───────── */}
+      <div className="tv-chat-shell">
+
         {/* Header */}
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '16px', background: 'var(--bg-card)',
+          padding: '12px 16px',
+          background: 'var(--bg-card)',
           border: '1px solid var(--border)', borderBottom: 'none',
           borderRadius: 'var(--radius) var(--radius) 0 0',
+          flexShrink: 0,
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <span style={{ fontSize: '20px' }}>🤖</span>
@@ -1341,21 +1357,38 @@ function AiChatTab({ contextMatch }) {
           </button>
         </div>
 
-        {/* Messages */}
+        {/* Messages — flex: 1 makes this fill remaining height and scroll */}
         <div style={{
-          flex: 1, overflowY: 'auto', padding: '20px',
+          flex: 1,
+          overflowY: 'auto',
+          padding: '16px',
           background: 'var(--bg-card)',
           border: '1px solid var(--border)', borderTop: 'none', borderBottom: 'none',
           display: 'flex', flexDirection: 'column', gap: '16px',
+          // Momentum scroll on iOS
+          WebkitOverflowScrolling: 'touch',
         }}>
           {contextMatch && (
             <div style={{
               padding: '10px 14px', borderRadius: '8px',
               background: 'rgba(159,239,102,0.06)', border: '1px solid rgba(159,239,102,0.2)',
-              fontSize: '12px', color: 'var(--text-muted)',
+              fontSize: '12px', color: 'var(--text-muted)', flexShrink: 0,
             }}>
               📍 Context: <strong>{contextMatch.player1?.name}</strong> vs <strong>{contextMatch.player2?.name}</strong>
               {' '}· {contextMatch.surface} · {contextMatch.tournament}
+            </div>
+          )}
+
+          {messages.length === 0 && (
+            <div style={{
+              flex: 1, display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center',
+              gap: '12px', padding: '20px 0',
+            }}>
+              <span style={{ fontSize: '40px' }}>🎾</span>
+              <p style={{ color: 'var(--text-faint)', fontSize: '14px', textAlign: 'center', maxWidth: '280px', lineHeight: 1.6 }}>
+                Ask me anything about ATP/WTA matches, players, stats, or predictions.
+              </p>
             </div>
           )}
 
@@ -1365,20 +1398,22 @@ function AiChatTab({ contextMatch }) {
               style={{
                 display: 'flex',
                 justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                flexShrink: 0,
               }}
             >
               <div style={{
-                maxWidth: '80%',
-                padding: '12px 16px',
-                borderRadius: msg.role === 'user'
-                  ? '16px 16px 4px 16px'
-                  : '16px 16px 16px 4px',
+                maxWidth: 'min(80%, 520px)',
+                padding: '10px 14px',
+                borderRadius: msg.role === 'user' ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
                 background: msg.role === 'user'
-                  ? 'var(--lime)'
+                  ? 'linear-gradient(135deg, rgba(159,239,102,0.18), rgba(159,239,102,0.1))'
                   : 'var(--bg-glass-md)',
-                color: msg.role === 'user' ? '#070B14' : 'var(--text)',
-                fontSize: '14px', lineHeight: 1.6,
-                border: msg.role === 'user' ? 'none' : '1px solid var(--border)',
+                border: `1px solid ${msg.role === 'user' ? 'rgba(159,239,102,0.25)' : 'var(--border)'}`,
+                fontSize: '14px',
+                lineHeight: 1.65,
+                color: 'var(--text)',
+                wordBreak: 'break-word',
+                // Render newlines from AI response
                 whiteSpace: 'pre-wrap',
               }}>
                 {msg.content}
@@ -1387,43 +1422,45 @@ function AiChatTab({ contextMatch }) {
           ))}
 
           {typing && (
-            <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-start', flexShrink: 0 }}>
               <div style={{
-                padding: '12px 16px', borderRadius: '16px 16px 16px 4px',
+                padding: '10px 16px', borderRadius: '14px 14px 14px 4px',
                 background: 'var(--bg-glass-md)', border: '1px solid var(--border)',
-                display: 'flex', gap: '4px', alignItems: 'center',
+                display: 'flex', gap: '5px', alignItems: 'center',
               }}>
-                {[0, 1, 2].map(j => (
-                  <div key={j} style={{
+                {[0, 0.2, 0.4].map((delay, i) => (
+                  <span key={i} style={{
                     width: '6px', height: '6px', borderRadius: '50%',
-                    background: 'var(--text-faint)',
-                    animation: `tv-bounce 1.2s ease-in-out ${j * 0.2}s infinite`,
+                    background: 'var(--lime)', display: 'block',
+                    animation: `tv-live-dot 1.2s ease ${delay}s infinite`,
                   }} />
                 ))}
               </div>
             </div>
           )}
-          <div ref={bottomRef} />
+
+          <div ref={bottomRef} style={{ flexShrink: 0 }} />
         </div>
 
-        {/* Suggestions */}
-        {messages.length <= 1 && (
-          <div style={{
-            padding: '12px 16px', overflowX: 'auto',
-            background: 'var(--bg-card)',
-            border: '1px solid var(--border)', borderTop: 'none', borderBottom: 'none',
-            display: 'flex', gap: '8px',
-          }}>
+        {/* Suggestion chips — only shown when no messages yet */}
+        {messages.length === 0 && !typing && (
+          <div
+            className="tv-chat-suggestions"
+            style={{ background: 'var(--bg-card)', borderLeft: '1px solid var(--border)', borderRight: '1px solid var(--border)', flexShrink: 0 }}
+          >
             {suggestions.map((s, i) => (
               <button
                 key={i}
-                onClick={() => sendMessage(s)}
+                onClick={() => { sendMessage(s); }}
                 style={{
-                  padding: '6px 12px', whiteSpace: 'nowrap',
+                  padding: '7px 13px', whiteSpace: 'nowrap',
                   borderRadius: '999px', border: '1px solid var(--border)',
                   background: 'var(--bg-glass)', color: 'var(--text-muted)',
                   fontSize: '12px', cursor: 'pointer', fontFamily: 'var(--font-body)',
                   transition: 'var(--t)', flexShrink: 0,
+                  // Tap target size on mobile
+                  minHeight: '36px',
+                  WebkitTapHighlightColor: 'transparent',
                 }}
                 onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--lime)'; e.currentTarget.style.color = 'var(--lime)'; }}
                 onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-muted)'; }}
@@ -1434,57 +1471,80 @@ function AiChatTab({ contextMatch }) {
           </div>
         )}
 
-        {/* Input */}
-        <div style={{
-          padding: '12px 16px',
-          background: 'var(--bg-card)',
-          border: '1px solid var(--border)',
-          borderRadius: '0 0 var(--radius) var(--radius)',
-          display: 'flex', gap: '10px', alignItems: 'flex-end',
-        }}>
+        {/* Input footer */}
+        <div className="tv-chat-input-footer">
           <div style={{ flex: 1, position: 'relative' }}>
             <textarea
+              ref={textareaRef}
               value={input}
-              onChange={e => setInput(e.target.value.slice(0, CHAT_MAX_CHARS))}
-              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } }}
+              onChange={handleInputChange}
+              onKeyDown={e => {
+                // On mobile (touch devices) Enter should insert newline, not submit
+                // On desktop Enter (without Shift) submits
+                if (e.key === 'Enter' && !e.shiftKey && !('ontouchstart' in window)) {
+                  e.preventDefault();
+                  submit();
+                }
+              }}
               placeholder="Ask about any match, player, or prediction…"
               rows={1}
               style={{
-                width: '100%', resize: 'none', background: 'var(--bg-glass)',
-                border: '1px solid var(--border)', borderRadius: '8px',
-                padding: '10px 14px', color: 'var(--text)',
-                fontFamily: 'var(--font-body)', fontSize: '14px', lineHeight: 1.5,
-                outline: 'none', overflowY: 'hidden', transition: 'border-color 0.15s',
+                width: '100%',
+                resize: 'none',
+                background: 'var(--bg-glass)',
+                border: '1px solid var(--border)',
+                borderRadius: '10px',
+                padding: '11px 44px 11px 14px',
+                color: 'var(--text)',
+                fontFamily: 'var(--font-body)',
+                fontSize: '14px',
+                lineHeight: 1.5,
+                outline: 'none',
+                overflowY: 'hidden',
+                transition: 'border-color 0.15s',
                 boxSizing: 'border-box',
+                // Prevent iOS zoom on focus (font-size must be ≥16px or use this)
+                WebkitTextSizeAdjust: '100%',
               }}
               onFocus={e => e.target.style.borderColor = 'rgba(159,239,102,0.4)'}
               onBlur={e => e.target.style.borderColor = 'var(--border)'}
             />
+            {/* Char counter inside textarea */}
             <span style={{
-              position: 'absolute', right: '10px', bottom: '8px',
-              fontSize: '10px', color: charColor, fontFamily: 'var(--font-mono)',
-              pointerEvents: 'none',
+              position: 'absolute', right: '10px', bottom: '10px',
+              fontSize: '10px', color: charColor,
+              fontFamily: 'var(--font-mono)', pointerEvents: 'none',
             }}>
-              {charsLeft}
+              {charsLeft < 200 ? charsLeft : ''}
             </span>
           </div>
+
+          {/* Send button — uses CSS class for proper 44px tap target */}
           <button
+            className="tv-chat-send-btn"
             onClick={submit}
             disabled={!input.trim() || typing}
             style={{
-              width: '40px', height: '40px', borderRadius: '8px', flexShrink: 0,
               background: !input.trim() || typing ? 'var(--bg-glass-md)' : 'var(--lime)',
-              border: 'none', cursor: !input.trim() || typing ? 'not-allowed' : 'pointer',
-              color: !input.trim() || typing ? 'var(--text-faint)' : '#070B14',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              transition: 'var(--t)',
             }}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
-            </svg>
+            {typing ? (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" strokeWidth="2.5">
+                <rect x="6" y="6" width="12" height="12" rx="2"/>
+              </svg>
+            ) : (
+              <svg
+                width="18" height="18" viewBox="0 0 24 24" fill="none"
+                stroke={!input.trim() ? 'var(--text-faint)' : '#070B14'}
+                strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+              >
+                <line x1="22" y1="2" x2="11" y2="13"/>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+              </svg>
+            )}
           </button>
         </div>
+
       </div>
     </div>
   );

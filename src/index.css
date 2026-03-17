@@ -458,3 +458,100 @@ a { color: inherit; text-decoration: none; }
     grid-template-columns: 1fr !important;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   AI CHAT TAB — Force single column on mobile
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 680px) {
+  .tv-chat-layout {
+    grid-template-columns: 1fr !important;
+  }
+
+  .tv-chat-context-panel {
+    order: 2;
+  }
+
+  .tv-chat-column {
+    order: 1;
+  }
+}
+
+/* ─── Chat: full-height shell that accounts for bottom nav + keyboard ─────── */
+.tv-chat-shell {
+  /* Desktop: use dvh comfortably */
+  height: 70dvh;
+  min-height: 400px;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (max-width: 900px) {
+  .tv-chat-shell {
+    /*
+     * On mobile the bottom nav is ~66px tall.
+     * We use 100dvh minus: top navbar (60px) + bottom nav (66px)
+     * + page padding top/bottom (~32px) + tab pills (~48px) + safe area.
+     * Using a generous but not over-specified calc keeps it safe on all devices.
+     */
+    height: calc(100dvh - 60px - 66px - 32px - 48px - max(env(safe-area-inset-bottom), 0px));
+    min-height: 300px;
+    /* Prevent the virtual keyboard from pushing content off-screen */
+    max-height: calc(100dvh - 60px - 66px - 32px - 48px);
+  }
+}
+
+/* ─── Chat suggestion chips — touch-scrollable row ──────────────────────── */
+.tv-chat-suggestions {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 10px 16px;
+  /* Smooth momentum scrolling on iOS */
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.tv-chat-suggestions::-webkit-scrollbar {
+  display: none;
+}
+
+/* ─── Chat input footer ──────────────────────────────────────────────────── */
+.tv-chat-input-footer {
+  padding: 12px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 0 0 var(--radius) var(--radius);
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  /* Push above iOS home indicator when keyboard is closed */
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+}
+
+/* ─── Send button — large enough tap target on mobile ───────────────────── */
+.tv-chat-send-btn {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  border-radius: 10px;
+  flex-shrink: 0;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, opacity 0.15s;
+  cursor: pointer;
+}
+.tv-chat-send-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+@media (max-width: 680px) {
+  .tv-chat-input-footer {
+    /* On mobile with keyboard open, browsers fire visualViewport resize.
+       We pin the footer naturally via flex — no extra tricks needed. */
+    border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  }
+}
+
