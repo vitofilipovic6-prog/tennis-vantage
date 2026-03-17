@@ -22,13 +22,23 @@ export function detectTour(tournamentNameOrMatch) {
 }
 
 // ── useMatches ────────────────────────────────────────────────────────────────
+// Two-layer refresh strategy:
+//  1. Every 30 seconds  → re-reads live match scores from DB (cheap, no API call)
+//  2. Every 30 minutes  → triggers sync-matches Edge Function (fetches fresh data
+//     from RapidAPI into DB), then immediately re-reads everything from DB
+// Tab visibility aware — pauses all polling when tab is hidden.
+// ─────────────────────────────────────────────────────────────────────────────
 export function useMatches() {
-  const [live, setLive]         = useState([]);
+  const [live,     setLive]     = useState([]);
   const [upcoming, setUpcoming] = useState([]);
-  const [loading, setLoading]   = useState(true);
-  const [error, setError]       = useState(null);
-  const intervalRef             = useRef(null);
+  const [loading,  setLoading]  = useState(true);
+  const [error,    setError]    = useState(null);
+  const [syncing,  setSyncing]  = useState(false); // true while Edge Fn is running
 
+  const liveIntervalRef = useRef(null);
+  const syncIntervalRef = useRef(null);
+
+  // ── Full DB read (both live + upcoming) ──────────────────────────────────
   const fetchAll = useCallback(async () => {
     try {
       const [liveData, upcomingData] = await Promise.all([
@@ -45,33 +55,86 @@ export function useMatches() {
     }
   }, []);
 
-  useEffect(() => {
-    fetchAll();
-
-    function startPoll() {
-      intervalRef.current = setInterval(() => {
-        if (!document.hidden) getLiveMatches().then(setLive).catch(() => {});
-      }, 30_000);
+  // ── Lightweight live-only DB read ────────────────────────────────────────
+  const fetchLive = useCallback(async () => {
+    try {
+      const liveData = await getLiveMatches();
+      setLive(liveData);
+    } catch {
+      // silent — don't overwrite existing data on a poll error
     }
+  }, []);
 
-    function handleVisibility() {
-      if (document.hidden) {
-        clearInterval(intervalRef.current);
-      } else {
-        getLiveMatches().then(setLive).catch(() => {});
-        startPoll();
-      }
+  // ── Trigger Edge Function sync then re-read everything ──────────────────
+  const triggerSync = useCallback(async () => {
+    if (document.hidden) return; // don't waste API quota when tab not visible
+    setSyncing(true);
+    try {
+      const { data: { session } } = await import('../services/supabase')
+        .then(m => m.supabase.auth.getSession());
+
+      await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-matches`,
+        {
+          method:  'POST',
+          headers: {
+            'Content-Type':  'application/json',
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          },
+          body: '{}',
+        }
+      );
+    } catch {
+      // Edge Function call failed — still re-read DB in case
+      // a previous sync already wrote fresh data
+    } finally {
+      setSyncing(false);
+      // Always re-read DB after a sync attempt
+      await fetchAll();
     }
-
-    startPoll();
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => {
-      clearInterval(intervalRef.current);
-      document.removeEventListener('visibilitychange', handleVisibility);
-    };
   }, [fetchAll]);
 
-  return { live, upcoming, loading, error, refresh: fetchAll };
+  // ── Start / stop polling ─────────────────────────────────────────────────
+  const startPolling = useCallback(() => {
+    // Live scores: every 30 seconds
+    liveIntervalRef.current = setInterval(() => {
+      if (!document.hidden) fetchLive();
+    }, 30_000);
+
+    // Full sync: every 30 minutes
+    syncIntervalRef.current = setInterval(() => {
+      if (!document.hidden) triggerSync();
+    }, 30 * 60 * 1000);
+  }, [fetchLive, triggerSync]);
+
+  const stopPolling = useCallback(() => {
+    clearInterval(liveIntervalRef.current);
+    clearInterval(syncIntervalRef.current);
+  }, []);
+
+  useEffect(() => {
+    // Initial load
+    fetchAll();
+    startPolling();
+
+    // Pause when tab hidden, resume + refresh when visible again
+    const handleVisibility = () => {
+      if (document.hidden) {
+        stopPolling();
+      } else {
+        fetchAll();        // immediate refresh when user comes back
+        startPolling();    // restart timers
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      stopPolling();
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [fetchAll, startPolling, stopPolling]);
+
+  return { live, upcoming, loading, error, syncing, refresh: fetchAll };
 }
 
 // ── useMatchesByDate ──────────────────────────────────────────────────────────

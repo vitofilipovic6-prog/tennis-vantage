@@ -52,7 +52,7 @@ export default function Dashboard({ showToast }) {
   const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
   const avatarMenuRef = useRef(null);
 
-  const { live, upcoming, loading: matchesLoading, error: matchesError, refresh } = useMatches();
+  const { live, upcoming, loading: matchesLoading, error: matchesError, syncing: matchesSyncing, refresh } = useMatches();
   const allMatches = useMemo(() => [...live, ...upcoming], [live, upcoming]);
 
   // Full player list from DB — feeds search modal
@@ -87,7 +87,7 @@ export default function Dashboard({ showToast }) {
     if (!avatarMenuOpen) return;
     const handler = (e) => {
       const clickedInsideDesktop = avatarMenuRef.current?.contains(e.target);
-      const clickedInsideMobile  = avatarMenuRefMobile.current?.contains(e.target);
+      const clickedInsideMobile = avatarMenuRefMobile.current?.contains(e.target);
       if (!clickedInsideDesktop && !clickedInsideMobile) {
         setAvatarMenuOpen(false);
       }
@@ -194,6 +194,26 @@ export default function Dashboard({ showToast }) {
           </svg>
           <span className="hide-sm">Search players…</span>
         </button>
+
+        {/* Subtle sync indicator — only visible while Edge Function is running */}
+        {matchesSyncing && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: '4px 10px', borderRadius: 999,
+            background: 'rgba(159,239,102,0.08)',
+            border: '1px solid rgba(159,239,102,0.2)',
+            fontSize: 11, color: 'var(--lime)', fontWeight: 600,
+            flexShrink: 0,
+          }}>
+            <div style={{
+              width: 8, height: 8, borderRadius: '50%',
+              border: '2px solid transparent',
+              borderTop: '2px solid var(--lime)',
+              animation: 'tv-spin 0.7s linear infinite',
+            }} />
+            Syncing
+          </div>
+        )}
 
         {/* Desktop: avatar dropdown — Profile + Sign Out */}
         <div className="hide-md" style={{ position: 'relative', flexShrink: 0 }} ref={avatarMenuRef}>
