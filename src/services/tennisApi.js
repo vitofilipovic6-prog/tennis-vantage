@@ -408,40 +408,45 @@ export async function getHeadToHead(p1Id, p2Id) {
 // ── AI-Powered Prediction engine ──────────────────────────────────────────────
 // Uses /api/chat (Gemini) for intelligent, multi-factor analysis.
 // Falls back to algorithmic prediction if AI is unavailable.
+// ── AI-Powered Prediction engine ──────────────────────────────────────────────
 export async function getPrediction(match) {
   const p1 = match.player1;
   const p2 = match.player2;
 
-  // ── Algorithmic baseline (always computed — used as fallback + AI seed) ──
+  // ── Algorithmic baseline ──────────────────────────────────────────────────
+  // Still computed — used as fallback if AI fails AND passed to AI as a signal
   const rankDiff    = (p2.rank ?? 100) - (p1.rank ?? 100);
   const rankEdge    = Math.min(25, Math.max(-25, rankDiff * 0.8));
   const surfaceEdge = match.surface === p1.surface_pref ? 7
                     : match.surface === p2.surface_pref ? -7 : 0;
 
-  // Recent form: count W's in last 5
-  const countWins = (form) => (form ?? '').split('').filter(c => c === 'W').length;
+  const countWins  = (form) => (form ?? '').split('').filter(c => c === 'W').length;
   const p1FormWins = countWins(p1.recent_form);
   const p2FormWins = countWins(p2.recent_form);
   const formEdge   = (p1FormWins - p2FormWins) * 2;
 
-  // Serve stats
   const p1ServeEdge = ((p1.first_serve_pct ?? 60) - (p2.first_serve_pct ?? 60)) * 0.15;
   const p1AceEdge   = ((p1.ace_avg ?? 5) - (p2.ace_avg ?? 5)) * 0.5;
 
-  const rawPct   = 50 + rankEdge + surfaceEdge + formEdge + p1ServeEdge + p1AceEdge;
-  const basePct  = Math.min(88, Math.max(12, Math.round(rawPct)));
+  const rawPct  = 50 + rankEdge + surfaceEdge + formEdge + p1ServeEdge + p1AceEdge;
+  const basePct = Math.min(88, Math.max(12, Math.round(rawPct)));
+
+  // Win % derived from season record
+  const p1WinRate = p1.wins + p1.losses > 0
+    ? Math.round((p1.wins / (p1.wins + p1.losses)) * 100) : null;
+  const p2WinRate = p2.wins + p2.losses > 0
+    ? Math.round((p2.wins / (p2.wins + p2.losses)) * 100) : null;
 
   const baseFactors = [
-    `Ranking: #${p1.rank ?? '?'} vs #${p2.rank ?? '?'} (${rankDiff > 0 ? '+' : ''}${rankDiff} diff)`,
+    `Ranking: #${p1.rank ?? '?'} vs #${p2.rank ?? '?'} (${rankDiff > 0 ? '+' : ''}${rankDiff} spots)`,
     `Surface: ${match.surface ?? 'Hard'} — ${
-      match.surface === p1.surface_pref ? `${p1.name?.split(' ').pop()} prefers this surface (+7%)`
-      : match.surface === p2.surface_pref ? `${p2.name?.split(' ').pop()} prefers this surface (-7%)`
-      : 'Neutral for both players'
+      match.surface === p1.surface_pref
+        ? `${p1.name?.split(' ').pop()} favours this surface`
+        : match.surface === p2.surface_pref
+          ? `${p2.name?.split(' ').pop()} favours this surface`
+          : 'Neutral surface for both'
     }`,
-    `Recent form: ${p1.recent_form ?? '-----'} vs ${p2.recent_form ?? '-----'}`,
-    p1.first_serve_pct || p2.first_serve_pct
-      ? `1st serve %: ${p1.first_serve_pct ?? '--'}% vs ${p2.first_serve_pct ?? '--'}%`
-      : null,
+    `Recent form: ${p1.recent_form ?? '—'} vs ${p2.recent_form ?? '—'}`,
   ].filter(Boolean);
 
   const baseResult = {
@@ -454,54 +459,56 @@ export async function getPrediction(match) {
     source:           'algorithmic',
   };
 
-  // ── Try AI enhancement via /api/chat ──────────────────────────────────────
+  // ── AI Enhancement ────────────────────────────────────────────────────────
   try {
-    const prompt = `You are a professional tennis prediction model. Analyze this match and provide a win probability.
+    const prompt = `You are an elite tennis prediction model with encyclopedic knowledge of ATP and WTA tours.
 
-MATCH: ${p1.name ?? 'Player 1'} vs ${p2.name ?? 'Player 2'}
-TOURNAMENT: ${match.tournament ?? 'Unknown'} (${match.round ?? ''})
-SURFACE: ${match.surface ?? 'Hard'}
+MATCH TO PREDICT:
+- ${p1.name} vs ${p2.name}
+- Tournament: ${match.tournament ?? 'Unknown'}
+- Round: ${match.round ?? 'Unknown'}
+- Surface: ${match.surface ?? 'Hard'}
 
-PLAYER 1 - ${p1.name}:
-- ATP/WTA Rank: #${p1.rank ?? 'Unranked'}
-- Country: ${p1.country ?? 'Unknown'}
-- Surface preference: ${p1.surface_pref ?? 'Hard'}
-- Recent form (last 5): ${p1.recent_form ?? 'N/A'}
-- 1st serve %: ${p1.first_serve_pct ?? 'N/A'}%
-- Aces per match: ${p1.ace_avg ?? 'N/A'}
-- Season W/L: ${p1.wins ?? 0}W / ${p1.losses ?? 0}L
+DB STATS (use as signals — supplement with your own knowledge):
+${p1.name}:
+  Rank: ${p1.rank ?? 'Unknown'} | Country: ${p1.country ?? '?'}
+  Surface pref: ${p1.surface_pref ?? 'Hard'} | Form (last 5): ${p1.recent_form ?? 'Unknown'}
+  Season: ${p1.wins ?? '?'}W-${p1.losses ?? '?'}L${p1WinRate ? ` (${p1WinRate}% win rate)` : ''}
+  1st serve %: ${p1.first_serve_pct ?? 'Unknown'} | Aces/match: ${p1.ace_avg ?? 'Unknown'}
 
-PLAYER 2 - ${p2.name}:
-- ATP/WTA Rank: #${p2.rank ?? 'Unranked'}
-- Country: ${p2.country ?? 'Unknown'}
-- Surface preference: ${p2.surface_pref ?? 'Hard'}
-- Recent form (last 5): ${p2.recent_form ?? 'N/A'}
-- 1st serve %: ${p2.first_serve_pct ?? 'N/A'}%
-- Aces per match: ${p2.ace_avg ?? 'N/A'}
-- Season W/L: ${p2.wins ?? 0}W / ${p2.losses ?? 0}L
+${p2.name}:
+  Rank: ${p2.rank ?? 'Unknown'} | Country: ${p2.country ?? '?'}
+  Surface pref: ${p2.surface_pref ?? 'Hard'} | Form (last 5): ${p2.recent_form ?? 'Unknown'}
+  Season: ${p2.wins ?? '?'}W-${p2.losses ?? '?'}L${p2WinRate ? ` (${p2WinRate}% win rate)` : ''}
+  1st serve %: ${p2.first_serve_pct ?? 'Unknown'} | Aces/match: ${p2.ace_avg ?? 'Unknown'}
 
-ALGORITHMIC BASELINE: ${p1.name} has ${basePct}% win probability.
+ALGORITHMIC BASELINE: ${p1.name} ${basePct}% — ${p2.name} ${100 - basePct}%
 
-Respond with ONLY valid JSON (no markdown, no extra text):
+YOUR TASK:
+Using your deep knowledge of these players — their head-to-head history, playing styles, ${match.surface} court records, Grand Slam pedigree, current season trajectory, injury history, and mental resilience — produce a precise win probability. Do NOT round to 50/55/60. Be specific: 62%, 71%, 44% etc. The probability must reflect real differences between these players on this surface at this stage of the tournament.
+
+Respond with ONLY this JSON (no markdown, no explanation):
 {
-  "player1_win_pct": <integer 12-88>,
+  "player1_win_pct": <integer 8-92, NOT a multiple of 5 unless genuinely warranted>,
   "confidence": "<High|Medium|Low>",
-  "predicted_winner": "<player name>",
-  "key_factors": ["<factor 1>", "<factor 2>", "<factor 3>"],
-  "ai_analysis": "<2-3 sentence expert analysis explaining the prediction>"
+  "predicted_winner": "<exact player name>",
+  "key_factors": [
+    "<specific factor about ${p1.name}'s advantage or disadvantage on ${match.surface ?? 'Hard'}>",
+    "<specific head-to-head or rivalry dynamic between these two players>",
+    "<specific factor about current form, fitness, tournament schedule or pressure>"
+  ],
+  "ai_analysis": "<2 sentences max: one factual stat-driven sentence, one decisive verdict sentence. Name both players. Be direct.>"
 }`;
 
     const response = await sendChatMessage(
       [{ role: 'user', content: prompt }],
-      'You are a professional tennis analytics AI. Respond only with valid JSON.'
+      'You are a professional tennis prediction AI. You have deep knowledge of all ATP and WTA players, their statistics, playing styles, and historical matchups. Always respond with valid JSON only — no markdown, no extra text.'
     );
 
     const rawText = response?.content?.[0]?.text ?? '';
-    // Strip any markdown code fences
     const cleaned = rawText.replace(/```json\s*/gi, '').replace(/```/g, '').trim();
     const parsed  = JSON.parse(cleaned);
 
-    // Validate the AI response has required fields
     if (
       typeof parsed.player1_win_pct === 'number' &&
       parsed.player1_win_pct >= 5 &&
@@ -510,18 +517,24 @@ Respond with ONLY valid JSON (no markdown, no extra text):
       parsed.ai_analysis
     ) {
       const aiPct = Math.min(92, Math.max(8, Math.round(parsed.player1_win_pct)));
+
+      // Sanity check: if AI gives exactly 50 for a ranked match, nudge using baseline
+      // This prevents lazy "coin flip" outputs for lopsided matchups
+      const finalPct = (aiPct === 50 && Math.abs(basePct - 50) > 8)
+        ? basePct
+        : aiPct;
+
       return {
-        player1_win_pct:  aiPct,
-        player2_win_pct:  100 - aiPct,
+        player1_win_pct:  finalPct,
+        player2_win_pct:  100 - finalPct,
         confidence:       parsed.confidence,
-        key_factors:      parsed.key_factors ?? baseFactors,
-        predicted_winner: aiPct >= 50 ? p1.name : p2.name,
+        key_factors:      parsed.key_factors?.filter(Boolean) ?? baseFactors,
+        predicted_winner: finalPct >= 50 ? p1.name : p2.name,
         ai_analysis:      parsed.ai_analysis,
         source:           'ai',
       };
     }
   } catch (e) {
-    // AI failed — log and fall through to algorithmic result
     console.warn('[getPrediction] AI failed, using algorithmic fallback:', e.message);
   }
 
