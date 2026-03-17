@@ -547,6 +547,9 @@ function FilterPills({ activeFilter, onSelect, size = 'normal' }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // MATCHES TAB
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// MATCHES TAB
+// ─────────────────────────────────────────────────────────────────────────────
 function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wtaPlayerIds }) {
   const [activeFilter, setActiveFilter] = useState('atp_singles');
   const [calendarDate, setCalendarDate] = useState(null);
@@ -558,7 +561,7 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
   const selectedDay = calendarDate;
   const isToday = !calendarDateStr || calendarDateStr === todayStr;
 
-  // Load matches for calendar-selected date
+  // Load matches for a past/future calendar date
   useEffect(() => {
     if (!calendarDateStr || calendarDateStr === todayStr) {
       setDateMatches([]);
@@ -567,50 +570,56 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
     let cancelled = false;
     setDateLoading(true);
     getMatchesByDate(calendarDateStr, wtaPlayerIds)
-      .then(d => { if (!cancelled) setDateMatches(d ?? []); })
+      .then(d  => { if (!cancelled) setDateMatches(d ?? []); })
       .catch(() => { if (!cancelled) setDateMatches([]); })
       .finally(() => { if (!cancelled) setDateLoading(false); });
     return () => { cancelled = true; };
   }, [calendarDateStr, wtaPlayerIds, todayStr]);
 
- if (loading) return <LoadingGrid />;
-  if (error) return <ErrorMessage msg={error} onRetry={refresh} />;
+  if (loading) return <LoadingGrid />;
+  if (error)   return <ErrorMessage msg={error} onRetry={refresh} />;
 
-  // ── Build today's match list: merge live + today's upcoming, deduplicated ──
+  // ── Build today's unified match list ────────────────────────────────────────
+  // Use a Map so live matches overwrite any stale "upcoming" entry for same id.
   const todayMatches = (() => {
     const map = new Map();
 
-    // 1. Today's upcoming from DB
+    // 1. upcoming rows that are dated today
     upcoming.forEach(m => {
       const d = m.local_date ?? (m.date ? new Date(m.date).toLocaleDateString('en-CA') : null);
       if (d === todayStr) map.set(m.id, m);
     });
 
-    // 2. Live matches dated today (overwrite upcoming entry if same id)
+    // 2. live rows — always include (they're already in-progress today)
+    //    overwrite the upcoming version if it exists
     live.forEach(m => {
       const d = m.local_date ?? (m.date ? new Date(m.date).toLocaleDateString('en-CA') : null);
       if (!d || d === todayStr) map.set(m.id, m);
     });
 
-    return [...map.values()].sort((a, b) =>
-      new Date(a.date ?? 0).getTime() - new Date(b.date ?? 0).getTime()
+    return [...map.values()].sort(
+      (a, b) => new Date(a.date ?? 0).getTime() - new Date(b.date ?? 0).getTime()
     );
   })();
 
-  // ── Active match pool depends on whether calendar date is today ──
+  // ── Active pool: today's merged list OR calendar-date results ───────────────
   const pool = isToday ? todayMatches : dateMatches;
 
-  // ── Filter by selected type pill ──
-  const byType = (arr) => arr.filter(m => deriveMatchType(m, wtaPlayerIds) === activeFilter);
+  // ── Filter by the selected type pill ────────────────────────────────────────
+  const byType       = (arr) => arr.filter(m => deriveMatchType(m, wtaPlayerIds) === activeFilter);
   const activeFilterDef = MATCH_FILTERS.find(f => f.id === activeFilter);
 
-  const filteredPool = byType(pool);
+  const filteredPool    = byType(pool);
   const filteredLive    = filteredPool.filter(m => m.status === 'live');
   const filteredNonLive = filteredPool.filter(m => m.status !== 'live');
 
   const sectionLabel = isToday
     ? `${activeFilterDef?.label} — Today's Matches`
-    : `${activeFilterDef?.label} — ${selectedDay?.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' }) ?? ''}`;
+    : `${activeFilterDef?.label} — ${
+        selectedDay?.toLocaleDateString('en-GB', {
+          weekday: 'long', day: 'numeric', month: 'short',
+        }) ?? ''
+      }`;
 
   return (
     <div className="tv-fade-up">
@@ -627,32 +636,45 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
         <LoadingGrid />
       ) : (
         <>
+          {/* ── Live now section ── */}
           {filteredLive.length > 0 && (
             <section style={{ marginBottom: '40px' }}>
               <SectionHeading label="Live Now" dot />
               <div style={gridStyle}>
                 {filteredLive.map(m => (
-                  <MatchCard key={m.id} match={m} onPredict={() => onSelectMatch(m)} wtaPlayerIds={wtaPlayerIds} />
+                  <MatchCard
+                    key={m.id}
+                    match={m}
+                    onPredict={() => onSelectMatch(m)}
+                    wtaPlayerIds={wtaPlayerIds}
+                  />
                 ))}
               </div>
             </section>
           )}
 
+          {/* ── Scheduled / all matches section ── */}
           <section>
             <SectionHeading label={sectionLabel} />
-            {filteredNonLive.length === 0 ? (
+            {filteredNonLive.length === 0 && filteredLive.length === 0 ? (
               <EmptyState
                 icon={isToday ? '🎾' : '📅'}
                 title={`No ${activeFilterDef?.label} matches`}
-                desc={isToday
-                  ? 'No matches found for this filter today.'
-                  : 'No matches found for this filter on this day.'}
+                desc={
+                  isToday
+                    ? 'No matches found for this filter today.'
+                    : 'No matches found for this filter on this day.'
+                }
               />
-            ) : (
+            ) : filteredNonLive.length === 0 ? null : (
               <div style={gridStyle}>
                 {filteredNonLive.map((m, i) => (
                   <div key={m.id} className={`tv-fade-up d${Math.min(i + 1, 5)}`}>
-                    <MatchCard match={m} onPredict={() => onSelectMatch(m)} wtaPlayerIds={wtaPlayerIds} />
+                    <MatchCard
+                      match={m}
+                      onPredict={() => onSelectMatch(m)}
+                      wtaPlayerIds={wtaPlayerIds}
+                    />
                   </div>
                 ))}
               </div>
