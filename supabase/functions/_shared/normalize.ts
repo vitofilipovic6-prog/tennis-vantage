@@ -232,29 +232,27 @@ function slugify(name: string): string {
   return name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
 }
 
-// ── Compute local_date using Europe/Paris timezone ────────────────────────────
-// Tennis tournaments publish schedules in local time. Using UTC causes matches
-// scheduled late at night to bleed into the next UTC day, and early-morning
-// matches in far-east timezones to appear on the previous UTC day.
-// Europe/Paris (CET = UTC+1, CEST = UTC+2) is the ATP/WTA scheduling anchor
-// and matches the user's local timezone (Croatia = same zone as Paris).
+// ── Compute local_date accounting for global tournament timezones ─────────────
+// Miami/Indian Wells = UTC-4/5, EU = UTC+1/2, Asia = UTC+8/9
+// Strategy: take the MINIMUM date across key tennis timezones so a late Miami
+// match (11 PM ET = next UTC day) always lands on the correct local date.
 function computeLocalDate(timestampSeconds: number): string {
   if (!timestampSeconds || timestampSeconds <= 0) {
-    return new Date().toLocaleDateString('en-CA');
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Europe/Paris',
+    }).format(new Date());
   }
-  const d = new Date(timestampSeconds * 1000);
-  // Use Intl.DateTimeFormat to get the date in Europe/Paris timezone
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Europe/Paris',
-    year:     'numeric',
-    month:    '2-digit',
-    day:      '2-digit',
-  }).formatToParts(d);
 
-  const year  = parts.find(p => p.type === 'year')?.value  ?? '';
-  const month = parts.find(p => p.type === 'month')?.value ?? '';
-  const day   = parts.find(p => p.type === 'day')?.value   ?? '';
-  return `${year}-${month}-${day}`; // YYYY-MM-DD
+  const d = new Date(timestampSeconds * 1000);
+
+  const parisDate   = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris',    year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+  const easternDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+  const pacificDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+
+  // Use the earliest date — covers EU morning matches and US late-night matches
+  // A match on March 17 at 11 PM ET (= March 18 UTC) correctly gets 2026-03-17
+  const dates = [parisDate, easternDate, pacificDate].sort();
+  return dates[0];
 }
 
 export function resolveTour(event: any): 'ATP' | 'WTA' | 'ITF' | 'UTR' | null {
