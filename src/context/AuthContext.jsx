@@ -1,7 +1,32 @@
 import { createContext, useContext, useReducer, useCallback, useEffect, useRef } from 'react';
 import { supabase } from '../services/supabase';
 
-const initialState = {
+const SUPABASE_SESSION_KEY = 'sb-zleddweuzesuymahjniw-auth-token';
+
+function getInitialState() {
+  try {
+    const raw = localStorage.getItem(SUPABASE_SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const user = parsed?.user ?? parsed?.currentSession?.user ?? null;
+    if (!user?.id) return null;
+    return {
+      user,
+      profile: {
+        full_name:         user.user_metadata?.full_name ?? 'Player',
+        avatar_url:        user.user_metadata?.avatar_url ?? null,
+        favourite_players: [],
+      },
+      loading:     false,
+      authLoading: false,
+      error:       null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+const initialState = getInitialState() ?? {
   user:        null,
   profile:     null,
   loading:     true,
