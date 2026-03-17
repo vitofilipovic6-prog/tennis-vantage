@@ -2,12 +2,13 @@
 // ProfilePage.jsx  –  TennisVantage user profile
 // Sections: Hero (avatar + name) · Favourite Players · Account Info
 // ─────────────────────────────────────────────────────────────────────────────
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useProfile } from '../hooks/useProfile';
 import { MOCK_DATA } from '../services/tennisApi';
 import { supabase } from '../services/supabase';
 import { resolveFlag } from '../services/tennisApi';
+
 
 const SURFACE_COLOR = { Clay: '#f97316', Hard: '#60a5fa', Grass: '#4ade80' };
 

@@ -24,15 +24,15 @@ import ProfilePage from './ProfilePage';
 // MATCH TYPE FILTER DEFINITIONS
 // ─────────────────────────────────────────────────────────────────────────────
 const MATCH_FILTERS = [
-  { id: 'atp_singles',       label: 'ATP',          shortLabel: 'ATP',    color: '#60a5fa' },
-  { id: 'wta_singles',       label: 'WTA',          shortLabel: 'WTA',    color: '#f472b6' },
-  { id: 'itf_men_singles',   label: 'ITF Men',      shortLabel: 'ITF M',  color: '#fb923c' },
-  { id: 'itf_women_singles', label: 'ITF Women',    shortLabel: 'ITF W',  color: '#f59e0b' },
-  { id: 'utr_men_singles',   label: 'UTR Men',      shortLabel: 'UTR M',  color: '#a78bfa' },
-  { id: 'utr_women_singles', label: 'UTR Women',    shortLabel: 'UTR W',  color: '#e879f9' },
-  { id: 'atp_doubles',       label: 'ATP Doubles',  shortLabel: 'ATP 2×', color: '#818cf8' },
-  { id: 'wta_doubles',       label: 'WTA Doubles',  shortLabel: 'WTA 2×', color: '#fb7185' },
-  { id: 'mixed_doubles',     label: 'Mixed Doubles',shortLabel: 'Mixed',  color: '#34d399' },
+  { id: 'atp_singles', label: 'ATP', shortLabel: 'ATP', color: '#60a5fa' },
+  { id: 'wta_singles', label: 'WTA', shortLabel: 'WTA', color: '#f472b6' },
+  { id: 'itf_men_singles', label: 'ITF Men', shortLabel: 'ITF M', color: '#fb923c' },
+  { id: 'itf_women_singles', label: 'ITF Women', shortLabel: 'ITF W', color: '#f59e0b' },
+  { id: 'utr_men_singles', label: 'UTR Men', shortLabel: 'UTR M', color: '#a78bfa' },
+  { id: 'utr_women_singles', label: 'UTR Women', shortLabel: 'UTR W', color: '#e879f9' },
+  { id: 'atp_doubles', label: 'ATP Doubles', shortLabel: 'ATP 2×', color: '#818cf8' },
+  { id: 'wta_doubles', label: 'WTA Doubles', shortLabel: 'WTA 2×', color: '#fb7185' },
+  { id: 'mixed_doubles', label: 'Mixed Doubles', shortLabel: 'Mixed', color: '#34d399' },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -41,11 +41,11 @@ const MATCH_FILTERS = [
 export default function Dashboard({ showToast }) {
   const { user, firstName, logout } = useAuth();
 
-  const [activeTab,    setActiveTab]    = useState('matches');
-  const [selectedMatch,setSelectedMatch]= useState(null);
-  const [searchOpen,   setSearchOpen]   = useState(false);
-  const [bioPlayer,    setBioPlayer]    = useState(null);
-  const [profileOpen,  setProfileOpen]  = useState(false);
+  const [activeTab, setActiveTab] = useState('matches');
+  const [selectedMatch, setSelectedMatch] = useState(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [bioPlayer, setBioPlayer] = useState(null);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   // Mobile avatar dropdown state
   const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
@@ -109,10 +109,10 @@ export default function Dashboard({ showToast }) {
   }, []);
 
   const tabs = [
-    { id: 'matches',     label: 'Matches',  icon: '🎾' },
-    { id: 'predictions', label: 'Predict',  icon: '🔮' },
-    { id: 'rankings',    label: 'Rankings', icon: '🏆' },
-    { id: 'chat',        label: 'AI Chat',  icon: '🤖' },
+    { id: 'matches', label: 'Matches', icon: '🎾' },
+    { id: 'predictions', label: 'Predict', icon: '🔮' },
+    { id: 'rankings', label: 'Rankings', icon: '🏆' },
+    { id: 'chat', label: 'AI Chat', icon: '🤖' },
   ];
 
   async function handleLogout() {
@@ -195,27 +195,84 @@ export default function Dashboard({ showToast }) {
           <span className="hide-sm">Search players…</span>
         </button>
 
-        {/* Desktop: avatar + logout */}
-        <div className="hide-md" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-          <div style={{
-            width: '32px', height: '32px', borderRadius: '50%',
-            background: 'linear-gradient(135deg, var(--lime), var(--clay))',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: '13px', fontWeight: 800, color: '#070B14', flexShrink: 0,
-          }}>
-            {avatarInitial}
-          </div>
+        {/* Desktop: avatar with dropdown (Profile + Sign Out) */}
+        <div className="hide-md" style={{ position: 'relative', flexShrink: 0 }} ref={avatarMenuRef}>
           <button
-            onClick={handleLogout}
+            onClick={() => setAvatarMenuOpen(prev => !prev)}
             style={{
-              padding: '6px 14px', borderRadius: '8px',
-              background: 'var(--bg-glass)', border: '1px solid var(--border)',
-              color: 'var(--text-muted)', fontFamily: 'var(--font-body)',
-              fontSize: '13px', cursor: 'pointer', transition: 'var(--t)',
+              width: '34px', height: '34px', borderRadius: '50%', padding: 0,
+              background: 'linear-gradient(135deg, var(--lime), var(--clay))',
+              border: avatarMenuOpen ? '2px solid var(--lime)' : '2px solid transparent',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: '13px', fontWeight: 800, color: '#070B14',
+              cursor: 'pointer', flexShrink: 0, transition: 'border-color 0.15s',
             }}
+            aria-label="Account menu"
+            aria-expanded={avatarMenuOpen}
           >
-            Sign Out
+            {avatarInitial}
           </button>
+
+          {avatarMenuOpen && (
+            <div style={{
+              position: 'absolute', top: 'calc(100% + 8px)', right: 0,
+              background: 'var(--bg-card)', border: '1px solid var(--border-md)',
+              borderRadius: '12px', overflow: 'hidden', minWidth: '190px',
+              boxShadow: '0 16px 40px rgba(0,0,0,0.5)',
+              animation: 'tv-slide-up 0.15s ease',
+              zIndex: 200,
+            }}>
+              {/* User info header */}
+              <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
+                <p style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text)', margin: 0 }}>
+                  {firstName ?? 'Player'}
+                </p>
+                <p style={{
+                  fontSize: '11px', color: 'var(--text-faint)', margin: '2px 0 0',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>
+                  {user?.email}
+                </p>
+              </div>
+
+              {/* My Profile */}
+              <button
+                onClick={() => { setAvatarMenuOpen(false); setProfileOpen(true); }}
+                style={{
+                  width: '100%', textAlign: 'left',
+                  padding: '12px 16px', background: 'none', border: 'none',
+                  color: 'var(--text)', fontFamily: 'var(--font-body)',
+                  fontSize: '14px', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: '10px',
+                  transition: 'background 0.1s',
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-glass)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'none'}
+              >
+                <span style={{ fontSize: '16px' }}>👤</span>
+                My Profile
+              </button>
+
+              {/* Sign Out */}
+              <button
+                onClick={handleLogout}
+                style={{
+                  width: '100%', textAlign: 'left',
+                  padding: '12px 16px', background: 'none', border: 'none',
+                  borderTop: '1px solid var(--border)',
+                  color: 'var(--clay)', fontFamily: 'var(--font-body)',
+                  fontSize: '14px', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: '10px',
+                  transition: 'background 0.1s',
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(251,146,60,0.08)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'none'}
+              >
+                <span style={{ fontSize: '16px' }}>🚪</span>
+                Sign Out
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Mobile: avatar with dropdown (Profile + Sign Out) */}
@@ -470,15 +527,15 @@ function FilterPills({ activeFilter, onSelect, size = 'normal' }) {
 // MATCHES TAB
 // ─────────────────────────────────────────────────────────────────────────────
 function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wtaPlayerIds }) {
-  const [activeFilter,     setActiveFilter]     = useState('atp_singles');
-  const [calendarDate,     setCalendarDate]      = useState(null);
-  const [calendarDateStr,  setCalendarDateStr]   = useState(null);
-  const [dateMatches,      setDateMatches]       = useState([]);
-  const [dateLoading,      setDateLoading]       = useState(false);
+  const [activeFilter, setActiveFilter] = useState('atp_singles');
+  const [calendarDate, setCalendarDate] = useState(null);
+  const [calendarDateStr, setCalendarDateStr] = useState(null);
+  const [dateMatches, setDateMatches] = useState([]);
+  const [dateLoading, setDateLoading] = useState(false);
 
-  const todayStr  = new Date().toLocaleDateString('en-CA');
+  const todayStr = new Date().toLocaleDateString('en-CA');
   const selectedDay = calendarDate;
-  const isToday   = !calendarDateStr || calendarDateStr === todayStr;
+  const isToday = !calendarDateStr || calendarDateStr === todayStr;
 
   // Load matches for calendar-selected date
   useEffect(() => {
@@ -521,7 +578,7 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
   const byType = (arr) => arr.filter(m => deriveMatchType(m, wtaPlayerIds) === activeFilter);
   const activeFilterDef = MATCH_FILTERS.find(f => f.id === activeFilter);
 
-  const filteredLive    = isToday ? byType(trulyLive) : [];
+  const filteredLive = isToday ? byType(trulyLive) : [];
   const filteredNonLive = byType(
     isToday
       ? displayMatches.filter(m => m.status !== 'live')
@@ -592,12 +649,12 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = 
   const surfaceColor = surfaceColors[m.surface] ?? '#94a3b8';
 
   const effectiveType = deriveMatchType(m, wtaPlayerIds);
-  const matchTypeDef  = MATCH_FILTERS.find(f => f.id === effectiveType) ?? null;
+  const matchTypeDef = MATCH_FILTERS.find(f => f.id === effectiveType) ?? null;
 
-  const todayLocal  = new Date().toLocaleDateString('en-CA');
-  const matchLocal  = m.date ? new Date(m.date).toLocaleDateString('en-CA') : null;
-  const isFinished  = m.status === 'finished' || (matchLocal && matchLocal < todayLocal);
-  const isLive      = m.status === 'live' && !isFinished;
+  const todayLocal = new Date().toLocaleDateString('en-CA');
+  const matchLocal = m.date ? new Date(m.date).toLocaleDateString('en-CA') : null;
+  const isFinished = m.status === 'finished' || (matchLocal && matchLocal < todayLocal);
+  const isLive = m.status === 'live' && !isFinished;
 
   // Resolve flags on-the-fly for any missing ones
   const p1Flag = m.player1?.flag && m.player1.flag !== '🏳️' ? m.player1.flag : resolveFlag(m.player1?.country ?? '');
@@ -741,7 +798,7 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = 
 function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMatch, wtaPlayerIds }) {
   const [predFilter, setPredFilter] = useState('atp_singles');
   const { prediction, loading: predLoading, error: predError } = usePrediction(selectedMatch);
-  const [h2h, setH2h]           = useState(null);
+  const [h2h, setH2h] = useState(null);
   const [h2hLoading, setH2hLoading] = useState(false);
 
   const todayStr = new Date().toLocaleDateString('en-CA');
@@ -855,8 +912,8 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
 // ─────────────────────────────────────────────────────────────────────────────
 function MatchPickerRow({ match: m, selected, onSelect, wtaPlayerIds = new Set() }) {
   const effectiveType = deriveMatchType(m, wtaPlayerIds);
-  const matchTypeDef  = MATCH_FILTERS.find(f => f.id === effectiveType) ?? null;
-  const isLive        = m.status === 'live';
+  const matchTypeDef = MATCH_FILTERS.find(f => f.id === effectiveType) ?? null;
+  const isLive = m.status === 'live';
 
   return (
     <button
@@ -916,7 +973,7 @@ function PredictionCard({ match: m, prediction: pred }) {
 
   const p1WinPct = pred.player1_win_pct ?? 50;
   const p2WinPct = pred.player2_win_pct ?? (100 - p1WinPct);
-  const isAi     = pred.source === 'ai';
+  const isAi = pred.source === 'ai';
 
   // Resolve flags
   const p1Flag = p1?.flag && p1.flag !== '🏳️' ? p1.flag : resolveFlag(p1?.country ?? '');
@@ -1118,20 +1175,20 @@ function H2HPanel({ h2h, match: m }) {
 // RANKINGS TAB — Now with ITF Men, ITF Women, UTR Men, UTR Women tabs
 // ─────────────────────────────────────────────────────────────────────────────
 const RANKING_TOURS = [
-  { id: 'ATP',       label: 'ATP',       color: '#60a5fa', pointsLabel: 'Points' },
-  { id: 'WTA',       label: 'WTA',       color: '#f472b6', pointsLabel: 'Points' },
-  { id: 'ITF_MEN',   label: 'ITF Men',   color: '#fb923c', pointsLabel: 'Wins'   },
-  { id: 'ITF_WOMEN', label: 'ITF Women', color: '#f59e0b', pointsLabel: 'Wins'   },
-  { id: 'UTR_MEN',   label: 'UTR Men',   color: '#a78bfa', pointsLabel: 'Wins'   },
-  { id: 'UTR_WOMEN', label: 'UTR Women', color: '#e879f9', pointsLabel: 'Wins'   },
+  { id: 'ATP', label: 'ATP', color: '#60a5fa', pointsLabel: 'Points' },
+  { id: 'WTA', label: 'WTA', color: '#f472b6', pointsLabel: 'Points' },
+  { id: 'ITF_MEN', label: 'ITF Men', color: '#fb923c', pointsLabel: 'Wins' },
+  { id: 'ITF_WOMEN', label: 'ITF Women', color: '#f59e0b', pointsLabel: 'Wins' },
+  { id: 'UTR_MEN', label: 'UTR Men', color: '#a78bfa', pointsLabel: 'Wins' },
+  { id: 'UTR_WOMEN', label: 'UTR Women', color: '#e879f9', pointsLabel: 'Wins' },
 ];
 
 function RankingsTab({ onSelectPlayer }) {
-  const [tour, setTour]     = useState('ATP');
+  const [tour, setTour] = useState('ATP');
   const [hovRow, setHovRow] = useState(null);
   const { rankings, loading, error } = useRankings(tour);
 
-  const tourDef      = RANKING_TOURS.find(t => t.id === tour);
+  const tourDef = RANKING_TOURS.find(t => t.id === tour);
   const isAltRanking = ['ITF_MEN', 'ITF_WOMEN', 'UTR_MEN', 'UTR_WOMEN'].includes(tour);
 
   return (
@@ -1201,12 +1258,12 @@ function RankingsTab({ onSelectPlayer }) {
 
           {/* Player rows */}
           {rankings.map((p, i) => {
-            const rank    = p.rank ?? (i + 1);
+            const rank = p.rank ?? (i + 1);
             const rankDir = p.prev_rank == null ? null
               : p.prev_rank > rank ? 'up'
-              : p.prev_rank < rank ? 'down' : 'same';
-            const medal   = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : null;
-            const flag    = p.flag && p.flag !== '🏳️' ? p.flag : resolveFlag(p.country ?? '');
+                : p.prev_rank < rank ? 'down' : 'same';
+            const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : null;
+            const flag = p.flag && p.flag !== '🏳️' ? p.flag : resolveFlag(p.country ?? '');
 
             return (
               <div
@@ -1530,7 +1587,7 @@ function AiChatTab({ contextMatch }) {
           >
             {typing ? (
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" strokeWidth="2.5">
-                <rect x="6" y="6" width="12" height="12" rx="2"/>
+                <rect x="6" y="6" width="12" height="12" rx="2" />
               </svg>
             ) : (
               <svg
@@ -1538,8 +1595,8 @@ function AiChatTab({ contextMatch }) {
                 stroke={!input.trim() ? 'var(--text-faint)' : '#070B14'}
                 strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
               >
-                <line x1="22" y1="2" x2="11" y2="13"/>
-                <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                <line x1="22" y1="2" x2="11" y2="13" />
+                <polygon points="22 2 15 22 11 13 2 9 22 2" />
               </svg>
             )}
           </button>
