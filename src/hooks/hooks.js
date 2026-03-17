@@ -373,6 +373,52 @@ async function fetchAltRankings(tour) {
   }
 }
 
+// ── useAllPlayers ─────────────────────────────────────────────────────────────
+// Fetches all players from DB for the search modal.
+// Cached for 10 minutes — busted on manual refresh.
+let allPlayersCache     = null;
+let allPlayersCacheTime = 0;
+const ALL_PLAYERS_TTL   = 10 * 60 * 1000;
+
+export function useAllPlayers() {
+  const isStale = Date.now() - allPlayersCacheTime > ALL_PLAYERS_TTL;
+  const [players, setPlayers] = useState(allPlayersCache && !isStale ? allPlayersCache : []);
+  const [loading, setLoading] = useState(!allPlayersCache || isStale);
+
+  useEffect(() => {
+    const stale = Date.now() - allPlayersCacheTime > ALL_PLAYERS_TTL;
+    if (allPlayersCache && !stale) {
+      setPlayers(allPlayersCache);
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLoading(true);
+
+    supabase
+      .from('players')
+      .select('id, name, country, flag, rank, wins, losses, surface_pref, first_serve_pct, recent_form')
+      .not('name', 'is', null)
+      .order('rank', { ascending: true, nullsLast: true })
+      .limit(500)
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) { setLoading(false); return; }
+        const sorted = (data ?? []).filter(p => p.name && !p.name.includes('/'));
+        allPlayersCache     = sorted;
+        allPlayersCacheTime = Date.now();
+        setPlayers(sorted);
+        setLoading(false);
+      })
+      .catch(() => { if (!cancelled) setLoading(false); });
+
+    return () => { cancelled = true; };
+  }, []);
+
+  return { players, loading };
+}
+
 // ── usePrediction ─────────────────────────────────────────────────────────────
 export function usePrediction(match) {
   const [prediction, setPrediction] = useState(null);
