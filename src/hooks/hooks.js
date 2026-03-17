@@ -237,10 +237,6 @@ export function useActiveDates(startDate, endDate) {
 }
 
 // ── useRankings ───────────────────────────────────────────────────────────────
-// Now supports: ATP, WTA, ITF_MEN, ITF_WOMEN, UTR_MEN, UTR_WOMEN
-// ITF/UTR pull from the players table joined via matches (match_type filter).
-// ATP/WTA pull from the rankings table as before.
-// ── useRankings ───────────────────────────────────────────────────────────────
 const rankingsCache = {};
 
 export function useRankings(tour = 'ATP') {

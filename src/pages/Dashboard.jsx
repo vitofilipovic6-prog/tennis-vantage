@@ -1185,16 +1185,14 @@ function H2HPanel({ h2h, match: m }) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // RANKINGS TAB
-// Top 50 per tour. Only ATP + WTA rows are clickable (we have bio data for them).
-// ITF/UTR rows are display-only — no pointer, no hover, no modal.
 // ─────────────────────────────────────────────────────────────────────────────
 const RANKING_TOURS = [
-  { id: 'ATP',       label: 'ATP',        color: '#60a5fa', pointsLabel: 'Points',  interactive: true  },
-  { id: 'WTA',       label: 'WTA',        color: '#f472b6', pointsLabel: 'Points',  interactive: true  },
-  { id: 'ITF_MEN',   label: 'ITF Men',    color: '#fb923c', pointsLabel: 'Wins',    interactive: false },
-  { id: 'ITF_WOMEN', label: 'ITF Women',  color: '#f59e0b', pointsLabel: 'Wins',    interactive: false },
-  { id: 'UTR_MEN',   label: 'UTR Men',    color: '#a78bfa', pointsLabel: 'Wins',    interactive: false },
-  { id: 'UTR_WOMEN', label: 'UTR Women',  color: '#e879f9', pointsLabel: 'Wins',    interactive: false },
+  { id: 'ATP',       label: 'ATP',       color: '#60a5fa', pointsLabel: 'Points', interactive: true  },
+  { id: 'WTA',       label: 'WTA',       color: '#f472b6', pointsLabel: 'Points', interactive: true  },
+  { id: 'ITF_MEN',   label: 'ITF Men',   color: '#fb923c', pointsLabel: 'Wins',   interactive: false },
+  { id: 'ITF_WOMEN', label: 'ITF Women', color: '#f59e0b', pointsLabel: 'Wins',   interactive: false },
+  { id: 'UTR_MEN',   label: 'UTR Men',   color: '#a78bfa', pointsLabel: 'Wins',   interactive: false },
+  { id: 'UTR_WOMEN', label: 'UTR Women', color: '#e879f9', pointsLabel: 'Wins',   interactive: false },
 ];
 
 function RankingsTab({ onSelectPlayer }) {
@@ -1202,18 +1200,22 @@ function RankingsTab({ onSelectPlayer }) {
   const [hovRow, setHovRow] = useState(null);
   const { rankings, loading, error } = useRankings(tour);
 
-  const tourDef     = RANKING_TOURS.find(t => t.id === tour);
-  const isAltTour   = !tourDef?.interactive;
+  // Derive these ONCE at the top so every part of the render can use them
+  const tourDef     = RANKING_TOURS.find(t => t.id === tour) ?? RANKING_TOURS[0];
+  const isClickable = tourDef.interactive;
+  const isAltTour   = !isClickable;
 
   return (
     <div className="tv-fade-up">
 
       {/* Tour selector pills */}
-      <div className="tv-rankings-filters" style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
+      <div className="tv-rankings-filters" style={{
+        display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap',
+      }}>
         {RANKING_TOURS.map(t => (
           <button
             key={t.id}
-            onClick={() => setTour(t.id)}
+            onClick={() => { setTour(t.id); setHovRow(null); }}
             style={{
               padding: '6px 16px', borderRadius: '999px',
               border: tour === t.id ? 'none' : '1px solid var(--border)',
@@ -1228,28 +1230,30 @@ function RankingsTab({ onSelectPlayer }) {
         ))}
       </div>
 
-      {/* Info banner — ATP/WTA: clickable hint | ITF/UTR: no-data notice */}
+      {/* Info banner */}
       <div style={{
         padding: '10px 14px', borderRadius: '8px', marginBottom: '16px',
-        background: `${tourDef?.color}10`,
-        border: `1px solid ${tourDef?.color}30`,
+        background: `${tourDef.color}10`,
+        border: `1px solid ${tourDef.color}30`,
         display: 'flex', alignItems: 'center', gap: '8px',
       }}>
         <span style={{ fontSize: '14px' }}>{isAltTour ? 'ℹ️' : '👆'}</span>
         <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
           {isAltTour ? (
             <>
-              <span style={{ color: tourDef?.color, fontWeight: 700 }}>{tourDef?.label}</span>
-              {' '}rankings are derived from match wins in our database. Player profiles are not available for this tour.
+              <span style={{ color: tourDef.color, fontWeight: 700 }}>{tourDef.label}</span>
+              {' '}rankings are derived from match wins. Player profiles are not available for this tour.
             </>
           ) : (
             <>
-              Showing <span style={{ color: tourDef?.color, fontWeight: 700 }}>Top 50</span> — click any player to view their full profile and stats.
+              Showing <span style={{ color: tourDef.color, fontWeight: 700 }}>Top 50</span>
+              {' '}— click any player to view their full profile and stats.
             </>
           )}
         </p>
       </div>
 
+      {/* States */}
       {loading ? (
         <LoadingGrid />
       ) : error ? (
@@ -1257,14 +1261,15 @@ function RankingsTab({ onSelectPlayer }) {
       ) : rankings.length === 0 ? (
         <EmptyState
           icon="📊"
-          title={`No ${tourDef?.label} rankings yet`}
+          title={`No ${tourDef.label} rankings yet`}
           desc={isAltTour
-            ? 'Rankings will appear once matches of this type are synced.'
+            ? 'Rankings appear once matches of this type are synced.'
             : 'Rankings will appear after the next sync.'}
         />
       ) : (
         <Card style={{ overflow: 'hidden' }}>
-          {/* Header */}
+
+          {/* Header row */}
           <div style={{
             display: 'grid',
             gridTemplateColumns: '36px minmax(0,1fr) 70px 80px',
@@ -1276,22 +1281,19 @@ function RankingsTab({ onSelectPlayer }) {
           }}>
             <span>#</span>
             <span>Player</span>
-            <span style={{ textAlign: 'right' }}>{tourDef?.pointsLabel ?? 'Pts'}</span>
+            <span style={{ textAlign: 'right' }}>{tourDef.pointsLabel}</span>
             <span className="rankings-wl" style={{ textAlign: 'right' }}>W / L</span>
           </div>
 
-          {/* Rows */}
+          {/* Player rows */}
           {rankings.map((p, i) => {
             const rank    = p.rank ?? (i + 1);
             const medal   = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : null;
             const flag    = p.flag && p.flag !== '🏳️' ? p.flag : resolveFlag(p.country ?? '');
             const rankDir = p.prev_rank == null ? null
               : p.prev_rank > rank ? 'up'
-              : p.prev_rank < rank ? 'down' : 'same';
-
-            // ATP/WTA: hoverable + clickable
-            // ITF/UTR: static display row, no interaction
-            const isClickable = tourDef?.interactive;
+              : p.prev_rank < rank ? 'down'
+              : 'same';
 
             return (
               <div
@@ -1304,26 +1306,22 @@ function RankingsTab({ onSelectPlayer }) {
                   gridTemplateColumns: '36px minmax(0,1fr) 70px 80px',
                   gap: '8px', padding: '12px 16px',
                   borderTop: '1px solid var(--border)',
-                  background: isClickable && hovRow === i
-                    ? 'var(--bg-glass)'
-                    : 'transparent',
-                  // Only show pointer cursor for interactive tours
+                  background: isClickable && hovRow === i ? 'var(--bg-glass)' : 'transparent',
                   cursor: isClickable ? 'pointer' : 'default',
                   transition: 'background 0.12s',
                   alignItems: 'center',
-                  // Slightly dim ITF/UTR rows to visually signal non-interactive
-                  opacity: isAltTour ? 0.75 : 1,
+                  opacity: isAltTour ? 0.78 : 1,
                 }}
               >
-                {/* Rank number */}
+                {/* Rank */}
                 <span style={{
                   fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '14px',
-                  color: rank <= 3 ? tourDef?.color : 'var(--text-muted)',
+                  color: rank <= 3 ? tourDef.color : 'var(--text-muted)',
                 }}>
                   {medal ?? rank}
                 </span>
 
-                {/* Player name + flag + rank movement */}
+                {/* Name + flag + movement */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
                   <span style={{ fontSize: '16px', flexShrink: 0 }}>{flag}</span>
                   <span style={{
@@ -1332,7 +1330,6 @@ function RankingsTab({ onSelectPlayer }) {
                   }}>
                     {p.name}
                   </span>
-                  {/* Rank movement arrow — only for ATP/WTA which have prev_rank */}
                   {rankDir && rankDir !== 'same' && (
                     <span style={{
                       fontSize: '10px', fontWeight: 700, flexShrink: 0,
@@ -1343,7 +1340,7 @@ function RankingsTab({ onSelectPlayer }) {
                   )}
                 </div>
 
-                {/* Points / wins */}
+                {/* Points */}
                 <span style={{
                   fontFamily: 'var(--font-mono)', fontWeight: 600,
                   fontSize: '13px', color: 'var(--text-muted)', textAlign: 'right',
@@ -1351,7 +1348,7 @@ function RankingsTab({ onSelectPlayer }) {
                   {p.points != null ? p.points.toLocaleString() : '—'}
                 </span>
 
-                {/* W/L — hidden on mobile via CSS */}
+                {/* W/L */}
                 <span className="rankings-wl" style={{
                   fontSize: '13px', color: 'var(--text-muted)', textAlign: 'right',
                 }}>
@@ -1362,16 +1359,21 @@ function RankingsTab({ onSelectPlayer }) {
             );
           })}
 
-          {/* Footer showing count */}
+          {/* Footer — isClickable is now in scope here */}
           <div style={{
             padding: '10px 16px', borderTop: '1px solid var(--border)',
             fontSize: '11px', color: 'var(--text-faint)', textAlign: 'center',
           }}>
-            Showing Top {rankings.length} · {isAltTour ? 'Derived from match wins' : 'Official rankings'}
+            Showing Top {rankings.length}
+            {' · '}
+            {isAltTour ? 'Derived from match wins' : 'Official rankings'}
             {isClickable && (
-              <span style={{ color: tourDef?.color }}> · Click a player for full profile</span>
+              <span style={{ color: tourDef.color }}>
+                {' · '}Click a player for full profile
+              </span>
             )}
           </div>
+
         </Card>
       )}
     </div>
