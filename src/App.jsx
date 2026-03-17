@@ -17,8 +17,12 @@ const AUTH_SCREENS = ['landing', 'login', 'signup', 'magic'];
 
 function getSavedScreen() {
   try {
+    // Also check if Supabase has a local session — most reliable signal
+    const hasSupabaseSession = Object.keys(localStorage).some(k =>
+      k.startsWith('sb-') && k.endsWith('-auth-token')
+    );
+    if (hasSupabaseSession) return 'dashboard';
     const s = sessionStorage.getItem('tv_screen');
-    // Only restore dashboard — never restore auth screens across refreshes
     return s === 'dashboard' ? 'dashboard' : 'landing';
   } catch {
     return 'landing';
@@ -44,18 +48,18 @@ function AppRouter() {
   };
 
   useEffect(() => {
-    if (loading) return; // wait for auth to resolve before routing
+    if (loading) return;
     if (user) {
-      // Authenticated — always go to dashboard
+      // Always save dashboard to session when user is confirmed
+      saveScreen('dashboard');
       if (AUTH_SCREENS.includes(screen)) {
         setScreen('dashboard');
-        saveScreen('dashboard');
       }
     } else {
-      // Not authenticated — kick back to landing if somehow on dashboard
+      // User signed out — clear saved screen
+      saveScreen('landing');
       if (screen === 'dashboard') {
         setScreen('landing');
-        saveScreen('landing');
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
