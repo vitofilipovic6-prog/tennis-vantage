@@ -823,12 +823,14 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
   const [h2hLoading, setH2hLoading] = useState(false);
 
   const todayStr = new Date().toLocaleDateString('en-CA');
-  const predictableMatches = allMatches.filter(m => {
-    if (m.status === 'live') return true;
-    if (m.status === 'finished') return false;
-    const d = m.local_date ?? (m.date ? new Date(m.date).toLocaleDateString('en-CA') : null);
-    return !d || d >= todayStr;
-  });
+  // AFTER — only today's matches + anything currently live
+const predictableMatches = allMatches.filter(m => {
+  if (m.status === 'finished') return false;
+  if (m.status === 'live') return true;
+  // upcoming: only show today's matches
+  const d = m.local_date ?? (m.date ? new Date(m.date).toLocaleDateString('en-CA') : null);
+  return d === todayStr;
+});
 
   const filteredMatches = predictableMatches.filter(m =>
     deriveMatchType(m, wtaPlayerIds) === predFilter
