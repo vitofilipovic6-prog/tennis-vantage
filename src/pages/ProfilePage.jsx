@@ -6,6 +6,8 @@ import { useState, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useProfile } from '../hooks/useProfile';
 import { MOCK_DATA } from '../services/tennisApi';
+import { supabase } from '../services/supabase';
+import { resolveFlag } from '../services/tennisApi';
 
 const SURFACE_COLOR = { Clay: '#f97316', Hard: '#60a5fa', Grass: '#4ade80' };
 
@@ -41,7 +43,7 @@ export default function ProfilePage({ onBack, showToast }) {
           onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-            <polyline points="15 18 9 12 15 6"/>
+            <polyline points="15 18 9 12 15 6" />
           </svg>
           Back to Dashboard
         </button>
@@ -90,7 +92,7 @@ function HeroCard({ profile, user, saving, onUpdateName, onUploadAvatar }) {
   const [editing, setEditing] = useState(false);
   const [nameVal, setNameVal] = useState(profile?.full_name ?? '');
   const [preview, setPreview] = useState(null);
-  const [hovAv, setHovAv]     = useState(false);
+  const [hovAv, setHovAv] = useState(false);
   const fileRef = useRef();
 
   const handleFile = useCallback(async e => {
@@ -107,8 +109,8 @@ function HeroCard({ profile, user, saving, onUpdateName, onUploadAvatar }) {
   }, [nameVal, onUpdateName]);
 
   const avatarUrl = preview ?? profile?.avatar_url;
-  const initial   = (profile?.full_name?.[0] ?? user?.email?.[0] ?? 'P').toUpperCase();
-  const joined    = user?.created_at
+  const initial = (profile?.full_name?.[0] ?? user?.email?.[0] ?? 'P').toUpperCase();
+  const joined = user?.created_at
     ? new Date(user.created_at).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
     : '—';
 
@@ -138,8 +140,8 @@ function HeroCard({ profile, user, saving, onUpdateName, onUploadAvatar }) {
             {hovAv && (
               <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
-                  <circle cx="12" cy="13" r="4"/>
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                  <circle cx="12" cy="13" r="4" />
                 </svg>
               </div>
             )}
@@ -170,7 +172,7 @@ function HeroCard({ profile, user, saving, onUpdateName, onUploadAvatar }) {
                 onMouseEnter={e => e.currentTarget.style.color = 'var(--lime)'}
                 onMouseLeave={e => e.currentTarget.style.color = 'var(--text-faint)'}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
               </button>
             </div>
           )}
@@ -186,78 +188,208 @@ function HeroCard({ profile, user, saving, onUpdateName, onUploadAvatar }) {
 }
 
 function FavouritePlayersCard({ profile, saving, onToggle }) {
-  const [query, setQuery]     = useState('');
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState([]);
+  const [searching, setSearching] = useState(false);
   const [focused, setFocused] = useState(false);
+  const debounceRef = useRef(null);
+
   const favs = profile?.favourite_players ?? [];
 
-  const results = query.trim()
-    ? ALL_PLAYERS.filter(p => p.name.toLowerCase().includes(query.toLowerCase()) && !favs.includes(p.name)).slice(0, 6)
-    : [];
+  // Debounced live search against the players table
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) { setResults([]); setSearching(false); return; }
+
+    setSearching(true);
+    clearTimeout(debounceRef.current);
+
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const { data, error } = await supabase
+          .from('players')
+          .select('id, name, country, flag, rank, surface_pref')
+          .ilike('name', `%${q}%`)
+          .not('name', 'is', null)
+          .order('rank', { ascending: true, nullsLast: true })
+          .limit(8);
+
+        if (error) throw error;
+
+        const filtered = (data ?? [])
+          .filter(p => p.name && !p.name.includes('/') && !favs.includes(p.name))
+          .map(p => ({
+            ...p,
+            flag: p.flag && p.flag !== '🏳️' ? p.flag : resolveFlag(p.country ?? ''),
+          }));
+
+        setResults(filtered);
+      } catch (e) {
+        console.error('[FavouritePlayersCard search]', e.message);
+        setResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 280); // 280ms debounce — fast but avoids hammering Supabase on every keystroke
+
+    return () => clearTimeout(debounceRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, favs.length]); // re-run when favs change so just-added players disappear from results
 
   return (
-    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 'clamp(20px,4vw,28px)' }}>
+    <div style={{
+      background: 'var(--bg-card)', border: '1px solid var(--border)',
+      borderRadius: 'var(--radius)', padding: 'clamp(20px,4vw,28px)',
+    }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
-        <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 16, margin: 0 }}>Favourite Players</h3>
-        <span style={{ fontSize: 12, color: favs.length >= 10 ? 'var(--clay)' : 'var(--text-faint)', fontFamily: 'var(--font-mono)' }}>{favs.length} / 10</span>
+        <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 16, margin: 0 }}>
+          Favourite Players
+        </h3>
+        <span style={{
+          fontSize: 12, fontFamily: 'var(--font-mono)',
+          color: favs.length >= 10 ? 'var(--clay)' : 'var(--text-faint)',
+        }}>
+          {favs.length} / 10
+        </span>
       </div>
 
+      {/* Search input — hidden once 10 favs reached */}
       {favs.length < 10 && (
         <div style={{ position: 'relative', marginBottom: 14 }}>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" strokeWidth="2" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
-            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-          </svg>
+          {/* Search icon OR spinner */}
+          <div style={{
+            position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)',
+            pointerEvents: 'none', display: 'flex', alignItems: 'center',
+          }}>
+            {searching ? (
+              <div style={{
+                width: 14, height: 14, borderRadius: '50%',
+                border: '2px solid var(--border-md)',
+                borderTop: '2px solid var(--lime)',
+                animation: 'tv-spin 0.7s linear infinite',
+              }} />
+            ) : (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" strokeWidth="2">
+                <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+            )}
+          </div>
+
           <input
-            value={query} onChange={e => setQuery(e.target.value)}
+            value={query}
+            onChange={e => setQuery(e.target.value)}
             onFocus={() => setFocused(true)}
-            onBlur={() => setTimeout(() => setFocused(false), 150)}
+            onBlur={() => setTimeout(() => setFocused(false), 200)}
             placeholder="Search for a player to add…"
-            style={{ width: '100%', padding: '10px 12px 10px 36px', background: 'var(--bg-glass)', border: `1px solid ${focused ? 'rgba(159,239,102,0.4)' : 'var(--border-md)'}`, borderRadius: 8, color: 'var(--text)', fontSize: 14, outline: 'none', fontFamily: 'var(--font-body)', transition: 'var(--t)' }}
+            style={{
+              width: '100%', padding: '10px 12px 10px 36px',
+              background: 'var(--bg-glass)',
+              border: `1px solid ${focused ? 'rgba(159,239,102,0.4)' : 'var(--border-md)'}`,
+              borderRadius: 8, color: 'var(--text)', fontSize: 14,
+              outline: 'none', fontFamily: 'var(--font-body)', transition: 'var(--t)',
+              boxSizing: 'border-box',
+            }}
           />
-          {focused && results.length > 0 && (
-            <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'var(--bg-card-alt)', border: '1px solid var(--border-md)', borderRadius: 10, marginTop: 4, overflow: 'hidden', zIndex: 20, boxShadow: '0 16px 40px rgba(0,0,0,0.5)' }}>
-              {results.map(p => {
-                const sc = SURFACE_COLOR[p.surface_pref] ?? '#60a5fa';
-                return (
-                  <button key={p.id} onMouseDown={() => { onToggle(p.name); setQuery(''); }} style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '10px 14px', border: 'none', background: 'transparent', cursor: 'pointer', transition: 'var(--t)', fontFamily: 'var(--font-body)', textAlign: 'left' }}
-                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-glass-md)'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                  >
-                    <span style={{ fontSize: 18 }}>{p.flag}</span>
-                    <span style={{ flex: 1, fontWeight: 600, fontSize: 14, color: 'var(--text)' }}>{p.name}</span>
-                    <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>#{p.rank}</span>
-                    <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, textTransform: 'uppercase', background: `${sc}18`, color: sc }}>{p.surface_pref}</span>
-                  </button>
-                );
-              })}
+
+          {/* Dropdown results */}
+          {focused && query.trim() && (
+            <div style={{
+              position: 'absolute', top: '100%', left: 0, right: 0,
+              background: 'var(--bg-card-alt)', border: '1px solid var(--border-md)',
+              borderRadius: 10, marginTop: 4, overflow: 'hidden',
+              zIndex: 20, boxShadow: '0 16px 40px rgba(0,0,0,0.5)',
+            }}>
+              {results.length === 0 && !searching ? (
+                <div style={{ padding: '14px 16px', fontSize: 13, color: 'var(--text-faint)', textAlign: 'center' }}>
+                  No players found for "{query}"
+                </div>
+              ) : (
+                results.map(p => {
+                  const sc = SURFACE_COLOR[p.surface_pref] ?? '#60a5fa';
+                  return (
+                    <button
+                      key={p.id}
+                      onMouseDown={() => { onToggle(p.name); setQuery(''); setResults([]); }}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 10,
+                        width: '100%', padding: '10px 14px',
+                        border: 'none', background: 'transparent',
+                        cursor: 'pointer', transition: 'var(--t)',
+                        fontFamily: 'var(--font-body)', textAlign: 'left',
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-glass-md)'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                    >
+                      <span style={{ fontSize: 18, flexShrink: 0 }}>{p.flag || '🏳️'}</span>
+                      <span style={{ flex: 1, fontWeight: 600, fontSize: 14, color: 'var(--text)' }}>
+                        {p.name}
+                      </span>
+                      {p.rank && (
+                        <span style={{ fontSize: 11, color: 'var(--text-faint)', fontFamily: 'var(--font-mono)' }}>
+                          #{p.rank}
+                        </span>
+                      )}
+                      {p.surface_pref && (
+                        <span style={{
+                          fontSize: 10, fontWeight: 700, padding: '2px 7px',
+                          borderRadius: 99, textTransform: 'uppercase',
+                          background: `${sc}18`, color: sc, flexShrink: 0,
+                        }}>
+                          {p.surface_pref}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })
+              )}
             </div>
           )}
         </div>
       )}
 
+      {/* Favourites list */}
       {favs.length === 0 ? (
-        <div style={{ padding: '28px 20px', textAlign: 'center', border: '2px dashed var(--border)', borderRadius: 10 }}>
+        <div style={{
+          padding: '28px 20px', textAlign: 'center',
+          border: '2px dashed var(--border)', borderRadius: 10,
+        }}>
           <p style={{ fontSize: 30, marginBottom: 10 }}>⭐</p>
-          <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>Search above to add your favourite players</p>
+          <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>
+            Search above to add your favourite players
+          </p>
         </div>
       ) : (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          {favs.map(name => {
-            const p  = ALL_PLAYERS.find(x => x.name === name);
-            const sc = SURFACE_COLOR[p?.surface_pref] ?? '#60a5fa';
-            return (
-              <div key={name} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 12px', background: 'var(--bg-glass)', border: '1px solid var(--border)', borderRadius: 999 }}>
-                {p && <span style={{ fontSize: 15 }}>{p.flag}</span>}
-                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{name}</span>
-                {p && <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 99, textTransform: 'uppercase', background: `${sc}18`, color: sc }}>{p.surface_pref}</span>}
-                <button onClick={() => onToggle(name)} disabled={saving} style={{ background: 'none', border: 'none', padding: '1px 0 1px 3px', color: 'var(--text-faint)', cursor: 'pointer', lineHeight: 1, transition: 'var(--t)', fontSize: 13 }}
-                  onMouseEnter={e => e.currentTarget.style.color = 'var(--red)'}
-                  onMouseLeave={e => e.currentTarget.style.color = 'var(--text-faint)'}
-                >✕</button>
-              </div>
-            );
-          })}
+          {favs.map(name => (
+            <FavChip key={name} name={name} onRemove={() => onToggle(name)} saving={saving} />
+          ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// Separate chip component — avoids re-fetching player data for each chip
+function FavChip({ name, onRemove, saving }) {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 7,
+      padding: '7px 12px', background: 'var(--bg-glass)',
+      border: '1px solid var(--border)', borderRadius: 999,
+    }}>
+      <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{name}</span>
+      <button
+        onClick={onRemove}
+        disabled={saving}
+        title={`Remove ${name}`}
+        style={{
+          background: 'none', border: 'none', padding: '1px 0 1px 3px',
+          color: 'var(--text-faint)', cursor: saving ? 'not-allowed' : 'pointer',
+          lineHeight: 1, transition: 'var(--t)', fontSize: 13,
+        }}
+        onMouseEnter={e => e.currentTarget.style.color = 'var(--red)'}
+        onMouseLeave={e => e.currentTarget.style.color = 'var(--text-faint)'}
+      >✕</button>
     </div>
   );
 }
@@ -266,10 +398,10 @@ function AccountInfoCard({ user }) {
   const provider = user?.app_metadata?.provider ?? 'email';
   const providerLabel = { google: 'Google OAuth', apple: 'Apple Sign-In', email: 'Email & Password' }[provider] ?? provider;
   const rows = [
-    { label: 'Email address',  value: user?.email ?? '—' },
-    { label: 'Member since',   value: user?.created_at ? new Date(user.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '—' },
+    { label: 'Email address', value: user?.email ?? '—' },
+    { label: 'Member since', value: user?.created_at ? new Date(user.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '—' },
     { label: 'Sign-in method', value: providerLabel },
-    { label: 'User ID',        value: (user?.id ?? '—').slice(0, 18) + '…', mono: true },
+    { label: 'User ID', value: (user?.id ?? '—').slice(0, 18) + '…', mono: true },
   ];
 
   return (
