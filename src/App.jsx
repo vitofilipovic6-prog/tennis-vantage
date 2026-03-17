@@ -12,34 +12,19 @@ const Dashboard = lazy(() => import('./pages/Dashboard'));
 import { useToast } from './hooks/hooks';
 import ToastContainer from './components/ToastContainer';
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-const AUTH_SCREENS = ['landing', 'login', 'signup', 'magic'];
-
-function getSavedScreen() {
-  try {
-    // Also check if Supabase has a local session — most reliable signal
-    const hasSupabaseSession = Object.keys(localStorage).some(k =>
-      k.startsWith('sb-') && k.endsWith('-auth-token')
-    );
-    if (hasSupabaseSession) return 'dashboard';
-    const s = sessionStorage.getItem('tv_screen');
-    return s === 'dashboard' ? 'dashboard' : 'landing';
-  } catch {
-    return 'landing';
-  }
-}
-
+// ── Screen persistence helpers ────────────────────────────────────────────────
 function saveScreen(s) {
   try { sessionStorage.setItem('tv_screen', s); } catch {}
+}
+
+function getSavedScreen() {
+  try { return sessionStorage.getItem('tv_screen') ?? 'landing'; } catch { return 'landing'; }
 }
 
 // ── Inner router ──────────────────────────────────────────────────────────────
 function AppRouter() {
   const { user, loading } = useAuth();
   const { toasts, show: showToast, dismiss } = useToast();
-
-  // Initialize from sessionStorage — if user was on dashboard before refresh,
-  // start there so there's no flash to landing while auth resolves
   const [screen, setScreen] = useState(getSavedScreen);
 
   const nav = (to) => {
@@ -48,29 +33,23 @@ function AppRouter() {
   };
 
   useEffect(() => {
+    // Wait until Supabase auth has fully resolved
     if (loading) return;
+
     if (user) {
-      // Always save dashboard to session when user is confirmed
+      // Logged in — always land on dashboard
+      setScreen('dashboard');
       saveScreen('dashboard');
-      if (AUTH_SCREENS.includes(screen)) {
-        setScreen('dashboard');
-      }
     } else {
-      // User signed out — clear saved screen
+      // Logged out — clear saved screen, go to landing
+      setScreen('landing');
       saveScreen('landing');
-      if (screen === 'dashboard') {
-        setScreen('landing');
-      }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, loading]);
 
-  // While auth is resolving:
-  // - If sessionStorage says dashboard → show dashboard skeleton (user is likely logged in)
-  // - If sessionStorage says landing   → show nothing / landing skeleton
-  if (loading) {
-    return screen === 'dashboard' ? <AppSkeleton /> : <FullscreenLoader />;
-  }
+  // While auth is resolving, ALWAYS show skeleton — never show any page
+  // This prevents the landing flash entirely
+  if (loading) return <AppSkeleton />;
 
   const sharedProps = { nav, showToast };
 
@@ -90,30 +69,10 @@ function AppRouter() {
   );
 }
 
-// ── Full screen loader (for unauthenticated cold loads) ───────────────────────
-function FullscreenLoader() {
-  return (
-    <div style={{
-      minHeight: '100dvh', background: '#070B14',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      flexDirection: 'column', gap: 20,
-    }}>
-      <div style={{ fontSize: 48, animation: 'tv-bounce 1.2s ease infinite' }}>🎾</div>
-      <p style={{
-        color: '#9fef66', fontFamily: '"DM Sans", sans-serif',
-        fontSize: 14, letterSpacing: '0.1em',
-        textTransform: 'uppercase', opacity: 0.7,
-      }}>
-        Loading TennisVantage
-      </p>
-    </div>
-  );
-}
-
-// ── Dashboard skeleton (for authenticated refreshes) ─────────────────────────
+// ── Skeleton — shown while auth resolves ──────────────────────────────────────
 function AppSkeleton() {
   const shimmer = {
-    backgroundImage: 'linear-gradient(90deg,rgba(255,255,255,0.03) 25%,rgba(255,255,255,0.07) 50%,rgba(255,255,255,0.03) 75%)',
+    backgroundImage: 'linear-gradient(90deg,rgba(255,255,255,0.03) 25%,rgba(255,255,255,0.08) 50%,rgba(255,255,255,0.03) 75%)',
     backgroundSize: '200% auto',
     animation: 'tv-shimmer 1.4s linear infinite',
   };
@@ -132,13 +91,11 @@ function AppSkeleton() {
       </div>
       {/* Content */}
       <div style={{ flex: 1, padding: 'clamp(16px,3vw,32px)', maxWidth: 1200, margin: '0 auto', width: '100%' }}>
-        {/* Tab pills */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
           {[80, 72, 90, 72].map((w, i) => (
             <div key={i} style={{ width: w, height: 32, borderRadius: 999, background: 'rgba(255,255,255,0.05)', ...shimmer }} />
           ))}
         </div>
-        {/* Cards */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(100%,340px),1fr))', gap: 16 }}>
           {Array.from({ length: 6 }).map((_, i) => (
             <div key={i} style={{ height: 160, borderRadius: 12, background: 'rgba(255,255,255,0.04)', ...shimmer }} />
@@ -149,7 +106,22 @@ function AppSkeleton() {
   );
 }
 
-// ── Root ──────────────────────────────────────────────────────────────────────
+// ── Legacy full loader (kept for reference) ───────────────────────────────────
+function FullscreenLoader() {
+  return (
+    <div style={{
+      minHeight: '100dvh', background: '#070B14',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      flexDirection: 'column', gap: 20,
+    }}>
+      <div style={{ fontSize: 48, animation: 'tv-bounce 1.2s ease infinite' }}>🎾</div>
+      <p style={{ color: '#9fef66', fontFamily: '"DM Sans", sans-serif', fontSize: 14, letterSpacing: '0.1em', textTransform: 'uppercase', opacity: 0.7 }}>
+        Loading TennisVantage
+      </p>
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <ErrorBoundary>
