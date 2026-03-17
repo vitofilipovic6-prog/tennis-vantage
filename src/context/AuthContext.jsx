@@ -158,16 +158,27 @@ useEffect(() => {
   }, []);
 
   const register = useCallback(async (email, password, fullName) => {
-    dispatch({ type: 'AUTH_START' });
-    const { data, error } = await supabase.auth.signUp({
-      email, password,
-      options: { data: { full_name: fullName } },
-    });
-    dispatch({ type: 'AUTH_END' });
-    if (error) return { error: error.message, requiresConfirmation: false };
-    const requiresConfirmation = !data?.session;
-    return { error: null, requiresConfirmation };
-  }, []);
+  dispatch({ type: 'AUTH_START' });
+  const { data, error } = await supabase.auth.signUp({
+    email, password,
+    options: { data: { full_name: fullName } },
+  });
+  dispatch({ type: 'AUTH_END' });
+
+  if (error) return { error: error.message, requiresConfirmation: false };
+
+  // Supabase returns no error but empty identities when email already exists.
+  // This prevents email enumeration on their end, so we must detect it ourselves.
+  if (data?.user && data.user.identities?.length === 0) {
+    return {
+      error: 'An account with this email already exists. Please sign in instead.',
+      requiresConfirmation: false,
+    };
+  }
+
+  const requiresConfirmation = !data?.session;
+  return { error: null, requiresConfirmation };
+}, []);
 
   const loginWithGoogle = useCallback(async () => {
     dispatch({ type: 'AUTH_START' });

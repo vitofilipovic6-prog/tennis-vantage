@@ -2,37 +2,20 @@
 // api/chat.js  ← PROJECT ROOT
 // ─────────────────────────────────────────────────────────────────────────────
 
-const GEMINI_MODEL         = 'gemini-2.5-flash';
-const GEMINI_MODEL_FALLBACK = 'gemini-1.5-flash'; // free tier fallback
+const GEMINI_MODEL          = 'gemini-2.5-flash';
+const GEMINI_MODEL_FALLBACK = 'gemini-2.0-flash';
 
-const DEFAULT_SYSTEM_PROMPT = `You are an elite tennis analyst with deep expertise in ATP and WTA tours, match statistics, player psychology, and tactical analysis. You work for TennisVantage, a premium tennis prediction platform.
+const DEFAULT_SYSTEM_PROMPT = `You are a concise tennis analyst for TennisVantage, a premium ATP/WTA analytics app.
 
-RESPONSE STYLE:
-- Give thorough, detailed answers with real depth. Never be superficial.
-- Structure responses clearly: use short paragraphs, and **bold** key names/stats.
-- When analysing a match or player, always cover: current form, surface suitability, head-to-head record, physical/mental state, and a clear verdict.
-- Back every claim with stats, historical examples, or tactical reasoning.
-- Use bullet points (- ) for lists of factors or comparisons.
-- End prediction answers with a clear "**Verdict:**" section.
+RULES:
+- Keep every answer under 120 words. No exceptions.
+- Lead with the key insight immediately — no preamble.
+- Use plain text only. No markdown headers. Bold player names only.
+- For predictions: one sentence verdict + 2-3 bullet stats. Done.
+- For rankings/records: answer directly with the number/name. No elaboration unless asked.
+- Never repeat the question back. Never say "Great question" or "Certainly".
+- Cover ATP, WTA, Grand Slams, surfaces, head-to-head, and current form.`;
 
-KNOWLEDGE:
-- You know ATP/WTA rankings, Grand Slam history, surface statistics, and player styles in depth.
-- You understand tennis tactics: serve patterns, return games, net approaches, tiebreak performance.
-- You can discuss injuries, fatigue from tournament schedules, and their match impact.
-- You know historical rivalries and their psychological dynamics.
-
-TONE:
-- Expert but engaging. Like a Sky Sports analyst, not a Wikipedia article.
-- Be confident in predictions while acknowledging uncertainty where it exists.
-- Use tennis terminology naturally (break points, double faults, unforced errors, etc).
-
-FORMAT RULES:
-- Use **bold** for player names and key stats on first mention in each section.
-- Use bullet points for multi-factor analysis.
-- Keep paragraphs short (3-4 sentences max).
-- Always write at least 3 substantive paragraphs unless the question is a simple factual lookup.`;
-
-// ── Call Gemini with a specific model ────────────────────────────────────────
 async function callGemini(apiKey, model, systemInstruction, geminiContents) {
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
@@ -43,9 +26,9 @@ async function callGemini(apiKey, model, systemInstruction, geminiContents) {
         system_instruction: { parts: [{ text: systemInstruction }] },
         contents: geminiContents,
         generationConfig: {
-          temperature: 0.8,
-          maxOutputTokens: 2048,
-          topP: 0.95,
+          temperature:     0.7,
+          maxOutputTokens: 512,   // was 2048 — this was killing your context budget
+          topP:            0.9,
         },
       }),
     }
@@ -72,11 +55,14 @@ module.exports = async function handler(req, res) {
     return res.status(400).json({ error: 'messages array is required' });
   }
 
+  // Cap conversation history to last 10 messages to prevent token bloat
+  const recentMessages = messages.slice(-10);
+
   const systemInstruction = systemContext?.trim()
-    ? `${DEFAULT_SYSTEM_PROMPT}\n\nMATCH CONTEXT FOR THIS CONVERSATION:\n${systemContext}`
+    ? `${DEFAULT_SYSTEM_PROMPT}\n\nMATCH CONTEXT: ${systemContext}`
     : DEFAULT_SYSTEM_PROMPT;
 
-  const geminiContents = messages
+  const geminiContents = recentMessages
     .filter((m, i) => !(i === 0 && m.role === 'assistant'))
     .map(m => ({
       role: m.role === 'assistant' ? 'model' : 'user',
@@ -84,28 +70,22 @@ module.exports = async function handler(req, res) {
     }));
 
   try {
-    // ── Try primary model ───────────────────────────────────────────────────
     let geminiRes = await callGemini(apiKey, GEMINI_MODEL, systemInstruction, geminiContents);
 
-    // ── If quota exceeded, try fallback model ───────────────────────────────
     if (geminiRes.status === 429) {
-      console.warn(`[/api/chat] ${GEMINI_MODEL} quota exceeded — trying fallback ${GEMINI_MODEL_FALLBACK}`);
+      console.warn(`[/api/chat] ${GEMINI_MODEL} quota exceeded — trying fallback`);
       geminiRes = await callGemini(apiKey, GEMINI_MODEL_FALLBACK, systemInstruction, geminiContents);
     }
 
-    // ── If still failing ────────────────────────────────────────────────────
     if (!geminiRes.ok) {
       const errText = await geminiRes.text();
       console.error('[/api/chat] Gemini error:', geminiRes.status, errText);
-
-      // Return a user-friendly 429 message instead of a raw 502
       if (geminiRes.status === 429) {
         return res.status(429).json({
           error: 'rate_limit',
-          message: 'The AI analyst is taking a short break due to high demand. Please wait 30 seconds and try again.',
+          message: 'AI analyst is busy. Please wait 30 seconds and try again.',
         });
       }
-
       return res.status(502).json({ error: 'Gemini API error', detail: geminiRes.status });
     }
 
