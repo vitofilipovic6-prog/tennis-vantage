@@ -1,5 +1,5 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
-import { AuthProvider, useAuth } from './context/AuthContext';
+import { AuthProvider, useAuth, bootstrapUserExists } from './context/AuthContext';
 import ErrorBoundary from './components/ErrorBoundary';
 
 import LandingPage   from './pages/LandingPage';
@@ -12,20 +12,19 @@ const Dashboard = lazy(() => import('./pages/Dashboard'));
 import { useToast } from './hooks/hooks';
 import ToastContainer from './components/ToastContainer';
 
-// ── Screen persistence helpers ────────────────────────────────────────────────
 function saveScreen(s) {
   try { sessionStorage.setItem('tv_screen', s); } catch {}
 }
 
-function getSavedScreen() {
-  try { return sessionStorage.getItem('tv_screen') ?? 'landing'; } catch { return 'landing'; }
-}
-
-// ── Inner router ──────────────────────────────────────────────────────────────
 function AppRouter() {
   const { user, loading } = useAuth();
   const { toasts, show: showToast, dismiss } = useToast();
-  const [screen, setScreen] = useState(getSavedScreen);
+
+  // Use bootstrapUserExists (read before React mounts) to decide
+  // initial screen — no flash to landing on refresh
+  const [screen, setScreen] = useState(
+    bootstrapUserExists ? 'dashboard' : 'landing'
+  );
 
   const nav = (to) => {
     setScreen(to);
@@ -33,22 +32,17 @@ function AppRouter() {
   };
 
   useEffect(() => {
-    // Wait until Supabase auth has fully resolved
     if (loading) return;
-
     if (user) {
-      // Logged in — always land on dashboard
       setScreen('dashboard');
       saveScreen('dashboard');
     } else {
-      // Logged out — clear saved screen, go to landing
       setScreen('landing');
       saveScreen('landing');
     }
   }, [user, loading]);
 
-  // While auth is resolving, ALWAYS show skeleton — never show any page
-  // This prevents the landing flash entirely
+  // Show skeleton while Supabase confirms session
   if (loading) return <AppSkeleton />;
 
   const sharedProps = { nav, showToast };
@@ -69,7 +63,6 @@ function AppRouter() {
   );
 }
 
-// ── Skeleton — shown while auth resolves ──────────────────────────────────────
 function AppSkeleton() {
   const shimmer = {
     backgroundImage: 'linear-gradient(90deg,rgba(255,255,255,0.03) 25%,rgba(255,255,255,0.08) 50%,rgba(255,255,255,0.03) 75%)',
@@ -78,7 +71,6 @@ function AppSkeleton() {
   };
   return (
     <div style={{ minHeight: '100dvh', background: '#070B14', display: 'flex', flexDirection: 'column' }}>
-      {/* Navbar */}
       <div style={{
         height: 60, background: 'rgba(7,11,20,0.92)',
         borderBottom: '1px solid rgba(255,255,255,0.06)',
@@ -89,7 +81,6 @@ function AppSkeleton() {
         <div style={{ flex: 1 }} />
         <div style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', ...shimmer }} />
       </div>
-      {/* Content */}
       <div style={{ flex: 1, padding: 'clamp(16px,3vw,32px)', maxWidth: 1200, margin: '0 auto', width: '100%' }}>
         <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
           {[80, 72, 90, 72].map((w, i) => (
@@ -102,22 +93,6 @@ function AppSkeleton() {
           ))}
         </div>
       </div>
-    </div>
-  );
-}
-
-// ── Legacy full loader (kept for reference) ───────────────────────────────────
-function FullscreenLoader() {
-  return (
-    <div style={{
-      minHeight: '100dvh', background: '#070B14',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      flexDirection: 'column', gap: 20,
-    }}>
-      <div style={{ fontSize: 48, animation: 'tv-bounce 1.2s ease infinite' }}>🎾</div>
-      <p style={{ color: '#9fef66', fontFamily: '"DM Sans", sans-serif', fontSize: 14, letterSpacing: '0.1em', textTransform: 'uppercase', opacity: 0.7 }}>
-        Loading TennisVantage
-      </p>
     </div>
   );
 }

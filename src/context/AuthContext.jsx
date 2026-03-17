@@ -3,30 +3,26 @@ import { supabase } from '../services/supabase';
 
 const SUPABASE_SESSION_KEY = 'sb-zleddweuzesuymahjniw-auth-token';
 
-function getInitialState() {
+// Read user from localStorage synchronously — only used to pre-populate
+// the screen state in App.jsx so we know to show the dashboard skeleton.
+// loading stays TRUE — we never trust this data to make auth decisions.
+function getBootstrapUser() {
   try {
     const raw = localStorage.getItem(SUPABASE_SESSION_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    const user = parsed?.user ?? parsed?.currentSession?.user ?? null;
-    if (!user?.id) return null;
-    return {
-      user,
-      profile: {
-        full_name:         user.user_metadata?.full_name ?? 'Player',
-        avatar_url:        user.user_metadata?.avatar_url ?? null,
-        favourite_players: [],
-      },
-      loading:     false,
-      authLoading: false,
-      error:       null,
-    };
+    return parsed?.user ?? null;
   } catch {
     return null;
   }
 }
 
-const initialState = getInitialState() ?? {
+export const bootstrapUserExists = !!getBootstrapUser();
+
+// Initial state always has loading: true
+// The bootstrap user is NOT put into state — Supabase must confirm it first
+// before any queries are made with auth headers
+const initialState = {
   user:        null,
   profile:     null,
   loading:     true,
@@ -36,15 +32,15 @@ const initialState = getInitialState() ?? {
 
 function reducer(state, action) {
   switch (action.type) {
-    case 'AUTH_START':      return { ...state, authLoading: true,  error: null };
-    case 'AUTH_END':        return { ...state, authLoading: false };
-    case 'SET_USER':        return { ...state, user: action.user, profile: action.profile, loading: false, authLoading: false, error: null };
-    case 'UPDATE_PROFILE':  return { ...state, profile: { ...state.profile, ...action.patch } };
-    case 'CLEAR_USER':      return { ...state, user: null, profile: null, loading: false, authLoading: false };
-    case 'SET_ERROR':       return { ...state, error: action.error, authLoading: false };
-    case 'CLEAR_ERROR':     return { ...state, error: null };
-    case 'LOADING_DONE':    return { ...state, loading: false };
-    default:                return state;
+    case 'AUTH_START':     return { ...state, authLoading: true, error: null };
+    case 'AUTH_END':       return { ...state, authLoading: false };
+    case 'SET_USER':       return { ...state, user: action.user, profile: action.profile, loading: false, authLoading: false, error: null };
+    case 'UPDATE_PROFILE': return { ...state, profile: { ...state.profile, ...action.patch } };
+    case 'CLEAR_USER':     return { ...state, user: null, profile: null, loading: false, authLoading: false };
+    case 'SET_ERROR':      return { ...state, error: action.error, authLoading: false };
+    case 'CLEAR_ERROR':    return { ...state, error: null };
+    case 'LOADING_DONE':   return { ...state, loading: false };
+    default:               return state;
   }
 }
 
@@ -56,11 +52,12 @@ export function AuthProvider({ children }) {
 
   const loadProfile = useCallback(async (userId) => {
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('profiles')
         .select('full_name, avatar_url, favourite_players')
         .eq('id', userId)
         .single();
+      if (error) throw error;
       return data ?? { full_name: 'Player', avatar_url: null, favourite_players: [] };
     } catch {
       return { full_name: 'Player', avatar_url: null, favourite_players: [] };
@@ -74,9 +71,10 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     mountedRef.current = true;
 
+    // Safety net — if INITIAL_SESSION never fires, unblock after 4s
     const safetyTimeout = setTimeout(() => {
       if (mountedRef.current) dispatch({ type: 'LOADING_DONE' });
-    }, 5000);
+    }, 4000);
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
@@ -85,27 +83,26 @@ export function AuthProvider({ children }) {
         if (event === 'INITIAL_SESSION') {
           clearTimeout(safetyTimeout);
           if (session?.user) {
-            // Step 1 — unblock UI instantly with JWT metadata (no network)
-            const cachedName = session.user.user_metadata?.full_name ?? 'Player';
+            // Supabase has now set its internal auth token —
+            // all subsequent queries will have the correct auth header.
+            // Step 1: unblock UI immediately with JWT metadata
             dispatch({
               type: 'SET_USER',
               user: session.user,
               profile: {
-                full_name:         cachedName,
+                full_name:         session.user.user_metadata?.full_name ?? 'Player',
                 avatar_url:        session.user.user_metadata?.avatar_url ?? null,
                 favourite_players: [],
               },
             });
-            // Step 2 — always overwrite with full DB profile
-            // Guarantees favourite_players, avatar_url, full_name
-            // are synced from Supabase on every device
+            // Step 2: fetch full profile in background
             loadProfile(session.user.id).then(profile => {
               if (mountedRef.current) {
                 dispatch({ type: 'SET_USER', user: session.user, profile });
               }
             });
           } else {
-            if (mountedRef.current) dispatch({ type: 'LOADING_DONE' });
+            dispatch({ type: 'CLEAR_USER' });
           }
           return;
         }
