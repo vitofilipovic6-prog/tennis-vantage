@@ -27,8 +27,6 @@ export function detectTour(tournamentNameOrMatch) {
 //  2. Every 30 minutes  → triggers sync-matches Edge Function (fetches fresh data
 //     from RapidAPI into DB), then immediately re-reads everything from DB
 // Tab visibility aware — pauses all polling when tab is hidden.
-// ─────────────────────────────────────────────────────────────────────────────
-// ── useMatches ────────────────────────────────────────────────────────────────
 // Persists last known matches in sessionStorage so on refresh the user sees
 // data instantly while fresh data loads in the background.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -70,7 +68,6 @@ export function useMatches() {
   const syncIntervalRef = useRef(null);
 
   const fetchAll = useCallback(async (background = false) => {
-    // On background refresh don't show loading spinner — data is already visible
     if (!background) setLoading(true);
     try {
       const [liveData, upcomingData] = await Promise.all([
@@ -92,7 +89,6 @@ export function useMatches() {
     try {
       const liveData = await getLiveMatches();
       setLive(liveData);
-      // Update cache with fresh live data
       const cur = readSessionMatches();
       if (cur) writeSessionMatches(liveData, cur.upcoming);
     } catch {
@@ -119,7 +115,7 @@ export function useMatches() {
       // silent — still re-read DB below
     } finally {
       setSyncing(false);
-      await fetchAll(true); // background=true so no spinner
+      await fetchAll(true);
     }
   }, [fetchAll]);
 
@@ -138,47 +134,44 @@ export function useMatches() {
   }, []);
 
   useEffect(() => {
-  const cached = readSessionMatches();
-  const hasFreshCache = !!cached;
+    const cached = readSessionMatches();
+    const hasFreshCache = !!cached;
 
-  if (hasFreshCache) {
-    // Data is already visible from useState initialiser —
-    // fire a background sync after 1s so we don't block render
-    const t = setTimeout(() => triggerSync(), 1000);
-    startPolling();
-    const handleVisibility = () => {
-      if (document.hidden) {
+    if (hasFreshCache) {
+      const t = setTimeout(() => triggerSync(), 1000);
+      startPolling();
+      const handleVisibility = () => {
+        if (document.hidden) {
+          stopPolling();
+        } else {
+          triggerSync();
+          startPolling();
+        }
+      };
+      document.addEventListener('visibilitychange', handleVisibility);
+      return () => {
+        clearTimeout(t);
         stopPolling();
-      } else {
-        triggerSync();        // re-sync whenever user comes back to tab
-        startPolling();
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => {
-      clearTimeout(t);
-      stopPolling();
-      document.removeEventListener('visibilitychange', handleVisibility);
-    };
-  } else {
-    // No cache — sync immediately, skeleton is showing
-    triggerSync();            // triggerSync already calls fetchAll(true) after it completes
-    startPolling();
-    const handleVisibility = () => {
-      if (document.hidden) {
+        document.removeEventListener('visibilitychange', handleVisibility);
+      };
+    } else {
+      triggerSync();
+      startPolling();
+      const handleVisibility = () => {
+        if (document.hidden) {
+          stopPolling();
+        } else {
+          triggerSync();
+          startPolling();
+        }
+      };
+      document.addEventListener('visibilitychange', handleVisibility);
+      return () => {
         stopPolling();
-      } else {
-        triggerSync();
-        startPolling();
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => {
-      stopPolling();
-      document.removeEventListener('visibilitychange', handleVisibility);
-    };
-  }
-}, [triggerSync, fetchAll, startPolling, stopPolling]);
+        document.removeEventListener('visibilitychange', handleVisibility);
+      };
+    }
+  }, [triggerSync, fetchAll, startPolling, stopPolling]);
 
   return { live, upcoming, loading, error, syncing, refresh: () => fetchAll(false) };
 }
@@ -266,12 +259,12 @@ export function useActiveDates(startDate, endDate) {
 
     supabase
       .from('matches')
-      .select('local_date')                          // ← was: match_date
-      .gte('local_date', start)                      // ← was: match_date with T00:00:00Z
-      .lte('local_date', end)                        // ← was: match_date with T23:59:59Z
+      .select('local_date')
+      .gte('local_date', start)
+      .lte('local_date', end)
       .not('local_date', 'is', null)
       .then(({ data }) => {
-        const set = new Set((data ?? []).map(r => r.local_date));   // ← already YYYY-MM-DD, no slice needed
+        const set = new Set((data ?? []).map(r => r.local_date));
         activeDatesCache = set;
         activeDatesCacheTime = Date.now();
         setActiveDates(set);
@@ -292,7 +285,6 @@ export function useRankings(tour = 'ATP') {
   const [error,    setError]    = useState(null);
 
   useEffect(() => {
-    // Check cache — but only use it if it has actual data
     const cached = rankingsCache[tour];
     if (cached && cached.length > 0) {
       setRankings(cached);
@@ -313,7 +305,6 @@ export function useRankings(tour = 'ATP') {
       .then(data => {
         if (cancelled) return;
         const capped = (data ?? []).slice(0, 50);
-        // Only cache if we got real data — don't cache empty results
         if (capped.length > 0) rankingsCache[tour] = capped;
         setRankings(capped);
         setError(null);
@@ -378,7 +369,6 @@ async function fetchAltRankings(tour) {
       .order('match_date', { ascending: false })
       .limit(500);
 
-    // If the query errored OR returned nothing, just return empty — don't throw
     if (error) {
       console.warn(`[fetchAltRankings:${tour}] query error:`, error.message);
       return [];
@@ -414,7 +404,6 @@ async function fetchAltRankings(tour) {
       }));
 
   } catch (e) {
-    // Never let this crash the rankings tab
     console.warn(`[fetchAltRankings:${tour}] unexpected error:`, e.message);
     return [];
   }
@@ -523,12 +512,13 @@ export function usePlayerSearch() {
 
 // ── useAiChat ─────────────────────────────────────────────────────────────────
 export function useAiChat(contextMatch = null) {
-  const GREETING = "Hi! I'm your AI tennis analyst powered by Gemini. Ask me anything about match predictions, player stats, head-to-head records, surface analysis, or tournament strategies.";
+  const GREETING = "Hi! I'm your AI tennis analyst. Ask me anything about match predictions, player stats, head-to-head records, or surface analysis.";
 
   const [messages, setMessages] = useState([{ role: 'assistant', content: GREETING }]);
   const [typing, setTyping] = useState(false);
   const bottomRef = useRef(null);
   const messagesRef = useRef(messages);
+  const lastSentRef = useRef(0); // ← rate-limit guard: timestamp of last send
 
   useEffect(() => { messagesRef.current = messages; }, [messages]);
 
@@ -537,17 +527,27 @@ export function useAiChat(contextMatch = null) {
   }, [messages, typing]);
 
   const sendMessage = useCallback(async (text) => {
-    if (!text.trim()) return;
+    if (!text?.trim()) return;
+
+    // ── Rate-limit guard: prevent sending more than once every 3 seconds ──
+    const now = Date.now();
+    if (now - lastSentRef.current < 3000) return;
+    lastSentRef.current = now;
+
     const userMsg = { role: 'user', content: text };
     setMessages(prev => [...prev, userMsg]);
     setTyping(true);
 
     try {
       const systemContext = contextMatch
-        ? `You are a professional tennis analyst for TennisVantage. Current match context: ${contextMatch.player1?.name ?? 'Player 1'} (Rank #${contextMatch.player1?.rank ?? '?'}, ${contextMatch.player1?.country ?? ''}) vs ${contextMatch.player2?.name ?? 'Player 2'} (Rank #${contextMatch.player2?.rank ?? '?'}, ${contextMatch.player2?.country ?? ''}) on ${contextMatch.surface ?? 'Hard'} at ${contextMatch.tournament ?? 'Unknown tournament'}, ${contextMatch.round ?? ''}. P1 recent form: ${contextMatch.player1?.recent_form ?? 'N/A'}. P2 recent form: ${contextMatch.player2?.recent_form ?? 'N/A'}. Give concise, expert analysis.`
-        : `You are a professional tennis analyst for TennisVantage, an ATP/WTA analytics app. Provide insightful, data-driven analysis. Cover ATP, WTA, ITF and UTR tennis. Be concise and expert. Use stats, surface analysis, head-to-head records, and current form to inform your answers.`;
+        ? `Match: ${contextMatch.player1?.name ?? 'Player 1'} (Rank #${contextMatch.player1?.rank ?? '?'}) vs ${contextMatch.player2?.name ?? 'Player 2'} (Rank #${contextMatch.player2?.rank ?? '?'}) on ${contextMatch.surface ?? 'Hard'} at ${contextMatch.tournament ?? 'Unknown'}, ${contextMatch.round ?? ''}. P1 form: ${contextMatch.player1?.recent_form ?? 'N/A'}. P2 form: ${contextMatch.player2?.recent_form ?? 'N/A'}.`
+        : '';
 
-      const history = [...messagesRef.current, userMsg].map(m => ({ role: m.role, content: m.content }));
+      // ── Cap history to last 10 messages to prevent token bloat ──
+      const history = [...messagesRef.current, userMsg]
+        .slice(-10)
+        .map(m => ({ role: m.role, content: m.content }));
+
       const response = await sendChatMessage(history, systemContext);
       const aiText = response?.content?.[0]?.text ?? response?.reply ?? "Sorry, I couldn't process that.";
       setMessages(prev => [...prev, { role: 'assistant', content: aiText }]);
@@ -560,6 +560,7 @@ export function useAiChat(contextMatch = null) {
 
   const reset = useCallback(() => {
     setMessages([{ role: 'assistant', content: 'New session started. Ask me anything about tennis!' }]);
+    lastSentRef.current = 0; // reset rate limit on new session
   }, []);
 
   return { messages, typing, sendMessage, reset, bottomRef };
