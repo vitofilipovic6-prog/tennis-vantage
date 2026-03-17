@@ -78,7 +78,8 @@ export function AuthProvider({ children }) {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        if (!mountedRef.current) return;
+  console.log('[AUTH EVENT]', event, 'user:', session?.user?.id ?? 'null');
+  if (!mountedRef.current) return;
 
         if (event === 'INITIAL_SESSION') {
           clearTimeout(safetyTimeout);
