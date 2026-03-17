@@ -1,47 +1,72 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// src/App.jsx
-//
-// CHANGES:
-//  - Added 'magic' screen → MagicLinkPage (passwordless sign-in)
-//  - ResetPage kept for backward compat (still exported, just not linked)
-//  - All other logic unchanged
-// ─────────────────────────────────────────────────────────────────────────────
 import { useState, useEffect, lazy, Suspense } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import ErrorBoundary from './components/ErrorBoundary';
 
-// Auth pages — always eager-loaded (on the critical path)
-import LandingPage    from './pages/LandingPage';
-import LoginPage      from './pages/LoginPage';
-import SignupPage     from './pages/SignupPage';
-import MagicLinkPage  from './pages/MagicLinkPage';
+import LandingPage   from './pages/LandingPage';
+import LoginPage     from './pages/LoginPage';
+import SignupPage    from './pages/SignupPage';
+import MagicLinkPage from './pages/MagicLinkPage';
 
-// Dashboard is large — lazy-load so unauthenticated users don't pay the cost
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 
 import { useToast } from './hooks/hooks';
 import ToastContainer from './components/ToastContainer';
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+const AUTH_SCREENS = ['landing', 'login', 'signup', 'magic'];
+
+function getSavedScreen() {
+  try {
+    const s = sessionStorage.getItem('tv_screen');
+    // Only restore dashboard — never restore auth screens across refreshes
+    return s === 'dashboard' ? 'dashboard' : 'landing';
+  } catch {
+    return 'landing';
+  }
+}
+
+function saveScreen(s) {
+  try { sessionStorage.setItem('tv_screen', s); } catch {}
+}
+
 // ── Inner router ──────────────────────────────────────────────────────────────
 function AppRouter() {
   const { user, loading } = useAuth();
-  const [screen, setScreen] = useState('landing');
   const { toasts, show: showToast, dismiss } = useToast();
 
-  // Once user logs in (including via magic link click), always go to dashboard
+  // Initialize from sessionStorage — if user was on dashboard before refresh,
+  // start there so there's no flash to landing while auth resolves
+  const [screen, setScreen] = useState(getSavedScreen);
+
+  const nav = (to) => {
+    setScreen(to);
+    saveScreen(to);
+  };
+
   useEffect(() => {
-    if (!loading) {
-      if (user) setScreen('dashboard');
-      else if (screen === 'dashboard') setScreen('landing');
+    if (loading) return; // wait for auth to resolve before routing
+    if (user) {
+      // Authenticated — always go to dashboard
+      if (AUTH_SCREENS.includes(screen)) {
+        setScreen('dashboard');
+        saveScreen('dashboard');
+      }
+    } else {
+      // Not authenticated — kick back to landing if somehow on dashboard
+      if (screen === 'dashboard') {
+        setScreen('landing');
+        saveScreen('landing');
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, loading]);
 
-  const nav = (to) => setScreen(to);
-
-  // Don't block the whole screen — show a minimal top bar skeleton instead
-// Auth resolves in <200ms via JWT; this is just a brief flash fallback
-if (loading) return <AppSkeleton />;
+  // While auth is resolving:
+  // - If sessionStorage says dashboard → show dashboard skeleton (user is likely logged in)
+  // - If sessionStorage says landing   → show nothing / landing skeleton
+  if (loading) {
+    return screen === 'dashboard' ? <AppSkeleton /> : <FullscreenLoader />;
+  }
 
   const sharedProps = { nav, showToast };
 
@@ -51,23 +76,21 @@ if (loading) return <AppSkeleton />;
       {screen === 'login'     && <LoginPage       {...sharedProps} />}
       {screen === 'signup'    && <SignupPage       {...sharedProps} />}
       {screen === 'magic'     && <MagicLinkPage    {...sharedProps} />}
-
       {screen === 'dashboard' && (
-        <Suspense fallback={<FullscreenLoader />}>
+        <Suspense fallback={<AppSkeleton />}>
           <Dashboard {...sharedProps} />
         </Suspense>
       )}
-
       <ToastContainer toasts={toasts} onDismiss={dismiss} />
     </>
   );
 }
 
-// ── Fullscreen loader ─────────────────────────────────────────────────────────
+// ── Full screen loader (for unauthenticated cold loads) ───────────────────────
 function FullscreenLoader() {
   return (
     <div style={{
-      minHeight: '100vh', background: '#070B14',
+      minHeight: '100dvh', background: '#070B14',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       flexDirection: 'column', gap: 20,
     }}>
@@ -83,34 +106,38 @@ function FullscreenLoader() {
   );
 }
 
+// ── Dashboard skeleton (for authenticated refreshes) ─────────────────────────
 function AppSkeleton() {
+  const shimmer = {
+    backgroundImage: 'linear-gradient(90deg,rgba(255,255,255,0.03) 25%,rgba(255,255,255,0.07) 50%,rgba(255,255,255,0.03) 75%)',
+    backgroundSize: '200% auto',
+    animation: 'tv-shimmer 1.4s linear infinite',
+  };
   return (
     <div style={{ minHeight: '100dvh', background: '#070B14', display: 'flex', flexDirection: 'column' }}>
-      {/* Navbar skeleton */}
+      {/* Navbar */}
       <div style={{
         height: 60, background: 'rgba(7,11,20,0.92)',
         borderBottom: '1px solid rgba(255,255,255,0.06)',
         display: 'flex', alignItems: 'center',
-        padding: '0 clamp(12px,3vw,32px)', gap: 12,
+        padding: '0 clamp(12px,3vw,32px)', gap: 12, flexShrink: 0,
       }}>
-        {/* Logo placeholder */}
-        <div style={{ width: 120, height: 28, borderRadius: 6, background: 'rgba(255,255,255,0.06)', animation: 'tv-shimmer 1.4s linear infinite', backgroundSize: '200% auto', backgroundImage: 'linear-gradient(90deg,rgba(255,255,255,0.04) 25%,rgba(255,255,255,0.08) 50%,rgba(255,255,255,0.04) 75%)' }} />
+        <div style={{ width: 130, height: 26, borderRadius: 6, background: 'rgba(255,255,255,0.06)', ...shimmer }} />
         <div style={{ flex: 1 }} />
-        {/* Avatar placeholder */}
-        <div style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', animation: 'tv-shimmer 1.4s linear infinite', backgroundSize: '200% auto', backgroundImage: 'linear-gradient(90deg,rgba(255,255,255,0.04) 25%,rgba(255,255,255,0.08) 50%,rgba(255,255,255,0.04) 75%)' }} />
+        <div style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', ...shimmer }} />
       </div>
-      {/* Content skeleton */}
+      {/* Content */}
       <div style={{ flex: 1, padding: 'clamp(16px,3vw,32px)', maxWidth: 1200, margin: '0 auto', width: '100%' }}>
         {/* Tab pills */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
-          {[80, 70, 90, 70].map((w, i) => (
-            <div key={i} style={{ width: w, height: 32, borderRadius: 999, background: 'rgba(255,255,255,0.05)', animation: 'tv-shimmer 1.4s linear infinite', backgroundSize: '200% auto', backgroundImage: 'linear-gradient(90deg,rgba(255,255,255,0.03) 25%,rgba(255,255,255,0.07) 50%,rgba(255,255,255,0.03) 75%)' }} />
+          {[80, 72, 90, 72].map((w, i) => (
+            <div key={i} style={{ width: w, height: 32, borderRadius: 999, background: 'rgba(255,255,255,0.05)', ...shimmer }} />
           ))}
         </div>
-        {/* Card skeletons */}
+        {/* Cards */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(100%,340px),1fr))', gap: 16 }}>
           {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} style={{ height: 160, borderRadius: 12, background: 'rgba(255,255,255,0.04)', animation: 'tv-shimmer 1.4s linear infinite', backgroundSize: '200% auto', backgroundImage: 'linear-gradient(90deg,rgba(255,255,255,0.03) 25%,rgba(255,255,255,0.07) 50%,rgba(255,255,255,0.03) 75%)' }} />
+            <div key={i} style={{ height: 160, borderRadius: 12, background: 'rgba(255,255,255,0.04)', ...shimmer }} />
           ))}
         </div>
       </div>
