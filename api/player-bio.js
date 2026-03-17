@@ -1,12 +1,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // api/player-bio.js
-// Dedicated endpoint for player bio/stats generation.
-// Uses gemini-2.5-pro for higher quality structured data.
-// Separate from /api/chat so it has its own quota + system prompt.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const GEMINI_MODEL          = 'gemini-2.5-pro';
-const GEMINI_MODEL_FALLBACK = 'gemini-2.5-flash';
+const GEMINI_MODEL          = 'gemini-2.5-flash';
+const GEMINI_MODEL_FALLBACK = 'gemini-2.0-flash';
 
 async function callGemini(apiKey, model, prompt) {
   return fetch(
@@ -17,19 +14,95 @@ async function callGemini(apiKey, model, prompt) {
       body: JSON.stringify({
         system_instruction: {
           parts: [{
-            text: 'You are a professional tennis statistics database with encyclopedic knowledge of ATP and WTA players. Always respond with valid JSON only. No markdown fences. No explanations. No extra text. Just the raw JSON object.',
+            text: 'You are a professional tennis statistics database. Always respond with valid JSON only. No markdown fences. No explanations. No extra text. Just the raw JSON object.',
           }],
         },
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         generationConfig: {
-          temperature:      0.3,  // low temp = more factual, less hallucination
-          maxOutputTokens:  2048,
-          topP:             0.8,
-          responseMimeType: 'application/json',
+          temperature:     0.3,
+          maxOutputTokens: 2048,
+          topP:            0.8,
+          // NOTE: no responseMimeType — not universally supported, causes empty responses
         },
       }),
     }
   );
+}
+
+function buildPrompt(player) {
+  return `Generate comprehensive stats and analysis for this tennis player.
+
+Player: ${player.name}
+Country: ${player.country ?? 'Unknown'}
+Current Rank: ${player.rank && player.rank < 999 ? `#${player.rank}` : 'Unknown'}
+Surface preference: ${player.surface_pref ?? 'Unknown'}
+
+Respond ONLY with this JSON object, no markdown, no extra text:
+{
+  "full_name": "full official name",
+  "turned_pro": "year as string e.g. '2015'",
+  "plays": "Right-handed or Left-handed",
+  "height": "e.g. 185 cm / 6'1\\"",
+  "coach": "current coach name or null",
+  "career_titles": 0,
+  "peak_rank": 1,
+  "career_win_pct": 80,
+  "grand_slams": {
+    "total_titles": 0,
+    "australian_open": 0,
+    "french_open": 0,
+    "wimbledon": 0,
+    "us_open": 0
+  },
+  "current_season": {
+    "wins": 0,
+    "losses": 0,
+    "titles": 0,
+    "form": "W W L W W"
+  },
+  "surface_stats": {
+    "clay":  { "win_pct": 70, "titles": 0 },
+    "hard":  { "win_pct": 75, "titles": 0 },
+    "grass": { "win_pct": 65, "titles": 0 }
+  },
+  "playing_style": "description here",
+  "strengths": ["strength 1", "strength 2", "strength 3"],
+  "weaknesses": ["weakness 1", "weakness 2"],
+  "best_rivals": [
+    { "name": "rival name", "h2h": "14-12 in favor of ${player.name}" }
+  ],
+  "career_highlight": "most impressive career achievement"
+}`;
+}
+
+function extractJson(text) {
+  if (!text) throw new Error('Empty response from Gemini');
+
+  // Try direct parse first
+  try {
+    return JSON.parse(text.trim());
+  } catch {}
+
+  // Strip markdown fences
+  const stripped = text
+    .replace(/```json\s*/gi, '')
+    .replace(/```\s*/gi, '')
+    .trim();
+
+  try {
+    return JSON.parse(stripped);
+  } catch {}
+
+  // Find first { ... } block
+  const start = text.indexOf('{');
+  const end   = text.lastIndexOf('}');
+  if (start !== -1 && end !== -1 && end > start) {
+    try {
+      return JSON.parse(text.slice(start, end + 1));
+    } catch {}
+  }
+
+  throw new Error('Could not parse JSON from Gemini response');
 }
 
 module.exports = async function handler(req, res) {
@@ -46,56 +119,15 @@ module.exports = async function handler(req, res) {
   const { player } = req.body ?? {};
   if (!player?.name) return res.status(400).json({ error: 'player.name is required' });
 
-  const prompt = `Generate comprehensive stats and analysis for this tennis player.
-
-Player: ${player.name}
-Country: ${player.country ?? 'Unknown'}
-Current Rank: ${player.rank && player.rank < 999 ? `#${player.rank}` : 'Unknown'}
-Surface preference: ${player.surface_pref ?? 'Unknown'}
-
-Return this exact JSON structure (use real accurate data, null only if truly unknown):
-{
-  "full_name": "full official name",
-  "turned_pro": "year as string e.g. '2015'",
-  "plays": "Right-handed or Left-handed",
-  "height": "e.g. 185 cm / 6'1\\"",
-  "coach": "current coach name or null",
-  "career_titles": number,
-  "peak_rank": number,
-  "career_win_pct": number between 0 and 100,
-  "grand_slams": {
-    "total_titles": number,
-    "australian_open": number,
-    "french_open": number,
-    "wimbledon": number,
-    "us_open": number
-  },
-  "current_season": {
-    "wins": number,
-    "losses": number,
-    "titles": number,
-    "form": "last 5 results e.g. W W L W W"
-  },
-  "surface_stats": {
-    "clay":  { "win_pct": number, "titles": number },
-    "hard":  { "win_pct": number, "titles": number },
-    "grass": { "win_pct": number, "titles": number }
-  },
-  "playing_style": "2-3 sentence description of playing style and game patterns",
-  "strengths": ["strength 1", "strength 2", "strength 3"],
-  "weaknesses": ["weakness 1", "weakness 2"],
-  "best_rivals": [
-    { "name": "rival name", "h2h": "e.g. 14-12 in favor of ${player.name}" }
-  ],
-  "career_highlight": "single most impressive career achievement in one sentence"
-}`;
+  const prompt = buildPrompt(player);
 
   try {
+    // Try primary model
     let geminiRes = await callGemini(apiKey, GEMINI_MODEL, prompt);
 
-    // Fallback if primary model quota exceeded
+    // Fallback on quota exceeded
     if (geminiRes.status === 429) {
-      console.warn('[/api/player-bio] pro quota exceeded — trying flash fallback');
+      console.warn('[/api/player-bio] flash quota exceeded — trying 2.0-flash fallback');
       geminiRes = await callGemini(apiKey, GEMINI_MODEL_FALLBACK, prompt);
     }
 
@@ -108,18 +140,13 @@ Return this exact JSON structure (use real accurate data, null only if truly unk
     const geminiData = await geminiRes.json();
     const text = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
 
-    if (!text) {
-      return res.status(502).json({ error: 'Empty response from Gemini' });
-    }
+    console.log('[/api/player-bio] raw response length:', text.length);
 
-    // Clean and parse JSON
-    const clean = text.replace(/```json\s*/gi, '').replace(/```/g, '').trim();
-    const parsed = JSON.parse(clean);
-
+    const parsed = extractJson(text);
     return res.status(200).json({ data: parsed });
 
   } catch (err) {
     console.error('[/api/player-bio] error:', err.message);
-    return res.status(500).json({ error: 'Internal server error' });
+    return res.status(500).json({ error: err.message });
   }
 };
