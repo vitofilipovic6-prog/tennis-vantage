@@ -85,14 +85,20 @@ export function AuthProvider({ children }) {
         if (event === 'INITIAL_SESSION') {
           clearTimeout(safetyTimeout);
           if (session?.user) {
-            // Unblock UI immediately using JWT metadata (no network needed)
+            // Step 1 — unblock UI instantly with JWT metadata (no network)
             const cachedName = session.user.user_metadata?.full_name ?? 'Player';
             dispatch({
               type: 'SET_USER',
               user: session.user,
-              profile: { full_name: cachedName, avatar_url: null },
+              profile: {
+                full_name:         cachedName,
+                avatar_url:        session.user.user_metadata?.avatar_url ?? null,
+                favourite_players: [],
+              },
             });
-            // Load real profile in background without blocking
+            // Step 2 — always overwrite with full DB profile
+            // Guarantees favourite_players, avatar_url, full_name
+            // are synced from Supabase on every device
             loadProfile(session.user.id).then(profile => {
               if (mountedRef.current) {
                 dispatch({ type: 'SET_USER', user: session.user, profile });

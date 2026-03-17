@@ -5,21 +5,23 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useProfile } from '../hooks/useProfile';
-import { MOCK_DATA } from '../services/tennisApi';
 import { supabase } from '../services/supabase';
 import { resolveFlag } from '../services/tennisApi';
 
 
 const SURFACE_COLOR = { Clay: '#f97316', Hard: '#60a5fa', Grass: '#4ade80' };
 
-const ALL_PLAYERS = [
-  ...(MOCK_DATA.players ?? []),
-  ...(MOCK_DATA.wtaPlayers ?? []),
-].filter((p, i, arr) => arr.findIndex(x => x.id === p.id) === i);
-
 export default function ProfilePage({ onBack, showToast }) {
   const { user } = useAuth();
-  const { profile, loading, saving, updateName, uploadAvatar, toggleFavourite } = useProfile();
+  const { profile, loading, saving, updateName, uploadAvatar, toggleFavourite, fetchProfile } = useProfile();
+
+  // Always re-fetch full profile from DB when page opens
+  // This guarantees cross-device sync — favourites added on mobile
+  // show immediately when opening profile on desktop
+  useEffect(() => {
+    fetchProfile();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (loading) return <ProfileSkeleton />;
 
