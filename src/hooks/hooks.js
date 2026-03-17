@@ -138,27 +138,47 @@ export function useMatches() {
   }, []);
 
   useEffect(() => {
-    const hasFreshCache = !!readSessionMatches();
-    // If we have fresh cached data, fetch in background (no spinner)
-    // If no cache, fetch immediately (shows loading skeleton)
-    fetchAll(hasFreshCache);
-    startPolling();
+  const cached = readSessionMatches();
+  const hasFreshCache = !!cached;
 
+  if (hasFreshCache) {
+    // Data is already visible from useState initialiser —
+    // fire a background sync after 1s so we don't block render
+    const t = setTimeout(() => triggerSync(), 1000);
+    startPolling();
     const handleVisibility = () => {
       if (document.hidden) {
         stopPolling();
       } else {
-        fetchAll(true); // always background on tab refocus
+        triggerSync();        // re-sync whenever user comes back to tab
         startPolling();
       }
     };
-
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      clearTimeout(t);
+      stopPolling();
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  } else {
+    // No cache — sync immediately, skeleton is showing
+    triggerSync();            // triggerSync already calls fetchAll(true) after it completes
+    startPolling();
+    const handleVisibility = () => {
+      if (document.hidden) {
+        stopPolling();
+      } else {
+        triggerSync();
+        startPolling();
+      }
+    };
     document.addEventListener('visibilitychange', handleVisibility);
     return () => {
       stopPolling();
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [fetchAll, startPolling, stopPolling]);
+  }
+}, [triggerSync, fetchAll, startPolling, stopPolling]);
 
   return { live, upcoming, loading, error, syncing, refresh: () => fetchAll(false) };
 }
