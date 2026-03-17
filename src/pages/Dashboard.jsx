@@ -41,7 +41,15 @@ const MATCH_FILTERS = [
 export default function Dashboard({ showToast }) {
   const { user, firstName, logout } = useAuth();
 
-  const [activeTab, setActiveTab] = useState('matches');
+  const [activeTab, setActiveTab] = useState(() => {
+  // Restore last active tab from sessionStorage on refresh
+  try {
+    return sessionStorage.getItem('tv_active_tab') ?? 'matches';
+  } catch {
+    return 'matches';
+  }
+});
+
   const [selectedMatch, setSelectedMatch] = useState(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [bioPlayer, setBioPlayer] = useState(null);
@@ -122,9 +130,10 @@ export default function Dashboard({ showToast }) {
   }
 
   function switchTab(id) {
-    setActiveTab(id);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }
+  setActiveTab(id);
+  try { sessionStorage.setItem('tv_active_tab', id); } catch {}
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
 
   function handleSelectMatch(match) {
     setSelectedMatch(match);

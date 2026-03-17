@@ -28,18 +28,50 @@ export function detectTour(tournamentNameOrMatch) {
 //     from RapidAPI into DB), then immediately re-reads everything from DB
 // Tab visibility aware — pauses all polling when tab is hidden.
 // ─────────────────────────────────────────────────────────────────────────────
+// ── useMatches ────────────────────────────────────────────────────────────────
+// Persists last known matches in sessionStorage so on refresh the user sees
+// data instantly while fresh data loads in the background.
+// ─────────────────────────────────────────────────────────────────────────────
+const SESSION_MATCHES_KEY = 'tv_matches_cache';
+const SESSION_MATCHES_TTL = 5 * 60 * 1000; // 5 min — stale after this, bg refresh
+
+function readSessionMatches() {
+  try {
+    const raw = sessionStorage.getItem(SESSION_MATCHES_KEY);
+    if (!raw) return null;
+    const { live, upcoming, ts } = JSON.parse(raw);
+    if (Date.now() - ts > SESSION_MATCHES_TTL) return null;
+    return { live: live ?? [], upcoming: upcoming ?? [] };
+  } catch {
+    return null;
+  }
+}
+
+function writeSessionMatches(live, upcoming) {
+  try {
+    sessionStorage.setItem(SESSION_MATCHES_KEY, JSON.stringify({
+      live, upcoming, ts: Date.now(),
+    }));
+  } catch {
+    // sessionStorage full or unavailable — not critical
+  }
+}
+
 export function useMatches() {
-  const [live, setLive] = useState([]);
-  const [upcoming, setUpcoming] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [syncing, setSyncing] = useState(false); // true while Edge Fn is running
+  const cached = readSessionMatches();
+
+  const [live,     setLive]     = useState(cached?.live     ?? []);
+  const [upcoming, setUpcoming] = useState(cached?.upcoming ?? []);
+  const [loading,  setLoading]  = useState(!cached); // instant if cached
+  const [error,    setError]    = useState(null);
+  const [syncing,  setSyncing]  = useState(false);
 
   const liveIntervalRef = useRef(null);
   const syncIntervalRef = useRef(null);
 
-  // ── Full DB read (both live + upcoming) ──────────────────────────────────
-  const fetchAll = useCallback(async () => {
+  const fetchAll = useCallback(async (background = false) => {
+    // On background refresh don't show loading spinner — data is already visible
+    if (!background) setLoading(true);
     try {
       const [liveData, upcomingData] = await Promise.all([
         getLiveMatches(),
@@ -48,6 +80,7 @@ export function useMatches() {
       setLive(liveData);
       setUpcoming(upcomingData);
       setError(null);
+      writeSessionMatches(liveData, upcomingData);
     } catch (e) {
       setError(e.message ?? 'Failed to load matches');
     } finally {
@@ -55,53 +88,45 @@ export function useMatches() {
     }
   }, []);
 
-  // ── Lightweight live-only DB read ────────────────────────────────────────
   const fetchLive = useCallback(async () => {
     try {
       const liveData = await getLiveMatches();
       setLive(liveData);
+      // Update cache with fresh live data
+      const cur = readSessionMatches();
+      if (cur) writeSessionMatches(liveData, cur.upcoming);
     } catch {
-      // silent — don't overwrite existing data on a poll error
+      // silent
     }
   }, []);
 
-  // ── Trigger Edge Function sync then re-read everything ──────────────────
   const triggerSync = useCallback(async () => {
-    if (document.hidden) return; // don't waste API quota when tab not visible
+    if (document.hidden) return;
     setSyncing(true);
     try {
-      const { data: { session } } = await import('../services/supabase')
-        .then(m => m.supabase.auth.getSession());
-
       await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-matches`,
         {
-          method: 'POST',
+          method:  'POST',
           headers: {
-            'Content-Type': 'application/json',
+            'Content-Type':  'application/json',
             'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
           },
           body: '{}',
         }
       );
     } catch {
-      // Edge Function call failed — still re-read DB in case
-      // a previous sync already wrote fresh data
+      // silent — still re-read DB below
     } finally {
       setSyncing(false);
-      // Always re-read DB after a sync attempt
-      await fetchAll();
+      await fetchAll(true); // background=true so no spinner
     }
   }, [fetchAll]);
 
-  // ── Start / stop polling ─────────────────────────────────────────────────
   const startPolling = useCallback(() => {
-    // Live scores: every 30 seconds
     liveIntervalRef.current = setInterval(() => {
       if (!document.hidden) fetchLive();
     }, 30_000);
-
-    // Full sync: every 30 minutes
     syncIntervalRef.current = setInterval(() => {
       if (!document.hidden) triggerSync();
     }, 30 * 60 * 1000);
@@ -113,17 +138,18 @@ export function useMatches() {
   }, []);
 
   useEffect(() => {
-    // Initial load
-    fetchAll();
+    const hasFreshCache = !!readSessionMatches();
+    // If we have fresh cached data, fetch in background (no spinner)
+    // If no cache, fetch immediately (shows loading skeleton)
+    fetchAll(hasFreshCache);
     startPolling();
 
-    // Pause when tab hidden, resume + refresh when visible again
     const handleVisibility = () => {
       if (document.hidden) {
         stopPolling();
       } else {
-        fetchAll();        // immediate refresh when user comes back
-        startPolling();    // restart timers
+        fetchAll(true); // always background on tab refocus
+        startPolling();
       }
     };
 
@@ -134,7 +160,7 @@ export function useMatches() {
     };
   }, [fetchAll, startPolling, stopPolling]);
 
-  return { live, upcoming, loading, error, syncing, refresh: fetchAll };
+  return { live, upcoming, loading, error, syncing, refresh: () => fetchAll(false) };
 }
 
 // ── useMatchesByDate ──────────────────────────────────────────────────────────
