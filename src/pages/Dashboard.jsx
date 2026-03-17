@@ -1270,9 +1270,9 @@ function RankingsTab({ onSelectPlayer }) {
         <Card style={{ overflow: 'hidden' }}>
 
           {/* Header row */}
-          <div style={{
+          <div className="tv-ranking-header" style={{
             display: 'grid',
-            gridTemplateColumns: '36px minmax(0,1fr) 70px 80px',
+            gridTemplateColumns: '36px minmax(0,1fr) 70px',
             gap: '8px', padding: '10px 16px',
             borderBottom: '1px solid var(--border)',
             fontSize: '11px', fontWeight: 700,
@@ -1282,7 +1282,6 @@ function RankingsTab({ onSelectPlayer }) {
             <span>#</span>
             <span>Player</span>
             <span style={{ textAlign: 'right' }}>{tourDef.pointsLabel}</span>
-            <span className="rankings-wl" style={{ textAlign: 'right' }}>W / L</span>
           </div>
 
           {/* Player rows */}
@@ -1297,13 +1296,14 @@ function RankingsTab({ onSelectPlayer }) {
 
             return (
               <div
+                className="tv-ranking-row"
                 key={p.id ?? i}
                 onClick={() => isClickable && onSelectPlayer?.(p)}
                 onMouseEnter={() => isClickable && setHovRow(i)}
                 onMouseLeave={() => isClickable && setHovRow(null)}
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: '36px minmax(0,1fr) 70px 80px',
+                  gridTemplateColumns: '36px minmax(0,1fr) 70px',
                   gap: '8px', padding: '12px 16px',
                   borderTop: '1px solid var(--border)',
                   background: isClickable && hovRow === i ? 'var(--bg-glass)' : 'transparent',
@@ -1346,14 +1346,6 @@ function RankingsTab({ onSelectPlayer }) {
                   fontSize: '13px', color: 'var(--text-muted)', textAlign: 'right',
                 }}>
                   {p.points != null ? p.points.toLocaleString() : '—'}
-                </span>
-
-                {/* W/L */}
-                <span className="rankings-wl" style={{
-                  fontSize: '13px', color: 'var(--text-muted)', textAlign: 'right',
-                }}>
-                  <span style={{ color: 'var(--green)' }}>{p.wins ?? '—'}</span>
-                  <span style={{ color: 'var(--text-faint)' }}>/{p.losses ?? 0}</span>
                 </span>
               </div>
             );
