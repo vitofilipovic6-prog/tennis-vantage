@@ -19,8 +19,8 @@ async function callGemini(apiKey, model, prompt) {
         },
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         generationConfig: {
-          temperature:     0.3,
-          maxOutputTokens: 2048,
+          temperature:     0.2,
+          maxOutputTokens: 4096,
           topP:            0.8,
           // NOTE: no responseMimeType — not universally supported, causes empty responses
         },
@@ -76,30 +76,32 @@ Respond ONLY with this JSON object, no markdown, no extra text:
 }
 
 function extractJson(text) {
-  if (!text) throw new Error('Empty response from Gemini');
+  if (!text || text.trim().length === 0) throw new Error('Empty response from Gemini');
 
   // Try direct parse first
-  try {
-    return JSON.parse(text.trim());
-  } catch {}
+  try { return JSON.parse(text.trim()); } catch {}
 
   // Strip markdown fences
   const stripped = text
-    .replace(/```json\s*/gi, '')
-    .replace(/```\s*/gi, '')
+    .replace(/^```json\s*/i, '')
+    .replace(/^```\s*/i, '')
+    .replace(/```\s*$/i, '')
     .trim();
+  try { return JSON.parse(stripped); } catch {}
 
-  try {
-    return JSON.parse(stripped);
-  } catch {}
-
-  // Find first { ... } block
-  const start = text.indexOf('{');
-  const end   = text.lastIndexOf('}');
-  if (start !== -1 && end !== -1 && end > start) {
-    try {
-      return JSON.parse(text.slice(start, end + 1));
-    } catch {}
+  // Find the outermost { } block
+  let depth = 0;
+  let start = -1;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '{') {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (text[i] === '}') {
+      depth--;
+      if (depth === 0 && start !== -1) {
+        try { return JSON.parse(text.slice(start, i + 1)); } catch {}
+      }
+    }
   }
 
   throw new Error('Could not parse JSON from Gemini response');
@@ -141,6 +143,7 @@ module.exports = async function handler(req, res) {
     const text = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
 
     console.log('[/api/player-bio] raw response length:', text.length);
+    console.log('[/api/player-bio] raw response preview:', text.slice(0, 300));
 
     const parsed = extractJson(text);
     return res.status(200).json({ data: parsed });
