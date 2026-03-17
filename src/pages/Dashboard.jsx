@@ -573,38 +573,40 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
     return () => { cancelled = true; };
   }, [calendarDateStr, wtaPlayerIds, todayStr]);
 
-  if (loading) return <LoadingGrid />;
+ if (loading) return <LoadingGrid />;
   if (error) return <ErrorMessage msg={error} onRetry={refresh} />;
 
-  // For today: merge DB date matches + live matches
-  const trulyLive = live.filter(m => {
-    if (!m.date) return true;
-    const d = m.local_date ?? new Date(m.date).toLocaleDateString('en-CA');
-    return d >= todayStr;
-  });
-
-  const displayMatches = isToday ? (() => {
+  // ── Build today's match list: merge live + today's upcoming, deduplicated ──
+  const todayMatches = (() => {
     const map = new Map();
-    const todayFromDb = upcoming.filter(m => {
+
+    // 1. Today's upcoming from DB
+    upcoming.forEach(m => {
       const d = m.local_date ?? (m.date ? new Date(m.date).toLocaleDateString('en-CA') : null);
-      return d === todayStr;
+      if (d === todayStr) map.set(m.id, m);
     });
-    todayFromDb.forEach(m => map.set(m.id, m));
-    trulyLive.forEach(m => map.set(m.id, m));
+
+    // 2. Live matches dated today (overwrite upcoming entry if same id)
+    live.forEach(m => {
+      const d = m.local_date ?? (m.date ? new Date(m.date).toLocaleDateString('en-CA') : null);
+      if (!d || d === todayStr) map.set(m.id, m);
+    });
+
     return [...map.values()].sort((a, b) =>
       new Date(a.date ?? 0).getTime() - new Date(b.date ?? 0).getTime()
     );
-  })() : dateMatches;
+  })();
 
+  // ── Active match pool depends on whether calendar date is today ──
+  const pool = isToday ? todayMatches : dateMatches;
+
+  // ── Filter by selected type pill ──
   const byType = (arr) => arr.filter(m => deriveMatchType(m, wtaPlayerIds) === activeFilter);
   const activeFilterDef = MATCH_FILTERS.find(f => f.id === activeFilter);
 
-  const filteredLive = isToday ? byType(trulyLive) : [];
-  const filteredNonLive = byType(
-    isToday
-      ? displayMatches.filter(m => m.status !== 'live')
-      : displayMatches
-  );
+  const filteredPool = byType(pool);
+  const filteredLive    = filteredPool.filter(m => m.status === 'live');
+  const filteredNonLive = filteredPool.filter(m => m.status !== 'live');
 
   const sectionLabel = isToday
     ? `${activeFilterDef?.label} — Today's Matches`
