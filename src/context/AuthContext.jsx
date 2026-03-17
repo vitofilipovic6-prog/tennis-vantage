@@ -68,25 +68,21 @@ export function AuthProvider({ children }) {
     dispatch({ type: 'UPDATE_PROFILE', patch });
   }, []);
 
-  useEffect(() => {
+useEffect(() => {
     mountedRef.current = true;
 
-    // Safety net — if INITIAL_SESSION never fires, unblock after 4s
     const safetyTimeout = setTimeout(() => {
       if (mountedRef.current) dispatch({ type: 'LOADING_DONE' });
     }, 4000);
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-  console.log('[AUTH EVENT]', event, 'user:', session?.user?.id ?? 'null');
-  if (!mountedRef.current) return;
+        console.log('[AUTH EVENT]', event, 'user:', session?.user?.id ?? 'null');
+        if (!mountedRef.current) return;
 
         if (event === 'INITIAL_SESSION') {
           clearTimeout(safetyTimeout);
           if (session?.user) {
-            // Supabase has now set its internal auth token —
-            // all subsequent queries will have the correct auth header.
-            // Step 1: unblock UI immediately with JWT metadata
             dispatch({
               type: 'SET_USER',
               user: session.user,
@@ -96,7 +92,6 @@ export function AuthProvider({ children }) {
                 favourite_players: [],
               },
             });
-            // Step 2: fetch full profile in background
             loadProfile(session.user.id).then(profile => {
               if (mountedRef.current) {
                 dispatch({ type: 'SET_USER', user: session.user, profile });
@@ -109,10 +104,24 @@ export function AuthProvider({ children }) {
         }
 
         if (event === 'SIGNED_IN' && session?.user) {
-          const profile = await loadProfile(session.user.id);
-          if (mountedRef.current) {
-            dispatch({ type: 'SET_USER', user: session.user, profile });
-          }
+          // On Vercel/production, SIGNED_IN fires instead of INITIAL_SESSION
+          // on refresh. Treat it identically — clear the safety timeout and
+          // unblock the UI immediately.
+          clearTimeout(safetyTimeout);
+          dispatch({
+            type: 'SET_USER',
+            user: session.user,
+            profile: {
+              full_name:         session.user.user_metadata?.full_name ?? 'Player',
+              avatar_url:        session.user.user_metadata?.avatar_url ?? null,
+              favourite_players: [],
+            },
+          });
+          loadProfile(session.user.id).then(profile => {
+            if (mountedRef.current) {
+              dispatch({ type: 'SET_USER', user: session.user, profile });
+            }
+          });
           if (window.location.hash || window.location.search.includes('token')) {
             window.history.replaceState(null, '', window.location.pathname);
           }
@@ -120,6 +129,7 @@ export function AuthProvider({ children }) {
         }
 
         if (event === 'TOKEN_REFRESHED' && session?.user) {
+          clearTimeout(safetyTimeout);
           if (mountedRef.current) {
             dispatch({ type: 'SET_USER', user: session.user, profile: state.profile });
           }
@@ -127,6 +137,7 @@ export function AuthProvider({ children }) {
         }
 
         if (event === 'SIGNED_OUT') {
+          clearTimeout(safetyTimeout);
           if (mountedRef.current) dispatch({ type: 'CLEAR_USER' });
         }
       }
