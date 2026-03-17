@@ -17,7 +17,7 @@ function getInitialState() {
         avatar_url:        user.user_metadata?.avatar_url ?? null,
         favourite_players: [],
       },
-      loading:     true,
+      loading:     false,
       authLoading: false,
       error:       null,
     };
@@ -85,6 +85,7 @@ export function AuthProvider({ children }) {
         if (event === 'INITIAL_SESSION') {
           clearTimeout(safetyTimeout);
           if (session?.user) {
+            // Step 1 — unblock UI instantly with JWT metadata (no network)
             const cachedName = session.user.user_metadata?.full_name ?? 'Player';
             dispatch({
               type: 'SET_USER',
@@ -95,8 +96,9 @@ export function AuthProvider({ children }) {
                 favourite_players: [],
               },
             });
-            // Always fetch full profile from DB to get favourite_players
-            // and ensure cross-device sync
+            // Step 2 — always overwrite with full DB profile
+            // Guarantees favourite_players, avatar_url, full_name
+            // are synced from Supabase on every device
             loadProfile(session.user.id).then(profile => {
               if (mountedRef.current) {
                 dispatch({ type: 'SET_USER', user: session.user, profile });
