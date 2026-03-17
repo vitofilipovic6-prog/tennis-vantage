@@ -33,12 +33,12 @@ export function AuthProvider({ children }) {
     try {
       const { data } = await supabase
         .from('profiles')
-        .select('full_name, avatar_url')
+        .select('full_name, avatar_url, favourite_players')
         .eq('id', userId)
         .single();
-      return data ?? { full_name: 'Player', avatar_url: null };
+      return data ?? { full_name: 'Player', avatar_url: null, favourite_players: [] };
     } catch {
-      return { full_name: 'Player', avatar_url: null };
+      return { full_name: 'Player', avatar_url: null, favourite_players: [] };
     }
   }, []);
 
