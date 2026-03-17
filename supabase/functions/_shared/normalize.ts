@@ -232,14 +232,29 @@ function slugify(name: string): string {
   return name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
 }
 
-// ── Compute local_date in Europe/Paris timezone ───────────────────────────────
-// ── Compute local_date as UTC date (not Paris-local) ─────────────────────────
+// ── Compute local_date using Europe/Paris timezone ────────────────────────────
+// Tennis tournaments publish schedules in local time. Using UTC causes matches
+// scheduled late at night to bleed into the next UTC day, and early-morning
+// matches in far-east timezones to appear on the previous UTC day.
+// Europe/Paris (CET = UTC+1, CEST = UTC+2) is the ATP/WTA scheduling anchor
+// and matches the user's local timezone (Croatia = same zone as Paris).
 function computeLocalDate(timestampSeconds: number): string {
+  if (!timestampSeconds || timestampSeconds <= 0) {
+    return new Date().toLocaleDateString('en-CA');
+  }
   const d = new Date(timestampSeconds * 1000);
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(d.getUTCDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  // Use Intl.DateTimeFormat to get the date in Europe/Paris timezone
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Paris',
+    year:     'numeric',
+    month:    '2-digit',
+    day:      '2-digit',
+  }).formatToParts(d);
+
+  const year  = parts.find(p => p.type === 'year')?.value  ?? '';
+  const month = parts.find(p => p.type === 'month')?.value ?? '';
+  const day   = parts.find(p => p.type === 'day')?.value   ?? '';
+  return `${year}-${month}-${day}`; // YYYY-MM-DD
 }
 
 export function resolveTour(event: any): 'ATP' | 'WTA' | 'ITF' | 'UTR' | null {

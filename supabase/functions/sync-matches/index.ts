@@ -10,9 +10,9 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { normalizeEvent, resolveTour } from '../_shared/normalize.ts';
 
-const RAPIDAPI_KEY     = Deno.env.get('RAPIDAPI_KEY')!;
-const RAPIDAPI_HOST    = 'tennisapi1.p.rapidapi.com';
-const SUPABASE_URL     = Deno.env.get('SUPABASE_URL')!;
+const RAPIDAPI_KEY = Deno.env.get('RAPIDAPI_KEY')!;
+const RAPIDAPI_HOST = 'tennisapi1.p.rapidapi.com';
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SVC_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SVC_KEY);
@@ -22,8 +22,8 @@ async function rapidGet(path: string) {
   console.log('GET', url);
   const res = await fetch(url, {
     headers: {
-      'Content-Type':    'application/json',
-      'x-rapidapi-key':  RAPIDAPI_KEY,
+      'Content-Type': 'application/json',
+      'x-rapidapi-key': RAPIDAPI_KEY,
       'x-rapidapi-host': RAPIDAPI_HOST,
     },
   });
@@ -34,9 +34,9 @@ async function rapidGet(path: string) {
 }
 
 function extractEvents(data: any): any[] {
-  if (Array.isArray(data))          return data;
-  if (Array.isArray(data?.events))  return data.events;
-  if (Array.isArray(data?.result))  return data.result;
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.events)) return data.events;
+  if (Array.isArray(data?.result)) return data.result;
   if (Array.isArray(data?.results)) return data.results;
   if (Array.isArray(data?.matches)) return data.matches;
   return [];
@@ -69,23 +69,23 @@ async function upsertPlayersPreservingRank(
   if (players.length === 0) return;
 
   let successCount = 0;
-  let errorCount   = 0;
+  let errorCount = 0;
 
   for (const p of players) {
     const { error } = await supabase.rpc('upsert_player_preserve_rank', {
-      p_id:           String(p.id),
-      p_name:         String(p.name),
-      p_country:      String(p.country ?? ''),
-      p_flag:         String(p.flag ?? '🏳️'),
-      p_rank:         Number(p.rank ?? 999),
-      p_wins:         Number(p.wins ?? 0),
-      p_losses:       Number(p.losses ?? 0),
-      p_ace_avg:      Number(p.ace_avg ?? 5.5),
+      p_id: String(p.id),
+      p_name: String(p.name),
+      p_country: String(p.country ?? ''),
+      p_flag: String(p.flag ?? '🏳️'),
+      p_rank: Number(p.rank ?? 999),
+      p_wins: Number(p.wins ?? 0),
+      p_losses: Number(p.losses ?? 0),
+      p_ace_avg: Number(p.ace_avg ?? 5.5),
       p_surface_pref: String(p.surface_pref ?? 'Hard'),
-      p_first_serve:  Number(p.first_serve_pct ?? 60),
-      p_recent_form:  String(p.recent_form ?? '- - - - -'),
+      p_first_serve: Number(p.first_serve_pct ?? 60),
+      p_recent_form: String(p.recent_form ?? '- - - - -'),
       p_injury_notes: p.injury_notes ?? null,
-      p_fatigue:      Number(p.fatigue_score ?? 0),
+      p_fatigue: Number(p.fatigue_score ?? 0),
     });
 
     if (error) {
@@ -103,14 +103,14 @@ Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', {
       headers: {
-        'Access-Control-Allow-Origin':  '*',
+        'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
         'Access-Control-Allow-Headers': 'Authorization, Content-Type', // ← add Content-Type
       },
     });
   }
 
-  const log: string[]    = [];
+  const log: string[] = [];
   const errors: string[] = [];
 
   const playersMap = new Map<string, any>();
@@ -120,7 +120,7 @@ Deno.serve(async (req: Request) => {
     // ── 1. Live matches ───────────────────────────────────────────────────────
     try {
       log.push('[LIVE] Fetching live matches...');
-      const raw    = await rapidGet('matches/live');
+      const raw = await rapidGet('matches/live');
       const events = extractEvents(raw);
       log.push(`[LIVE] Got ${events.length} events`);
 
@@ -140,14 +140,14 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── 2. Date-range matches ─────────────────────────────────────────────────
-    const dates    = dateRange(2, 3);
+    const dates = dateRange(2, 3);
     const todayUTC = new Date().toISOString().slice(0, 10);
 
     for (const { day, month, year } of dates) {
-      const label = `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+      const label = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
       try {
         log.push(`[DATES] Fetching ${label}...`);
-        const raw    = await rapidGet(`events/${day}/${month}/${year}`);
+        const raw = await rapidGet(`events/${day}/${month}/${year}`);
         const events = extractEvents(raw);
         log.push(`[DATES] ${label}: ${events.length} events`);
 
@@ -197,16 +197,21 @@ Deno.serve(async (req: Request) => {
 
     // ── 5. FORCE-FINISH stale matches ─────────────────────────────────────────
     try {
-      const todayMidnightUTC = new Date();
-      todayMidnightUTC.setUTCHours(0, 0, 0, 0);
-      const cutoffISO = todayMidnightUTC.toISOString();
+      // Use local_date (Paris timezone) not match_date (UTC) so we don't
+      // accidentally kill matches that are still live in their local timezone.
+      const todayLocalDate = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Europe/Paris',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(new Date()); // e.g. "2026-03-17"
 
       for (const stalledStatus of ['upcoming', 'live'] as const) {
         const { data: staleMatches, error: staleErr } = await supabase
           .from('matches')
           .select('id')
           .eq('status', stalledStatus)
-          .lt('match_date', cutoffISO);
+          .lt('local_date', todayLocalDate); // ← was: .lt('match_date', cutoffISO)
 
         if (staleErr) {
           errors.push(`[FORCE-FINISH/${stalledStatus}] ${staleErr.message}`);
@@ -244,17 +249,17 @@ Deno.serve(async (req: Request) => {
         const updates: { id: string; match_type: string }[] = [];
 
         for (const m of existingMatches) {
-          const nameLower  = (m.tournament ?? '').toLowerCase();
+          const nameLower = (m.tournament ?? '').toLowerCase();
           const roundLower = (m.round ?? '').toLowerCase();
-          const isDoubles  = roundLower.includes('double') || nameLower.includes('double');
-          const isMixed    = roundLower.includes('mixed')  || nameLower.includes('mixed');
-          const isWta      = nameLower.includes('wta');
+          const isDoubles = roundLower.includes('double') || nameLower.includes('double');
+          const isMixed = roundLower.includes('mixed') || nameLower.includes('mixed');
+          const isWta = nameLower.includes('wta');
 
           let derivedType = m.match_type;
-          if (isMixed && isDoubles)    derivedType = 'mixed_doubles';
+          if (isMixed && isDoubles) derivedType = 'mixed_doubles';
           else if (isDoubles && isWta) derivedType = 'wta_doubles';
-          else if (isDoubles)          derivedType = 'atp_doubles';
-          else if (isWta)              derivedType = 'wta_singles';
+          else if (isDoubles) derivedType = 'atp_doubles';
+          else if (isWta) derivedType = 'wta_singles';
 
           if (derivedType !== m.match_type) {
             updates.push({ id: m.id, match_type: derivedType });
@@ -283,7 +288,7 @@ Deno.serve(async (req: Request) => {
     {
       status: errors.length ? 207 : 200,
       headers: {
-        'Content-Type':                'application/json',
+        'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',
       },
     }
