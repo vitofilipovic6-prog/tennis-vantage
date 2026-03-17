@@ -254,14 +254,18 @@ export async function getLiveMatches(wtaPlayerIds = new Set()) {
 }
 
 // ── Upcoming matches ──────────────────────────────────────────────────────────
+// ── Upcoming matches ──────────────────────────────────────────────────────────
 export async function getUpcomingMatches(wtaPlayerIds = new Set()) {
   try {
-    const now = new Date().toISOString();
+    // Use start-of-today UTC so matches scheduled earlier today aren't lost
+    const todayStart = new Date();
+    todayStart.setUTCHours(0, 0, 0, 0);
+
     const { data, error } = await supabase
       .from('matches')
       .select(MATCH_SELECT)
       .eq('status', 'upcoming')
-      .gte('match_date', now)
+      .gte('match_date', todayStart.toISOString()) // ← was: new Date().toISOString()
       .order('match_date', { ascending: true })
       .limit(50);
 
