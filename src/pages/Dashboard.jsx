@@ -195,7 +195,7 @@ export default function Dashboard({ showToast }) {
           <span className="hide-sm">Search players…</span>
         </button>
 
-        {/* Desktop: avatar with dropdown (Profile + Sign Out) */}
+        {/* Desktop: avatar dropdown (Profile + Sign Out) */}
         <div className="hide-md" style={{ position: 'relative', flexShrink: 0 }} ref={avatarMenuRef}>
           <button
             onClick={() => setAvatarMenuOpen(prev => !prev)}
@@ -208,7 +208,6 @@ export default function Dashboard({ showToast }) {
               cursor: 'pointer', flexShrink: 0, transition: 'border-color 0.15s',
             }}
             aria-label="Account menu"
-            aria-expanded={avatarMenuOpen}
           >
             {avatarInitial}
           </button>
@@ -219,10 +218,8 @@ export default function Dashboard({ showToast }) {
               background: 'var(--bg-card)', border: '1px solid var(--border-md)',
               borderRadius: '12px', overflow: 'hidden', minWidth: '190px',
               boxShadow: '0 16px 40px rgba(0,0,0,0.5)',
-              animation: 'tv-slide-up 0.15s ease',
               zIndex: 200,
             }}>
-              {/* User info header */}
               <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
                 <p style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text)', margin: 0 }}>
                   {firstName ?? 'Player'}
@@ -235,7 +232,6 @@ export default function Dashboard({ showToast }) {
                 </p>
               </div>
 
-              {/* My Profile */}
               <button
                 onClick={() => { setAvatarMenuOpen(false); setProfileOpen(true); }}
                 style={{
@@ -253,7 +249,6 @@ export default function Dashboard({ showToast }) {
                 My Profile
               </button>
 
-              {/* Sign Out */}
               <button
                 onClick={handleLogout}
                 style={{
