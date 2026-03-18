@@ -27,7 +27,7 @@ async function callGemini(apiKey, model, systemInstruction, geminiContents) {
         contents: geminiContents,
         generationConfig: {
           temperature:     0.7,
-          maxOutputTokens: 800,   // was 2048 — this was killing your context budget
+          maxOutputTokens: 1000,   // was 2048 — this was killing your context budget
           topP:            0.9,
         },
       }),

@@ -599,7 +599,7 @@ export async function getPrediction(match) {
         ? `Ranked player should be favoured (55–75%) unless you know the unranked player is actually strong.`
         : `Neither player is ranked. Rely entirely on your knowledge. If unknown, be honest.`;
 
-    const prompt = `You are an elite tennis prediction model with encyclopedic knowledge of every ATP, WTA, ITF, and challenger circuit player.
+    const prompt = `You are an elite tennis prediction model with encyclopedic knowledge of every ATP, WTA, ITF, and challenger circuit player through early 2025.
 
 MATCH: ${p1.name} vs ${p2.name}
 TOURNAMENT: ${match.tournament ?? 'Unknown'} | ROUND: ${match.round ?? 'Unknown'} | SURFACE: ${match.surface ?? 'Hard'}
@@ -618,14 +618,28 @@ ${h2hSection}
 ALGORITHMIC BASELINE: ${p1.name} ${basePct}% — ${p2.name} ${100 - basePct}%
 ${scenarioInstruction}
 
+STEP 1 — RECALL FROM YOUR TRAINING KNOWLEDGE:
+Before writing any key_factors, mentally recall:
+- ${p1.name}: What were their last 3–5 match results? Win or loss, opponent name, tournament, surface. What is their current form streak?
+- ${p2.name}: Same — last 3–5 results from your memory. Tournament names, surfaces, opponents.
+- Have these two players met before? What was the outcome?
+- Any known injuries, coaching changes, or slumps for either player right now?
+
+STEP 2 — WRITE YOUR PREDICTION using that recalled knowledge plus the DB data above.
+
 RULES:
-- Be specific: 63%, 71%, 38% — NOT round numbers like 50%, 55%, 60% unless genuinely a coin-flip
-- Your knowledge ALWAYS overrides the algorithmic baseline
-- Confidence: "High" = clear favourite with strong evidence; "Medium" = slight edge; "Low" = genuinely close or data missing
-- key_factors: provide EXACTLY 5 to 7 factors. Each must be a specific, factual sentence naming at least one player. Cover ALL of these categories: (1) ranking/seeding context, (2) surface performance, (3) recent form with actual W/L results, (4) head-to-head or historical matchup, (5) serve/game-style edge, (6) tournament context or pressure, (7) fitness/fatigue or scheduling if relevant
-- Never write generic filler like "Player A is a strong competitor". Always name real stats or real results.
-- If no H2H exists in DB, use your training knowledge of their history OR note it is a first meeting
-- ai_analysis: 2–3 sentences. Cite at least one real statistic. Name both players. Give a direct verdict.
+- Be specific: 63%, 71%, 38% — NOT round numbers unless genuinely a coin-flip
+- Confidence: "High" = clear favourite with strong evidence; "Medium" = slight edge; "Low" = genuinely close
+- key_factors: EXACTLY 5 to 7. Each must be a specific factual sentence. Cover ALL these categories:
+  1. Ranking/seeding comparison
+  2. Surface win rate or preference — cite a real percentage or tournament if you know it
+  3. Recent form — name the actual last 3–5 matches from your memory (e.g. "Won vs Medvedev in Miami R16, lost to Alcaraz in Madrid SF")
+  4. Head-to-head — cite record and last meeting, or state it is a first meeting
+  5. Serve or playing style matchup
+  6. Tournament context, draw difficulty, or round pressure
+  7. Fitness, fatigue, scheduling load, or injury if relevant — skip this one if nothing meaningful
+- NEVER write generic filler like "Player A is a strong competitor" or "Both players are capable"
+- ai_analysis: 2–3 sentences. Cite at least one real stat or match result from your memory. Name both players. Give a direct verdict.
 
 Respond ONLY with valid JSON, no markdown:
 {
@@ -633,20 +647,20 @@ Respond ONLY with valid JSON, no markdown:
   "confidence": "<High|Medium|Low>",
   "predicted_winner": "<exact player name>",
   "key_factors": [
-    "<ranking/seeding: specific fact naming both players>",
-    "<surface: specific surface win rate or preference fact>",
-    "<recent form: actual W/L results from DB or your knowledge>",
-    "<H2H: record or first meeting note>",
-    "<serve or playing style edge>",
-    "<tournament context, round pressure, or draw difficulty>",
-    "<fitness, fatigue, scheduling, or wildcard factor — omit if nothing meaningful>"
+    "<ranking/seeding: e.g. '${p1.name} is ranked #X vs ${p2.name} #Y — a gap of Z places'>",
+    "<surface: e.g. '${p1.name} has won 78% of matches on ${match.surface ?? 'Hard'} this season'>",
+    "<recent form: e.g. '${p1.name} arrives on a 4-match win streak including wins over [name] and [name]; ${p2.name} lost in R1 at [tournament] last week'>",
+    "<H2H: e.g. '${p1.name} leads the H2H 4-2, winning their last meeting at [tournament] in [year] [score]' or 'First career meeting between these two players'>",
+    "<serve/style: specific edge one player has over the other on this surface>",
+    "<tournament context: seeding, draw, conditions, pressure>",
+    "<fitness/wildcard: only if genuinely relevant, otherwise omit this item>"
   ],
-  "ai_analysis": "<2-3 sentences with real stats, both players named, direct verdict>"
+  "ai_analysis": "<2-3 sentences with a real stat or match result from your memory, both players named, direct verdict>"
 }`;
 
     const response = await sendChatMessage(
       [{ role: 'user', content: prompt }],
-      'You are a professional tennis prediction AI. Respond only with valid JSON. Never fabricate stats. Be honest when data is missing. Always provide 5-7 specific key_factors.'
+      'You are a professional tennis prediction AI with encyclopedic knowledge of all ATP, WTA, ITF, and challenger players. You actively recall specific recent match results, tournament outcomes, and head-to-head history from your training data. Respond only with valid JSON. Never write generic filler. Always cite real match results and statistics.'
     );
 
     const rawText = response?.content?.[0]?.text ?? '';
