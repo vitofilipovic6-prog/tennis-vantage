@@ -868,7 +868,7 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = 
 // ─────────────────────────────────────────────────────────────────────────────
 function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMatch, wtaPlayerIds }) {
   const [predFilter, setPredFilter] = useState('atp_singles');
-  const { prediction, loading: predLoading, error: predError } = usePrediction(selectedMatch);
+  const { prediction, loading: predLoading, error: predError, cooldown } = usePrediction(selectedMatch);
   const [h2h, setH2h] = useState(null);
   const [h2hLoading, setH2hLoading] = useState(false);
 
@@ -919,6 +919,28 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
           </p>
           <FilterPills activeFilter={predFilter} onSelect={setPredFilter} size="small" />
         </div>
+        {cooldown > 0 && (
+          <div style={{
+            margin: '8px 8px 0',
+            padding: '10px 14px',
+            borderRadius: '8px',
+            background: 'rgba(251,146,60,0.08)',
+            border: '1px solid rgba(251,146,60,0.25)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+          }}>
+            <span style={{ fontSize: '16px' }}>⏳</span>
+            <div>
+              <p style={{ fontSize: '12px', fontWeight: 700, color: 'var(--yellow)', margin: 0 }}>
+                Next prediction in {cooldown}s
+              </p>
+              <p style={{ fontSize: '11px', color: 'var(--text-faint)', marginTop: '2px' }}>
+                Ensures every prediction is deep & detailed
+              </p>
+            </div>
+          </div>
+        )}
         <div style={{ maxHeight: '60dvh', overflowY: 'auto', padding: '8px' }}>
           {matchesLoading ? (
             <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-faint)' }}>Loading…</div>

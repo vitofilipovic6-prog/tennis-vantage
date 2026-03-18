@@ -419,27 +419,72 @@ export function useAllPlayers() {
 }
 
 // ── usePrediction ─────────────────────────────────────────────────────────────
+// ── usePrediction ─────────────────────────────────────────────────────────────
+const PREDICTION_COOLDOWN_MS = 60_000; // 60 seconds between predictions
+let lastPredictionTime = 0; // module-level so it persists across component remounts
+
 export function usePrediction(match) {
   const [prediction, setPrediction] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [cooldown, setCooldown] = useState(0); // seconds remaining
 
   const matchId = match?.id ?? null;
 
+  // Cooldown countdown ticker
+  useEffect(() => {
+    const remaining = Math.ceil((lastPredictionTime + PREDICTION_COOLDOWN_MS - Date.now()) / 1000);
+    if (remaining <= 0) { setCooldown(0); return; }
+
+    setCooldown(remaining);
+    const interval = setInterval(() => {
+      const r = Math.ceil((lastPredictionTime + PREDICTION_COOLDOWN_MS - Date.now()) / 1000);
+      if (r <= 0) { setCooldown(0); clearInterval(interval); }
+      else setCooldown(r);
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [matchId]); // recalculate when user selects a new match
+
   useEffect(() => {
     if (!matchId) { setPrediction(null); setError(null); return; }
+
+    // Block if cooldown is still active
+    const msRemaining = lastPredictionTime + PREDICTION_COOLDOWN_MS - Date.now();
+    if (msRemaining > 0) {
+      const secs = Math.ceil(msRemaining / 1000);
+      setError(`⏳ Please wait ${secs}s before predicting another match.`);
+      return;
+    }
+
     let cancelled = false;
     setLoading(true);
     setError(null);
+
+    lastPredictionTime = Date.now(); // stamp immediately so parallel clicks are blocked
+
     getPrediction(match)
-      .then(data => { if (!cancelled) { setPrediction(data); setError(null); } })
+      .then(data => {
+        if (!cancelled) {
+          setPrediction(data);
+          setError(null);
+          // Start the cooldown ticker from now
+          const interval = setInterval(() => {
+            const r = Math.ceil((lastPredictionTime + PREDICTION_COOLDOWN_MS - Date.now()) / 1000);
+            if (r <= 0) { setCooldown(0); clearInterval(interval); }
+            else setCooldown(r);
+          }, 1000);
+          setCooldown(Math.ceil(PREDICTION_COOLDOWN_MS / 1000));
+        }
+      })
       .catch(e => { if (!cancelled) setError(e.message ?? 'Prediction failed'); })
       .finally(() => { if (!cancelled) setLoading(false); });
+
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [matchId]);
 
-  return { prediction, loading, error };
+  return { prediction, loading, error, cooldown };
 }
 
 // ── usePlayerSearch ───────────────────────────────────────────────────────────
