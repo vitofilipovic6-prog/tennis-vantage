@@ -119,7 +119,7 @@ Deno.serve(async (req: Request) => {
     if (tennisEvents.length === 0) {
       // No live matches right now — mark all currently-live DB rows as finished
       // only if their match_date was more than 3 hours ago (safety buffer)
-      const cutoff = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+      const cutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString();
       const { data: staleLive } = await supabase
         .from('matches')
         .select('id')
@@ -177,7 +177,7 @@ Deno.serve(async (req: Request) => {
       // ── 4. Mark DB rows as finished if they dropped out of live feed ───────
       // A match is "finished" if it was live in DB but not in today's live feed,
       // AND its match_date was more than 2 hours ago
-      const cutoff = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+      const cutoff = new Date(Date.now() - 45 * 60 * 1000).toISOString();
       const { data: dbLiveRows } = await supabase
         .from('matches')
         .select('id')
