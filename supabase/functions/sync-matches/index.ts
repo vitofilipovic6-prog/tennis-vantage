@@ -105,8 +105,27 @@ Deno.serve(async (req: Request) => {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Authorization, Content-Type', // ← add Content-Type
+        'Access-Control-Allow-Headers': 'Authorization, Content-Type',
       },
+    });
+  }
+
+  // ── Auth guard ────────────────────────────────────────────────────────────
+  // Accepts either:
+  //   1. A known SYNC_SECRET token (from cron jobs / server calls)
+  //   2. The Supabase anon key (from the frontend triggerSync call)
+  const authHeader = req.headers.get('Authorization') ?? '';
+  const token = authHeader.replace(/^Bearer\s+/i, '');
+
+  const SYNC_SECRET  = Deno.env.get('SYNC_SECRET') ?? '';
+  const ANON_KEY     = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+
+  const isAuthorized = token === SYNC_SECRET || token === ANON_KEY;
+
+  if (!isAuthorized) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' },
     });
   }
 
