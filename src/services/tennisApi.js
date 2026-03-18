@@ -263,25 +263,13 @@ export async function getUpcomingMatches(wtaPlayerIds = new Set()) {
       day:      '2-digit',
     }).format(new Date());
 
-    // Fetch today + next 2 days only (keeps result set small & relevant)
-    const threeDaysLater = new Date();
-    threeDaysLater.setDate(threeDaysLater.getDate() + 3);
-    const maxLocalDate = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Europe/Paris',
-      year:     'numeric',
-      month:    '2-digit',
-      day:      '2-digit',
-    }).format(threeDaysLater);
-
     const { data, error } = await supabase
       .from('matches')
       .select(MATCH_SELECT)
       .eq('status', 'upcoming')
-      .gte('local_date', todayLocalDate)
-      .lte('local_date', maxLocalDate)   // ← don't pull weeks of future matches
-      .order('local_date', { ascending: true })
+      .eq('local_date', todayLocalDate)   // ← exact match, today ONLY
       .order('match_date', { ascending: true })
-      .limit(150);                        // ← raised from 50, today alone can have 100+
+      .limit(500);                         // ← safe ceiling, today won't have 500
 
     if (error) throw error;
     return (data ?? []).map(m => normaliseMatch(m, wtaPlayerIds));
