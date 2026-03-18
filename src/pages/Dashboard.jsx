@@ -1166,19 +1166,78 @@ function PredictionCard({ match: m, prediction: pred }) {
       {/* Key factors */}
       {pred.key_factors?.length > 0 && (
         <div>
-          <p style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '10px' }}>
-            Key Factors
+          <p style={{
+            fontSize: '11px', fontWeight: 700, color: 'var(--text-faint)',
+            textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '10px',
+          }}>
+            Key Factors ({pred.key_factors.length})
           </p>
-          {pred.key_factors.map((f, i) => (
-            <div key={i} style={{
-              display: 'flex', alignItems: 'flex-start', gap: '8px',
-              padding: '8px 0',
-              borderTop: i > 0 ? '1px solid var(--border)' : 'none',
-            }}>
-              <span style={{ color: 'var(--lime)', fontSize: '14px', flexShrink: 0 }}>→</span>
-              <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>{f}</span>
-            </div>
-          ))}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            {pred.key_factors.map((f, i) => {
+              // Auto-assign an icon based on what the factor is likely about
+              const fl = f.toLowerCase();
+              const icon = fl.includes('rank') || fl.includes('seed') ? '📊'
+                : fl.includes('surface') || fl.includes('clay') || fl.includes('grass') || fl.includes('hard') ? '🎾'
+                  : fl.includes('form') || fl.includes('w/l') || fl.includes('won') || fl.includes('lost') ? '📈'
+                    : fl.includes('h2h') || fl.includes('head') || fl.includes('meeting') || fl.includes('record') ? '⚔️'
+                      : fl.includes('serve') || fl.includes('ace') || fl.includes('style') || fl.includes('game') ? '💥'
+                        : fl.includes('round') || fl.includes('tournament') || fl.includes('draw') || fl.includes('seeded') ? '🏆'
+                          : fl.includes('fatigue') || fl.includes('fitness') || fl.includes('injur') || fl.includes('schedule') ? '💪'
+                            : '→';
+              return (
+                <div key={i} style={{
+                  display: 'flex', alignItems: 'flex-start', gap: '10px',
+                  padding: '10px 12px', borderRadius: '8px',
+                  background: i % 2 === 0 ? 'var(--bg-glass)' : 'transparent',
+                  transition: 'background 0.15s',
+                }}>
+                  <span style={{ fontSize: '15px', flexShrink: 0, marginTop: '1px' }}>{icon}</span>
+                  <span style={{ fontSize: '13px', color: 'var(--text-muted)', lineHeight: 1.55 }}>{f}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Recent form strip — shown when no H2H and we have DB recent matches */}
+      {pred.source === 'ai' && !pred.key_factors?.some(f => f.toLowerCase().includes('h2h') || f.toLowerCase().includes('head-to-head') || f.toLowerCase().includes('meeting')) && (
+        <div style={{
+          marginTop: '12px', padding: '12px 14px', borderRadius: '10px',
+          background: 'var(--bg-glass)', border: '1px solid var(--border)',
+        }}>
+          <p style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '10px' }}>
+            Recent Form
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {[
+              { name: m.player1?.name, form: m.player1?.recent_form },
+              { name: m.player2?.name, form: m.player2?.recent_form },
+            ].map(({ name, form }) => {
+              const letters = (form ?? '').split('').filter(c => c === 'W' || c === 'L');
+              if (!letters.length) return null;
+              return (
+                <div key={name} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '12px', color: 'var(--text-faint)', minWidth: '90px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {name}
+                  </span>
+                  <div style={{ display: 'flex', gap: '4px' }}>
+                    {letters.slice(-5).map((r, i) => (
+                      <div key={i} style={{
+                        width: '24px', height: '24px', borderRadius: '5px', fontWeight: 800, fontSize: '11px',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        background: r === 'W' ? 'rgba(74,222,128,0.15)' : 'rgba(248,113,113,0.12)',
+                        border: `1px solid ${r === 'W' ? 'rgba(74,222,128,0.35)' : 'rgba(248,113,113,0.3)'}`,
+                        color: r === 'W' ? 'var(--green)' : 'var(--red)',
+                      }}>
+                        {r}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            }).filter(Boolean)}
+          </div>
         </div>
       )}
     </Card>

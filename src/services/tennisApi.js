@@ -400,6 +400,32 @@ export async function getHeadToHead(p1Id, p2Id) {
   }
 }
 
+// ── Recent matches for a single player ───────────────────────────────────────
+export async function getRecentMatches(playerId, limit = 5) {
+  try {
+    if (!playerId || playerId === 'p1' || playerId === 'p2') return [];
+    const { data, error } = await supabase
+      .from('matches')
+      .select('id, tournament, surface, match_date, winner_id, score, player1_id, player2_id')
+      .eq('status', 'finished')
+      .or(`player1_id.eq.${playerId},player2_id.eq.${playerId}`)
+      .order('match_date', { ascending: false })
+      .limit(limit);
+
+    if (error) throw error;
+    return (data ?? []).map(m => ({
+      tournament: m.tournament,
+      surface:    m.surface,
+      date:       m.match_date,
+      score:      m.score ?? '',
+      result:     m.winner_id === playerId ? 'W' : m.winner_id ? 'L' : '?',
+    }));
+  } catch (e) {
+    console.error('[getRecentMatches]', e.message);
+    return [];
+  }
+}
+
 // ── AI-Powered Prediction engine ──────────────────────────────────────────────
 // Uses /api/chat (Gemini) for intelligent, multi-factor analysis.
 // Falls back to algorithmic prediction if AI is unavailable.
@@ -416,98 +442,85 @@ export async function getPrediction(match) {
   const p2HasForm    = p2.recent_form && !p2.recent_form.includes('-');
   const p1HasServe   = p1.first_serve_pct && p1.first_serve_pct > 0;
   const p2HasServe   = p2.first_serve_pct && p2.first_serve_pct > 0;
-  const p1HasSurface = p1.surface_pref && p1.surface_pref !== 'Hard';
-  const p2HasSurface = p2.surface_pref && p2.surface_pref !== 'Hard';
   const p1HasFatigue = p1.fatigue_score && p1.fatigue_score > 0;
   const p2HasFatigue = p2.fatigue_score && p2.fatigue_score > 0;
 
-  // Scenario classification — drives how hard the AI should work
   const scenario = p1HasRank && p2HasRank ? 'ranked_vs_ranked'
     : p1HasRank || p2HasRank              ? 'ranked_vs_unranked'
     :                                        'unranked_vs_unranked';
 
   const dataQuality = [p1HasRank, p2HasRank, p1HasForm, p2HasForm].filter(Boolean).length;
 
-  // ── 2. Improved algorithmic baseline ─────────────────────────────────────
-  // Non-linear rank edge: bigger gaps punish more, capped at ±30
+  // ── 2. Algorithmic baseline ───────────────────────────────────────────────
   let rankEdge = 0;
   if (p1HasRank && p2HasRank) {
     const diff = p2.rank - p1.rank;
-    // Logarithmic scale: rank 1 vs 100 = ~25pts, rank 1 vs 500 = ~32pts
     rankEdge = Math.sign(diff) * Math.min(30, Math.abs(diff) > 0
-      ? Math.log(Math.abs(diff) + 1) * 5.5
-      : 0);
+      ? Math.log(Math.abs(diff) + 1) * 5.5 : 0);
   } else if (p1HasRank && !p2HasRank) {
-    // Ranked vs unranked: ranked player gets a meaningful but not certain edge
     rankEdge = p1.rank < 200 ? 18 : p1.rank < 500 ? 12 : 6;
   } else if (!p1HasRank && p2HasRank) {
     rankEdge = -(p2.rank < 200 ? 18 : p2.rank < 500 ? 12 : 6);
   }
-  // unranked vs unranked: rankEdge stays 0, AI must carry the prediction
 
-  // Surface edge — boosted slightly
-  const surfaceEdge = match.surface === p1.surface_pref ? 9
-    : match.surface === p2.surface_pref ? -9 : 0;
+  const surfaceEdge  = match.surface === p1.surface_pref ? 9 : match.surface === p2.surface_pref ? -9 : 0;
+  const countWins    = (form) => (form ?? '').split('').filter(c => c === 'W').length;
+  const formEdge     = (p1HasForm && p2HasForm) ? (countWins(p1.recent_form) - countWins(p2.recent_form)) * 3 : 0;
+  const serveEdge    = (p1HasServe && p2HasServe) ? ((p1.first_serve_pct - p2.first_serve_pct) * 0.2) : 0;
+  const aceEdge      = (p1.ace_avg && p2.ace_avg) ? ((p1.ace_avg - p2.ace_avg) * 0.6) : 0;
+  const fatigueEdge  = (p1HasFatigue || p2HasFatigue) ? ((p2.fatigue_score ?? 0) - (p1.fatigue_score ?? 0)) * 1.5 : 0;
 
-  // Form edge — weighted more heavily, recent = more important
-  const countWins = (form) => (form ?? '').split('').filter(c => c === 'W').length;
-  const formEdge  = (p1HasForm && p2HasForm)
-    ? (countWins(p1.recent_form) - countWins(p2.recent_form)) * 3
-    : 0;
-
-  // Serve edge
-  const serveEdge = (p1HasServe && p2HasServe)
-    ? ((p1.first_serve_pct - p2.first_serve_pct) * 0.2)
-    : 0;
-
-  // Ace edge
-  const aceEdge = (p1.ace_avg && p2.ace_avg)
-    ? ((p1.ace_avg - p2.ace_avg) * 0.6)
-    : 0;
-
-  // Fatigue edge — tired player loses edge (new)
-  const fatigueEdge = (p1HasFatigue || p2HasFatigue)
-    ? ((p2.fatigue_score ?? 0) - (p1.fatigue_score ?? 0)) * 1.5
-    : 0;
-
-  // Round prestige weight — later rounds matter more (new)
-  const roundStr = (match.round ?? '').toLowerCase();
-  const roundMultiplier =
-    roundStr.includes('final') && !roundStr.includes('semi') && !roundStr.includes('quarter') ? 1.15
-    : roundStr.includes('semi') ? 1.08
-    : roundStr.includes('quarter') ? 1.04
-    : 1.0;
+  const roundStr         = (match.round ?? '').toLowerCase();
+  const roundMultiplier  = roundStr.includes('final') && !roundStr.includes('semi') && !roundStr.includes('quarter') ? 1.15
+    : roundStr.includes('semi') ? 1.08 : roundStr.includes('quarter') ? 1.04 : 1.0;
 
   const rawPct  = 50 + (rankEdge + surfaceEdge + formEdge + serveEdge + aceEdge + fatigueEdge) * roundMultiplier;
   const basePct = Math.min(90, Math.max(10, Math.round(rawPct)));
 
-  // ── 3. H2H data — fetch and inject (new) ─────────────────────────────────
-  let h2hSummary = null;
-  try {
-    if (p1?.id && p2?.id && p1.id !== 'p1' && p2.id !== 'p2') {
-      const h2h = await getHeadToHead(p1.id, p2.id);
-      if (h2h && (h2h.p1Wins + h2h.p2Wins) >= 2) {
-        const total = h2h.p1Wins + h2h.p2Wins;
-        h2hSummary = `Head-to-head: ${p1.name} leads ${h2h.p1Wins}-${h2h.p2Wins} (${total} meetings).`;
-        // Surface-specific H2H if available
-        const surfaceMeetings = h2h.meetings?.filter(
-          m => m.surface?.toLowerCase() === (match.surface ?? '').toLowerCase()
-        ) ?? [];
-        if (surfaceMeetings.length >= 2) {
-          const p1SurfaceWins = surfaceMeetings.filter(m => m.winner === 'p1').length;
-          h2hSummary += ` On ${match.surface}: ${p1.name} ${p1SurfaceWins}-${surfaceMeetings.length - p1SurfaceWins}.`;
-        }
-      }
+  // ── 3. Parallel data fetch: H2H + recent matches for both players ─────────
+  const [h2hData, p1Recent, p2Recent] = await Promise.allSettled([
+    (p1?.id && p2?.id && p1.id !== 'p1' && p2.id !== 'p2')
+      ? getHeadToHead(p1.id, p2.id) : Promise.resolve(null),
+    getRecentMatches(p1?.id, 5),
+    getRecentMatches(p2?.id, 5),
+  ]);
+
+  const h2h       = h2hData.status === 'fulfilled' ? h2hData.value : null;
+  const p1Matches = p1Recent.status === 'fulfilled' ? p1Recent.value : [];
+  const p2Matches = p2Recent.status === 'fulfilled' ? p2Recent.value : [];
+
+  // ── 4. Format recent matches as a readable strip ──────────────────────────
+  const formatRecent = (matches, playerName) => {
+    if (!matches?.length) return `  ${playerName} recent matches: not available in DB`;
+    const strip = matches.map(m =>
+      `${m.result} (${m.tournament ?? 'Unknown'}, ${m.surface ?? '?'}, ${m.score || 'no score'})`
+    ).join('\n    ');
+    return `  ${playerName} last ${matches.length} matches:\n    ${strip}`;
+  };
+
+  // ── 5. H2H or recent form section for prompt ─────────────────────────────
+  let h2hSection;
+  if (h2h && (h2h.p1_wins + h2h.p2_wins) >= 2) {
+    const total = h2h.p1_wins + h2h.p2_wins;
+    let h2hText = `Head-to-head (from DB): ${p1.name} leads ${h2h.p1_wins}-${h2h.p2_wins} (${total} meetings).`;
+    const surfaceMeetings = (h2h.meetings ?? []).filter(
+      m => m.surface?.toLowerCase() === (match.surface ?? '').toLowerCase()
+    );
+    if (surfaceMeetings.length >= 2) {
+      const p1SW = surfaceMeetings.filter(m => m.winner === 'p1').length;
+      h2hText += ` On ${match.surface}: ${p1.name} ${p1SW}-${surfaceMeetings.length - p1SW}.`;
     }
-  } catch (_) {
-    // H2H fetch is best-effort — never crash the prediction
+    h2hSection = `HEAD-TO-HEAD (DB):\n  ${h2hText}\n  Last 5 results (from ${p1.name}'s perspective): ${(h2h.last5 ?? []).join(' ')}`;
+  } else {
+    // No H2H — show each player's recent matches instead
+    h2hSection = `HEAD-TO-HEAD: No meetings in our DB. Use your own knowledge of their rivalry.\n\nRECENT FORM (from DB):\n${formatRecent(p1Matches, p1.name)}\n${formatRecent(p2Matches, p2.name)}`;
   }
 
-  // ── 4. Build human-readable data lines ───────────────────────────────────
+  // ── 6. Data lines ─────────────────────────────────────────────────────────
   const p1DataLines = [
     p1HasRank    && `Rank: #${p1.rank}`,
     p1.country   && `Country: ${p1.country}`,
-    p1HasSurface && `Preferred surface: ${p1.surface_pref}`,
+    p1.surface_pref && p1.surface_pref !== 'Hard' && `Preferred surface: ${p1.surface_pref}`,
     p1HasForm    && `Recent form (last 5): ${p1.recent_form}`,
     p1HasServe   && `1st serve %: ${p1.first_serve_pct}%`,
     p1.ace_avg   && `Aces/match: ${p1.ace_avg}`,
@@ -518,7 +531,7 @@ export async function getPrediction(match) {
   const p2DataLines = [
     p2HasRank    && `Rank: #${p2.rank}`,
     p2.country   && `Country: ${p2.country}`,
-    p2HasSurface && `Preferred surface: ${p2.surface_pref}`,
+    p2.surface_pref && p2.surface_pref !== 'Hard' && `Preferred surface: ${p2.surface_pref}`,
     p2HasForm    && `Recent form (last 5): ${p2.recent_form}`,
     p2HasServe   && `1st serve %: ${p2.first_serve_pct}%`,
     p2.ace_avg   && `Aces/match: ${p2.ace_avg}`,
@@ -526,64 +539,67 @@ export async function getPrediction(match) {
     p2HasFatigue && `Fatigue score: ${p2.fatigue_score}/10`,
   ].filter(Boolean);
 
-  // ── 5. Fallback result ────────────────────────────────────────────────────
+  const p1Section = p1DataLines.length > 0
+    ? p1DataLines.map(l => `  ${l}`).join('\n')
+    : `  No DB stats — use your training knowledge about ${p1.name}`;
+
+  const p2Section = p2DataLines.length > 0
+    ? p2DataLines.map(l => `  ${l}`).join('\n')
+    : `  No DB stats — use your training knowledge about ${p2.name}`;
+
+  // ── 7. Fallback result ────────────────────────────────────────────────────
+  const p1RecentStr = p1Matches.length ? p1Matches.map(m => m.result).join(' ') : null;
+  const p2RecentStr = p2Matches.length ? p2Matches.map(m => m.result).join(' ') : null;
+
   const baseFactors = [
     p1HasRank && p2HasRank
-      ? `Ranking: #${p1.rank} vs #${p2.rank}`
+      ? `Ranking: ${p1.name} #${p1.rank} vs ${p2.name} #${p2.rank}`
       : scenario === 'ranked_vs_unranked'
-        ? `${p1HasRank ? p1.name : p2.name} is ranked; opponent has no ATP/WTA rank`
-        : `Neither player has an ATP/WTA rank — prediction based on AI knowledge only`,
+        ? `${p1HasRank ? p1.name : p2.name} is ATP/WTA ranked; opponent has no ranking`
+        : `Neither player has an ATP/WTA rank`,
     surfaceEdge !== 0
-      ? `Surface: ${match.surface ?? 'Hard'} — ${surfaceEdge > 0 ? p1.name : p2.name} has a surface advantage`
-      : `Surface: ${match.surface ?? 'Hard'} (neutral for both)`,
+      ? `Surface edge: ${match.surface ?? 'Hard'} favours ${surfaceEdge > 0 ? p1.name : p2.name}`
+      : `Surface: ${match.surface ?? 'Hard'} — neutral for both`,
     p1HasForm && p2HasForm
       ? `Recent form: ${p1.name} ${p1.recent_form} vs ${p2.name} ${p2.recent_form}`
       : null,
-    h2hSummary ?? null,
+    p1RecentStr ? `${p1.name} last 5 DB results: ${p1RecentStr}` : null,
+    p2RecentStr ? `${p2.name} last 5 DB results: ${p2RecentStr}` : null,
+    h2h && (h2h.p1_wins + h2h.p2_wins) >= 2
+      ? `H2H: ${p1.name} ${h2h.p1_wins}-${h2h.p2_wins} ${p2.name}`
+      : null,
   ].filter(Boolean);
 
   const baseResult = {
     player1_win_pct:  basePct,
     player2_win_pct:  100 - basePct,
-    confidence: scenario === 'ranked_vs_ranked' && dataQuality >= 3 && Math.abs(basePct - 50) > 15 ? 'Medium'
-      : scenario === 'ranked_vs_ranked' && Math.abs(basePct - 50) > 25 ? 'High'
+    confidence: scenario === 'ranked_vs_ranked' && Math.abs(basePct - 50) > 25 ? 'High'
+      : scenario === 'ranked_vs_ranked' && dataQuality >= 3 && Math.abs(basePct - 50) > 15 ? 'Medium'
       : 'Low',
     key_factors:      baseFactors,
     predicted_winner: basePct >= 50 ? p1.name : p2.name,
     ai_analysis:      null,
     source:           'algorithmic',
+    scenario,
   };
 
-  // ── 6. AI prediction ──────────────────────────────────────────────────────
+  // ── 8. AI prediction ──────────────────────────────────────────────────────
   try {
-    // Scenario-specific data note
     const dataNote = scenario === 'unranked_vs_unranked'
-      ? `⚠️ CRITICAL: Neither player has an ATP/WTA ranking in our database. You MUST rely entirely on your training knowledge. Search your memory for these names — ITF results, challenger history, junior rankings, country of origin. If you genuinely don't know either player, return a Low confidence 50/50 and say so explicitly in ai_analysis. DO NOT fabricate stats.`
+      ? `⚠️ CRITICAL: Neither player is ranked in our DB. Use your training knowledge entirely. If you genuinely don't recognise either player, return Low confidence 50/50 and be honest in ai_analysis.`
       : scenario === 'ranked_vs_unranked'
-        ? `NOTE: One player is ranked, one is not. The ranked player has a statistical edge but upsets happen. Use the ranked player's real stats and your knowledge of the unranked player to calibrate the prediction.`
+        ? `NOTE: One player is ranked, one is not. Use rank data + your knowledge of the unranked player.`
         : dataQuality <= 2
-          ? `NOTE: DB stats are partial. Supplement with your own knowledge of these players.`
-          : `DB stats are complete. Use them as the primary signal alongside your own knowledge.`;
-
-    const p1Section = p1DataLines.length > 0
-      ? p1DataLines.map(l => `  ${l}`).join('\n')
-      : `  No DB stats — use your training knowledge about ${p1.name}`;
-
-    const p2Section = p2DataLines.length > 0
-      ? p2DataLines.map(l => `  ${l}`).join('\n')
-      : `  No DB stats — use your training knowledge about ${p2.name}`;
-
-    const h2hSection = h2hSummary
-      ? `\nHEAD-TO-HEAD (from our DB):\n  ${h2hSummary}`
-      : `\nHEAD-TO-HEAD: No DB history — use your training knowledge of their rivalry.`;
+          ? `NOTE: DB stats are partial. Supplement with your knowledge of these players.`
+          : `DB stats are complete. Use them as the primary signal.`;
 
     const scenarioInstruction = scenario === 'ranked_vs_ranked'
-      ? `Both players are ranked. Use their ranks, form, surface record, and H2H to produce a precise prediction. A rank gap of 50+ should produce at least 60-65% for the higher ranked player unless form strongly says otherwise.`
+      ? `Both players are ranked. A rank gap of 50+ should produce at least 60% for the higher ranked player unless form/H2H clearly contradicts it.`
       : scenario === 'ranked_vs_unranked'
-        ? `One player is unranked (no ATP/WTA standing). The ranked player should generally be favoured (55-75% range), but adjust based on what you know about the unranked player. If the unranked player is actually well-known but just missing from our DB, adjust accordingly.`
-        : `Neither player is ranked in our system. This is likely ITF, challenger, or a qualifier match. Use everything you know about these players. If you know nothing, return 50% with Low confidence and an honest explanation.`;
+        ? `Ranked player should be favoured (55–75%) unless you know the unranked player is actually strong.`
+        : `Neither player is ranked. Rely entirely on your knowledge. If unknown, be honest.`;
 
-    const prompt = `You are an elite tennis prediction model with encyclopedic knowledge of every ATP and WTA player, including challengers, ITF circuit, and qualifiers.
+    const prompt = `You are an elite tennis prediction model with encyclopedic knowledge of every ATP, WTA, ITF, and challenger circuit player.
 
 MATCH: ${p1.name} vs ${p2.name}
 TOURNAMENT: ${match.tournament ?? 'Unknown'} | ROUND: ${match.round ?? 'Unknown'} | SURFACE: ${match.surface ?? 'Hard'}
@@ -596,19 +612,20 @@ ${p1Section}
 
 ${p2.name} (DB data):
 ${p2Section}
+
 ${h2hSection}
 
-ALGORITHMIC BASELINE: ${p1.name} ${basePct}% — ${p2.name} ${100 - basePct}% (scenario: ${scenario})
-
+ALGORITHMIC BASELINE: ${p1.name} ${basePct}% — ${p2.name} ${100 - basePct}%
 ${scenarioInstruction}
 
 RULES:
-- Be specific: 63%, 71%, 38% — NOT round numbers like 55%, 60%, 50% unless genuinely a toss-up
-- Your knowledge of these players ALWAYS overrides the algorithmic baseline
-- If one player is clearly superior on this surface historically, reflect it strongly (75%+)
-- Confidence: "High" = very clear favourite with strong data; "Medium" = slight edge with some uncertainty; "Low" = genuinely close or data missing
-- key_factors must name both players and cite real facts — never generic filler
-- For unranked players: if you truly have no knowledge, say so in ai_analysis honestly
+- Be specific: 63%, 71%, 38% — NOT round numbers like 50%, 55%, 60% unless genuinely a coin-flip
+- Your knowledge ALWAYS overrides the algorithmic baseline
+- Confidence: "High" = clear favourite with strong evidence; "Medium" = slight edge; "Low" = genuinely close or data missing
+- key_factors: provide EXACTLY 5 to 7 factors. Each must be a specific, factual sentence naming at least one player. Cover ALL of these categories: (1) ranking/seeding context, (2) surface performance, (3) recent form with actual W/L results, (4) head-to-head or historical matchup, (5) serve/game-style edge, (6) tournament context or pressure, (7) fitness/fatigue or scheduling if relevant
+- Never write generic filler like "Player A is a strong competitor". Always name real stats or real results.
+- If no H2H exists in DB, use your training knowledge of their history OR note it is a first meeting
+- ai_analysis: 2–3 sentences. Cite at least one real statistic. Name both players. Give a direct verdict.
 
 Respond ONLY with valid JSON, no markdown:
 {
@@ -616,16 +633,20 @@ Respond ONLY with valid JSON, no markdown:
   "confidence": "<High|Medium|Low>",
   "predicted_winner": "<exact player name>",
   "key_factors": [
-    "<stat or historical fact about ${p1.name}>",
-    "<H2H or rivalry fact, or surface record>",
-    "<form, fitness, tournament context, or honest uncertainty>"
+    "<ranking/seeding: specific fact naming both players>",
+    "<surface: specific surface win rate or preference fact>",
+    "<recent form: actual W/L results from DB or your knowledge>",
+    "<H2H: record or first meeting note>",
+    "<serve or playing style edge>",
+    "<tournament context, round pressure, or draw difficulty>",
+    "<fitness, fatigue, scheduling, or wildcard factor — omit if nothing meaningful>"
   ],
-  "ai_analysis": "<2-3 sentences: cite real stats, name both players, give a direct verdict. For unranked players, be honest about data limitations.>"
+  "ai_analysis": "<2-3 sentences with real stats, both players named, direct verdict>"
 }`;
 
     const response = await sendChatMessage(
       [{ role: 'user', content: prompt }],
-      'You are a professional tennis prediction AI with deep knowledge of all ATP, WTA, ITF, and challenger circuit players. Respond only with valid JSON. Never fabricate statistics. Be honest when data is missing.'
+      'You are a professional tennis prediction AI. Respond only with valid JSON. Never fabricate stats. Be honest when data is missing. Always provide 5-7 specific key_factors.'
     );
 
     const rawText = response?.content?.[0]?.text ?? '';
@@ -641,23 +662,12 @@ Respond ONLY with valid JSON, no markdown:
     ) {
       const aiPct = Math.min(92, Math.max(8, Math.round(parsed.player1_win_pct)));
 
-      // Smarter blending based on scenario:
-      // - ranked_vs_ranked with good data: trust AI 80%, algo 20%
-      // - ranked_vs_unranked: trust AI 70%, algo 30%
-      // - unranked_vs_unranked: trust AI 90% (algo is meaningless here)
-      // - AI returns 50 but algo has strong signal: blend harder
-      const isLazy50 = aiPct === 50 && Math.abs(basePct - 50) > 10;
+      const isLazy50    = aiPct === 50 && Math.abs(basePct - 50) > 10;
       let blendedPct;
-      if (isLazy50) {
-        blendedPct = Math.round(aiPct * 0.5 + basePct * 0.5);
-      } else if (scenario === 'unranked_vs_unranked') {
-        blendedPct = aiPct; // algo is useless, trust AI fully
-      } else if (scenario === 'ranked_vs_unranked') {
-        blendedPct = Math.round(aiPct * 0.7 + basePct * 0.3);
-      } else {
-        // ranked_vs_ranked — algo is meaningful, blend lightly
-        blendedPct = Math.round(aiPct * 0.8 + basePct * 0.2);
-      }
+      if (isLazy50)                              blendedPct = Math.round(aiPct * 0.5 + basePct * 0.5);
+      else if (scenario === 'unranked_vs_unranked') blendedPct = aiPct;
+      else if (scenario === 'ranked_vs_unranked')   blendedPct = Math.round(aiPct * 0.7 + basePct * 0.3);
+      else                                           blendedPct = Math.round(aiPct * 0.8 + basePct * 0.2);
       blendedPct = Math.min(92, Math.max(8, blendedPct));
 
       return {
@@ -670,7 +680,7 @@ Respond ONLY with valid JSON, no markdown:
         predicted_winner: blendedPct >= 50 ? p1.name : p2.name,
         ai_analysis:      parsed.ai_analysis,
         source:           'ai',
-        scenario,         // expose scenario so UI can show a badge if needed
+        scenario,
       };
     }
   } catch (e) {
