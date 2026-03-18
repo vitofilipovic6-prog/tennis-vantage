@@ -39,16 +39,16 @@ const MATCH_FILTERS = [
 // LAYOUT SHELL
 // ─────────────────────────────────────────────────────────────────────────────
 export default function Dashboard({ showToast }) {
-  const { user, firstName, logout } = useAuth();
+  const { user, firstName, profile, logout } = useAuth();
 
   const [activeTab, setActiveTab] = useState(() => {
-  // Restore last active tab from sessionStorage on refresh
-  try {
-    return sessionStorage.getItem('tv_active_tab') ?? 'matches';
-  } catch {
-    return 'matches';
-  }
-});
+    // Restore last active tab from sessionStorage on refresh
+    try {
+      return sessionStorage.getItem('tv_active_tab') ?? 'matches';
+    } catch {
+      return 'matches';
+    }
+  });
 
   const [selectedMatch, setSelectedMatch] = useState(null);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -130,10 +130,10 @@ export default function Dashboard({ showToast }) {
   }
 
   function switchTab(id) {
-  setActiveTab(id);
-  try { sessionStorage.setItem('tv_active_tab', id); } catch {}
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-}
+    setActiveTab(id);
+    try { sessionStorage.setItem('tv_active_tab', id); } catch { }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
 
   function handleSelectMatch(match) {
     setSelectedMatch(match);
@@ -151,309 +151,343 @@ export default function Dashboard({ showToast }) {
     <div style={{ minHeight: '100dvh', background: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
 
       {/* ── Top Navbar ───────────────────────────────────────────────────── */}
-      <nav style={{
-        position: 'sticky', top: 0, zIndex: 100,
-        background: 'rgba(7,11,20,0.92)', backdropFilter: 'blur(20px)',
-        borderBottom: '1px solid var(--border)',
-        padding: '0 clamp(12px,3vw,32px)',
-        display: 'flex', alignItems: 'center', height: '60px', gap: '12px',
+<nav style={{
+  position: 'sticky', top: 0, zIndex: 100,
+  background: 'rgba(7,11,20,0.92)', backdropFilter: 'blur(20px)',
+  borderBottom: '1px solid var(--border)',
+  padding: '0 clamp(12px,3vw,32px)',
+  display: 'flex', alignItems: 'center', height: '60px', gap: '12px',
+}}>
+  {/* Logo */}
+  <div style={{ flexShrink: 0 }}>
+    <Logo size="sm" />
+  </div>
+
+  {/* Desktop tabs */}
+  <div className="hide-md" style={{ display: 'flex', gap: '4px', marginLeft: '16px' }}>
+    {tabs.map(t => (
+      <button
+        key={t.id}
+        onClick={() => switchTab(t.id)}
+        style={{
+          padding: '6px 14px', borderRadius: '8px',
+          background: activeTab === t.id ? 'var(--bg-glass-md)' : 'transparent',
+          border: activeTab === t.id ? '1px solid var(--border-md)' : '1px solid transparent',
+          color: activeTab === t.id ? 'var(--lime)' : 'var(--text-muted)',
+          fontFamily: 'var(--font-body)', fontWeight: 600, fontSize: '13px',
+          cursor: 'pointer', transition: 'var(--t)', whiteSpace: 'nowrap',
+        }}
+      >
+        {t.icon} {t.label}
+      </button>
+    ))}
+  </div>
+
+  {/* Spacer */}
+  <div style={{ flex: 1 }} />
+
+  {/* Search button */}
+  <button
+    onClick={() => setSearchOpen(true)}
+    style={{
+      display: 'flex', alignItems: 'center', gap: '8px',
+      padding: '7px 12px', borderRadius: '8px',
+      background: 'var(--bg-glass)', border: '1px solid var(--border)',
+      color: 'var(--text-muted)', fontFamily: 'var(--font-body)',
+      fontSize: '13px', cursor: 'pointer', transition: 'var(--t)',
+      minWidth: 0, maxWidth: '220px', flex: '1',
+    }}
+  >
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0 }}>
+      <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+    </svg>
+    <span className="hide-sm">Search players…</span>
+  </button>
+
+  {/* Sync indicator */}
+  {matchesSyncing && (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 6,
+      padding: '4px 10px', borderRadius: 999,
+      background: 'rgba(159,239,102,0.08)',
+      border: '1px solid rgba(159,239,102,0.2)',
+      fontSize: 11, color: 'var(--lime)', fontWeight: 600,
+      flexShrink: 0,
+    }}>
+      <div style={{
+        width: 8, height: 8, borderRadius: '50%',
+        border: '2px solid transparent',
+        borderTop: '2px solid var(--lime)',
+        animation: 'tv-spin 0.7s linear infinite',
+      }} />
+      Syncing
+    </div>
+  )}
+
+  {/* Desktop: avatar dropdown — MUST wrap button + dropdown together in the ref div */}
+  <div className="hide-md" style={{ position: 'relative', flexShrink: 0 }} ref={avatarMenuRef}>
+    <button
+      onClick={() => setAvatarMenuOpen(prev => !prev)}
+      style={{
+        width: '34px', height: '34px', borderRadius: '50%', padding: 0,
+        background: profile?.avatar_url
+          ? 'transparent'
+          : 'linear-gradient(135deg, var(--lime), var(--clay))',
+        border: avatarMenuOpen ? '2px solid var(--lime)' : '2px solid transparent',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: '14px', fontWeight: 800, color: '#070B14',
+        cursor: 'pointer', flexShrink: 0, transition: 'border-color 0.15s',
+        overflow: 'hidden',
+      }}
+      aria-label="Account menu"
+      aria-expanded={avatarMenuOpen}
+    >
+      {profile?.avatar_url
+        ? <img
+            src={profile.avatar_url}
+            alt="Avatar"
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            onError={e => { e.currentTarget.style.display = 'none'; }}
+          />
+        : avatarInitial
+      }
+    </button>
+
+    {/* Dropdown */}
+    {avatarMenuOpen && (
+      <div style={{
+        position: 'absolute', top: 'calc(100% + 8px)', right: 0,
+        background: 'var(--bg-card)', border: '1px solid var(--border-md)',
+        borderRadius: '12px', overflow: 'hidden', minWidth: '190px',
+        boxShadow: '0 16px 40px rgba(0,0,0,0.5)',
+        animation: 'tv-slide-up 0.15s ease',
+        zIndex: 200,
       }}>
-        {/* Logo */}
-        <div style={{ flexShrink: 0 }}>
-          <Logo size="sm" />
+        <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
+          <p style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text)', margin: 0 }}>
+            {firstName ?? 'Player'}
+          </p>
+          <p style={{
+            fontSize: '11px', color: 'var(--text-faint)', margin: '2px 0 0',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            {user?.email}
+          </p>
         </div>
 
-        {/* Desktop tabs */}
-        <div className="hide-md" style={{ display: 'flex', gap: '4px', marginLeft: '16px' }}>
-          {tabs.map(t => (
-            <button
-              key={t.id}
-              onClick={() => switchTab(t.id)}
-              style={{
-                padding: '6px 14px', borderRadius: '8px',
-                background: activeTab === t.id ? 'var(--bg-glass-md)' : 'transparent',
-                border: activeTab === t.id ? '1px solid var(--border-md)' : '1px solid transparent',
-                color: activeTab === t.id ? 'var(--lime)' : 'var(--text-muted)',
-                fontFamily: 'var(--font-body)', fontWeight: 600, fontSize: '13px',
-                cursor: 'pointer', transition: 'var(--t)', whiteSpace: 'nowrap',
-              }}
-            >
-              {t.icon} {t.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Spacer */}
-        <div style={{ flex: 1 }} />
-
-        {/* Search button */}
         <button
-          onClick={() => setSearchOpen(true)}
+          onClick={() => { setAvatarMenuOpen(false); setProfileOpen(true); }}
           style={{
-            display: 'flex', alignItems: 'center', gap: '8px',
-            padding: '7px 12px', borderRadius: '8px',
-            background: 'var(--bg-glass)', border: '1px solid var(--border)',
-            color: 'var(--text-muted)', fontFamily: 'var(--font-body)',
-            fontSize: '13px', cursor: 'pointer', transition: 'var(--t)',
-            minWidth: 0, maxWidth: '220px', flex: '1',
+            width: '100%', textAlign: 'left', padding: '12px 16px',
+            background: 'none', border: 'none', color: 'var(--text)',
+            fontFamily: 'var(--font-body)', fontSize: '14px', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: '10px',
+            transition: 'background 0.1s',
           }}
+          onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-glass)'}
+          onMouseLeave={e => e.currentTarget.style.background = 'none'}
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0 }}>
-            <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
-          </svg>
-          <span className="hide-sm">Search players…</span>
+          <span style={{ fontSize: '16px' }}>👤</span>
+          My Profile
         </button>
 
-        {/* Subtle sync indicator — only visible while Edge Function is running */}
-        {matchesSyncing && (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            padding: '4px 10px', borderRadius: 999,
-            background: 'rgba(159,239,102,0.08)',
-            border: '1px solid rgba(159,239,102,0.2)',
-            fontSize: 11, color: 'var(--lime)', fontWeight: 600,
-            flexShrink: 0,
-          }}>
-            <div style={{
-              width: 8, height: 8, borderRadius: '50%',
-              border: '2px solid transparent',
-              borderTop: '2px solid var(--lime)',
-              animation: 'tv-spin 0.7s linear infinite',
-            }} />
-            Syncing
-          </div>
-        )}
+        <button
+          onClick={handleLogout}
+          style={{
+            width: '100%', textAlign: 'left', padding: '12px 16px',
+            background: 'none', border: 'none', borderTop: '1px solid var(--border)',
+            color: 'var(--clay)', fontFamily: 'var(--font-body)',
+            fontSize: '14px', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: '10px',
+            transition: 'background 0.1s',
+          }}
+          onMouseEnter={e => e.currentTarget.style.background = 'rgba(251,146,60,0.08)'}
+          onMouseLeave={e => e.currentTarget.style.background = 'none'}
+        >
+          <span style={{ fontSize: '16px' }}>🚪</span>
+          Sign Out
+        </button>
+      </div>
+    )}
+  </div>
 
-        {/* Desktop: avatar dropdown — Profile + Sign Out */}
-        <div className="hide-md" style={{ position: 'relative', flexShrink: 0 }} ref={avatarMenuRef}>
-          <button
-            onClick={() => setAvatarMenuOpen(prev => !prev)}
-            style={{
-              width: '34px', height: '34px', borderRadius: '50%', padding: 0,
-              background: 'linear-gradient(135deg, var(--lime), var(--clay))',
-              border: avatarMenuOpen ? '2px solid var(--lime)' : '2px solid transparent',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: '13px', fontWeight: 800, color: '#070B14',
-              cursor: 'pointer', flexShrink: 0, transition: 'border-color 0.15s',
-            }}
-          >
-            {avatarInitial}
-          </button>
+  {/* Mobile: avatar with dropdown */}
+  <div className="show-md" style={{ position: 'relative', flexShrink: 0 }} ref={avatarMenuRefMobile}>
+    <button
+      onClick={() => setAvatarMenuOpen(prev => !prev)}
+      style={{
+        width: '36px', height: '36px', borderRadius: '50%', padding: 0,
+        background: profile?.avatar_url
+          ? 'transparent'
+          : 'linear-gradient(135deg, var(--lime), var(--clay))',
+        border: avatarMenuOpen ? '2px solid var(--lime)' : '2px solid transparent',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: '14px', fontWeight: 800, color: '#070B14',
+        cursor: 'pointer', flexShrink: 0, transition: 'border-color 0.15s',
+        overflow: 'hidden',
+      }}
+      aria-label="Account menu"
+      aria-expanded={avatarMenuOpen}
+    >
+      {profile?.avatar_url
+        ? <img
+            src={profile.avatar_url}
+            alt="Avatar"
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            onError={e => { e.currentTarget.style.display = 'none'; }}
+          />
+        : avatarInitial
+      }
+    </button>
 
-          {avatarMenuOpen && (
-            <div style={{
-              position: 'absolute', top: 'calc(100% + 8px)', right: 0,
-              background: 'var(--bg-card)', border: '1px solid var(--border-md)',
-              borderRadius: '12px', overflow: 'hidden', minWidth: '190px',
-              boxShadow: '0 16px 40px rgba(0,0,0,0.5)',
-              zIndex: 200,
-            }}>
-              <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
-                <p style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text)', margin: 0 }}>
-                  {firstName ?? 'Player'}
-                </p>
-                <p style={{
-                  fontSize: '11px', color: 'var(--text-faint)', margin: '2px 0 0',
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                }}>
-                  {user?.email}
-                </p>
-              </div>
-
-              <button
-                onClick={() => { setAvatarMenuOpen(false); setProfileOpen(true); }}
-                style={{
-                  width: '100%', textAlign: 'left', padding: '12px 16px',
-                  background: 'none', border: 'none', color: 'var(--text)',
-                  fontFamily: 'var(--font-body)', fontSize: '14px', cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', gap: '10px',
-                  transition: 'background 0.1s',
-                }}
-                onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-glass)'}
-                onMouseLeave={e => e.currentTarget.style.background = 'none'}
-              >
-                <span style={{ fontSize: '16px' }}>👤</span>
-                My Profile
-              </button>
-
-              <button
-                onClick={handleLogout}
-                style={{
-                  width: '100%', textAlign: 'left', padding: '12px 16px',
-                  background: 'none', border: 'none', borderTop: '1px solid var(--border)',
-                  color: 'var(--clay)', fontFamily: 'var(--font-body)',
-                  fontSize: '14px', cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', gap: '10px',
-                  transition: 'background 0.1s',
-                }}
-                onMouseEnter={e => e.currentTarget.style.background = 'rgba(251,146,60,0.08)'}
-                onMouseLeave={e => e.currentTarget.style.background = 'none'}
-              >
-                <span style={{ fontSize: '16px' }}>🚪</span>
-                Sign Out
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Mobile: avatar with dropdown (Profile + Sign Out) */}
-        <div className="show-md" style={{ position: 'relative', flexShrink: 0 }} ref={avatarMenuRefMobile}>
-          <button
-            onClick={() => setAvatarMenuOpen(prev => !prev)}
-            style={{
-              width: '36px', height: '36px', borderRadius: '50%', padding: 0,
-              background: 'linear-gradient(135deg, var(--lime), var(--clay))',
-              border: avatarMenuOpen ? '2px solid var(--lime)' : '2px solid transparent',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: '14px', fontWeight: 800, color: '#070B14',
-              cursor: 'pointer', flexShrink: 0, transition: 'border-color 0.15s',
-            }}
-            aria-label="Account menu"
-            aria-expanded={avatarMenuOpen}
-          >
-            {avatarInitial}
-          </button>
-
-          {/* Dropdown */}
-          {avatarMenuOpen && (
-            <div style={{
-              position: 'absolute', top: 'calc(100% + 8px)', right: 0,
-              background: 'var(--bg-card)', border: '1px solid var(--border-md)',
-              borderRadius: '12px', overflow: 'hidden', minWidth: '180px',
-              boxShadow: '0 16px 40px rgba(0,0,0,0.5)',
-              animation: 'tv-slide-up 0.15s ease',
-              zIndex: 200,
-            }}>
-              {/* User info */}
-              <div style={{
-                padding: '14px 16px',
-                borderBottom: '1px solid var(--border)',
-              }}>
-                <p style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text)', margin: 0 }}>
-                  {firstName ?? 'Player'}
-                </p>
-                <p style={{
-                  fontSize: '11px', color: 'var(--text-faint)', margin: '2px 0 0',
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                }}>
-                  {user?.email}
-                </p>
-              </div>
-
-              {/* Profile link */}
-              <button
-                onClick={() => { setAvatarMenuOpen(false); setProfileOpen(true); }}
-                style={{
-                  width: '100%', textAlign: 'left',
-                  padding: '12px 16px', background: 'none', border: 'none',
-                  color: 'var(--text)', fontFamily: 'var(--font-body)',
-                  fontSize: '14px', cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', gap: '10px',
-                  transition: 'background 0.1s',
-                }}
-                onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-glass)'}
-                onMouseLeave={e => e.currentTarget.style.background = 'none'}
-              >
-                <span style={{ fontSize: '16px' }}>👤</span>
-                My Profile
-              </button>
-
-              {/* Sign out */}
-              <button
-                onClick={handleLogout}
-                style={{
-                  width: '100%', textAlign: 'left',
-                  padding: '12px 16px', background: 'none', border: 'none',
-                  borderTop: '1px solid var(--border)',
-                  color: 'var(--clay)', fontFamily: 'var(--font-body)',
-                  fontSize: '14px', cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', gap: '10px',
-                  transition: 'background 0.1s',
-                }}
-                onMouseEnter={e => e.currentTarget.style.background = 'rgba(251,146,60,0.08)'}
-                onMouseLeave={e => e.currentTarget.style.background = 'none'}
-              >
-                <span style={{ fontSize: '16px' }}>🚪</span>
-                Sign Out
-              </button>
-            </div>
-          )}
-        </div>
-      </nav>
-
-      {/* ── Main content ─────────────────────────────────────────────────── */}
-      <main className="tv-main-content" style={{
-        flex: 1, padding: 'clamp(16px,3vw,32px) clamp(12px,3vw,32px)',
-        maxWidth: '1200px', margin: '0 auto', width: '100%',
+    {avatarMenuOpen && (
+      <div style={{
+        position: 'absolute', top: 'calc(100% + 8px)', right: 0,
+        background: 'var(--bg-card)', border: '1px solid var(--border-md)',
+        borderRadius: '12px', overflow: 'hidden', minWidth: '180px',
+        boxShadow: '0 16px 40px rgba(0,0,0,0.5)',
+        animation: 'tv-slide-up 0.15s ease',
+        zIndex: 200,
       }}>
-        {activeTab === 'matches' && (
-          <MatchesTab
-            live={live}
-            upcoming={upcoming}
-            loading={matchesLoading}
-            error={matchesError}
-            refresh={refresh}
-            onSelectMatch={handleSelectMatch}
-            wtaPlayerIds={wtaPlayerIds}
-          />
-        )}
-        {activeTab === 'predictions' && (
-          <PredictionsTab
-            allMatches={allMatches}
-            matchesLoading={matchesLoading}
-            selectedMatch={selectedMatch}
-            onSelectMatch={setSelectedMatch}
-            wtaPlayerIds={wtaPlayerIds}
-          />
-        )}
-        {activeTab === 'rankings' && (
-          <RankingsTab onSelectPlayer={p => setBioPlayer(p)} />
-        )}
-        {activeTab === 'chat' && (
-          <AiChatTab contextMatch={selectedMatch} />
-        )}
-      </main>
-
-      {/* ── Bottom nav bar (mobile) ───────────────────────────────────────── */}
-      <nav className="tv-bottom-nav">
-        {tabs.map(t => (
-          <button
-            key={t.id}
-            className={`tv-bottom-nav__item${activeTab === t.id ? ' active' : ''}`}
-            onClick={() => switchTab(t.id)}
-          >
-            <span style={{ fontSize: '20px', lineHeight: 1 }}>{t.icon}</span>
-            <span>{t.label}</span>
-          </button>
-        ))}
-      </nav>
-
-      {/* ── Modals ─────────────────────────────────────────────────────────── */}
-      {searchOpen && (
-        <PlayerSearchModal
-          allPlayers={allPlayersForSearch}
-          onClose={() => setSearchOpen(false)}
-          onChatAboutPlayer={handleChatAboutPlayer}
-        />
-      )}
-      {bioPlayer && (
-        <PlayerBioModal
-          player={bioPlayer}
-          onClose={() => setBioPlayer(null)}
-          onChat={handleChatAboutPlayer}
-        />
-      )}
-
-      {/* Profile page overlay */}
-      {profileOpen && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'var(--bg)', overflowY: 'auto' }}>
-          <ProfilePage
-            onBack={() => setProfileOpen(false)}
-            showToast={showToast}
-          />
+        <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
+          <p style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text)', margin: 0 }}>
+            {firstName ?? 'Player'}
+          </p>
+          <p style={{
+            fontSize: '11px', color: 'var(--text-faint)', margin: '2px 0 0',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            {user?.email}
+          </p>
         </div>
-      )}
+
+        <button
+          onClick={() => { setAvatarMenuOpen(false); setProfileOpen(true); }}
+          style={{
+            width: '100%', textAlign: 'left',
+            padding: '12px 16px', background: 'none', border: 'none',
+            color: 'var(--text)', fontFamily: 'var(--font-body)',
+            fontSize: '14px', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: '10px',
+            transition: 'background 0.1s',
+          }}
+          onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-glass)'}
+          onMouseLeave={e => e.currentTarget.style.background = 'none'}
+        >
+          <span style={{ fontSize: '16px' }}>👤</span>
+          My Profile
+        </button>
+
+        <button
+          onClick={handleLogout}
+          style={{
+            width: '100%', textAlign: 'left',
+            padding: '12px 16px', background: 'none', border: 'none',
+            borderTop: '1px solid var(--border)',
+            color: 'var(--clay)', fontFamily: 'var(--font-body)',
+            fontSize: '14px', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: '10px',
+            transition: 'background 0.1s',
+          }}
+          onMouseEnter={e => e.currentTarget.style.background = 'rgba(251,146,60,0.08)'}
+          onMouseLeave={e => e.currentTarget.style.background = 'none'}
+        >
+          <span style={{ fontSize: '16px' }}>🚪</span>
+          Sign Out
+        </button>
+      </div>
+    )}
+  </div>
+</nav>
+
+    {/* ── Main content ─────────────────────────────────────────────────── */ }
+    < main className = "tv-main-content" style = {{
+    flex: 1, padding: 'clamp(16px,3vw,32px) clamp(12px,3vw,32px)',
+      maxWidth: '1200px', margin: '0 auto', width: '100%',
+      }
+}>
+  { activeTab === 'matches' && (
+    <MatchesTab
+      live={live}
+      upcoming={upcoming}
+      loading={matchesLoading}
+      error={matchesError}
+      refresh={refresh}
+      onSelectMatch={handleSelectMatch}
+      wtaPlayerIds={wtaPlayerIds}
+    />
+  )}
+{
+  activeTab === 'predictions' && (
+    <PredictionsTab
+      allMatches={allMatches}
+      matchesLoading={matchesLoading}
+      selectedMatch={selectedMatch}
+      onSelectMatch={setSelectedMatch}
+      wtaPlayerIds={wtaPlayerIds}
+    />
+  )
+}
+{
+  activeTab === 'rankings' && (
+    <RankingsTab onSelectPlayer={p => setBioPlayer(p)} />
+  )
+}
+{
+  activeTab === 'chat' && (
+    <AiChatTab contextMatch={selectedMatch} />
+  )
+}
+      </main >
+
+  {/* ── Bottom nav bar (mobile) ───────────────────────────────────────── */ }
+  < nav className = "tv-bottom-nav" >
+  {
+    tabs.map(t => (
+      <button
+        key={t.id}
+        className={`tv-bottom-nav__item${activeTab === t.id ? ' active' : ''}`}
+        onClick={() => switchTab(t.id)}
+      >
+        <span style={{ fontSize: '20px', lineHeight: 1 }}>{t.icon}</span>
+        <span>{t.label}</span>
+      </button>
+    ))
+  }
+      </nav >
+
+  {/* ── Modals ─────────────────────────────────────────────────────────── */ }
+{
+  searchOpen && (
+    <PlayerSearchModal
+      allPlayers={allPlayersForSearch}
+      onClose={() => setSearchOpen(false)}
+      onChatAboutPlayer={handleChatAboutPlayer}
+    />
+  )
+}
+{
+  bioPlayer && (
+    <PlayerBioModal
+      player={bioPlayer}
+      onClose={() => setBioPlayer(null)}
+      onChat={handleChatAboutPlayer}
+    />
+  )
+}
+
+{/* Profile page overlay */ }
+{
+  profileOpen && (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'var(--bg)', overflowY: 'auto' }}>
+      <ProfilePage
+        onBack={() => setProfileOpen(false)}
+        showToast={showToast}
+      />
     </div>
+  )
+}
+    </div >
   );
 }
 
@@ -558,11 +592,11 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
   const [dateLoading, setDateLoading] = useState(false);
 
   const todayStr = new Intl.DateTimeFormat('en-CA', {
-  timeZone: 'Europe/Paris',
-  year:     'numeric',
-  month:    '2-digit',
-  day:      '2-digit',
-}).format(new Date());
+    timeZone: 'Europe/Paris',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
 
   const selectedDay = calendarDate;
   const isToday = !calendarDateStr || calendarDateStr === todayStr;
@@ -571,19 +605,20 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
   useEffect(() => {
     if (!calendarDateStr || calendarDateStr === todayStr) {
       setDateMatches([]);
+      refresh();
       return;
     }
     let cancelled = false;
     setDateLoading(true);
     getMatchesByDate(calendarDateStr, wtaPlayerIds)
-      .then(d  => { if (!cancelled) setDateMatches(d ?? []); })
+      .then(d => { if (!cancelled) setDateMatches(d ?? []); })
       .catch(() => { if (!cancelled) setDateMatches([]); })
       .finally(() => { if (!cancelled) setDateLoading(false); });
     return () => { cancelled = true; };
   }, [calendarDateStr, wtaPlayerIds, todayStr]);
 
   if (loading) return <LoadingGrid />;
-  if (error)   return <ErrorMessage msg={error} onRetry={refresh} />;
+  if (error) return <ErrorMessage msg={error} onRetry={refresh} />;
 
   // ── Build today's unified match list ────────────────────────────────────────
   // Use a Map so live matches overwrite any stale "upcoming" entry for same id.
@@ -612,20 +647,19 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
   const pool = isToday ? todayMatches : dateMatches;
 
   // ── Filter by the selected type pill ────────────────────────────────────────
-  const byType       = (arr) => arr.filter(m => deriveMatchType(m, wtaPlayerIds) === activeFilter);
+  const byType = (arr) => arr.filter(m => deriveMatchType(m, wtaPlayerIds) === activeFilter);
   const activeFilterDef = MATCH_FILTERS.find(f => f.id === activeFilter);
 
-  const filteredPool    = byType(pool);
-  const filteredLive    = filteredPool.filter(m => m.status === 'live');
+  const filteredPool = byType(pool);
+  const filteredLive = filteredPool.filter(m => m.status === 'live');
   const filteredNonLive = filteredPool.filter(m => m.status !== 'live');
 
   const sectionLabel = isToday
     ? `${activeFilterDef?.label} — Today's Matches`
-    : `${activeFilterDef?.label} — ${
-        selectedDay?.toLocaleDateString('en-GB', {
-          weekday: 'long', day: 'numeric', month: 'short',
-        }) ?? ''
-      }`;
+    : `${activeFilterDef?.label} — ${selectedDay?.toLocaleDateString('en-GB', {
+      weekday: 'long', day: 'numeric', month: 'short',
+    }) ?? ''
+    }`;
 
   return (
     <div className="tv-fade-up">
@@ -853,20 +887,20 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
   const [h2hLoading, setH2hLoading] = useState(false);
 
   const todayStr = new Intl.DateTimeFormat('en-CA', {
-  timeZone: 'Europe/Paris',
-  year:     'numeric',
-  month:    '2-digit',
-  day:      '2-digit',
-}).format(new Date());
+    timeZone: 'Europe/Paris',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
 
   // AFTER — only today's matches + anything currently live
-const predictableMatches = allMatches.filter(m => {
-  if (m.status === 'finished') return false;
-  if (m.status === 'live') return true;
-  // upcoming: only show today's matches
-  const d = m.local_date ?? (m.date ? new Date(m.date).toLocaleDateString('en-CA') : null);
-  return d === todayStr;
-});
+  const predictableMatches = allMatches.filter(m => {
+    if (m.status === 'finished') return false;
+    if (m.status === 'live') return true;
+    // upcoming: only show today's matches
+    const d = m.local_date ?? (m.date ? new Date(m.date).toLocaleDateString('en-CA') : null);
+    return d === todayStr;
+  });
 
   const filteredMatches = predictableMatches.filter(m =>
     deriveMatchType(m, wtaPlayerIds) === predFilter
@@ -1234,23 +1268,23 @@ function H2HPanel({ h2h, match: m }) {
 // RANKINGS TAB
 // ─────────────────────────────────────────────────────────────────────────────
 const RANKING_TOURS = [
-  { id: 'ATP',       label: 'ATP',       color: '#60a5fa', pointsLabel: 'Points', interactive: true  },
-  { id: 'WTA',       label: 'WTA',       color: '#f472b6', pointsLabel: 'Points', interactive: true  },
-  { id: 'ITF_MEN',   label: 'ITF Men',   color: '#fb923c', pointsLabel: 'Wins',   interactive: false },
-  { id: 'ITF_WOMEN', label: 'ITF Women', color: '#f59e0b', pointsLabel: 'Wins',   interactive: false },
-  { id: 'UTR_MEN',   label: 'UTR Men',   color: '#a78bfa', pointsLabel: 'Wins',   interactive: false },
-  { id: 'UTR_WOMEN', label: 'UTR Women', color: '#e879f9', pointsLabel: 'Wins',   interactive: false },
+  { id: 'ATP', label: 'ATP', color: '#60a5fa', pointsLabel: 'Points', interactive: true },
+  { id: 'WTA', label: 'WTA', color: '#f472b6', pointsLabel: 'Points', interactive: true },
+  { id: 'ITF_MEN', label: 'ITF Men', color: '#fb923c', pointsLabel: 'Wins', interactive: false },
+  { id: 'ITF_WOMEN', label: 'ITF Women', color: '#f59e0b', pointsLabel: 'Wins', interactive: false },
+  { id: 'UTR_MEN', label: 'UTR Men', color: '#a78bfa', pointsLabel: 'Wins', interactive: false },
+  { id: 'UTR_WOMEN', label: 'UTR Women', color: '#e879f9', pointsLabel: 'Wins', interactive: false },
 ];
 
 function RankingsTab({ onSelectPlayer }) {
-  const [tour,   setTour]   = useState('ATP');
+  const [tour, setTour] = useState('ATP');
   const [hovRow, setHovRow] = useState(null);
   const { rankings, loading, error } = useRankings(tour);
 
   // Derive these ONCE at the top so every part of the render can use them
-  const tourDef     = RANKING_TOURS.find(t => t.id === tour) ?? RANKING_TOURS[0];
+  const tourDef = RANKING_TOURS.find(t => t.id === tour) ?? RANKING_TOURS[0];
   const isClickable = tourDef.interactive;
-  const isAltTour   = !isClickable;
+  const isAltTour = !isClickable;
 
   return (
     <div className="tv-fade-up">
@@ -1333,13 +1367,13 @@ function RankingsTab({ onSelectPlayer }) {
 
           {/* Player rows */}
           {rankings.map((p, i) => {
-            const rank    = p.rank ?? (i + 1);
-            const medal   = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : null;
-            const flag    = p.flag && p.flag !== '🏳️' ? p.flag : resolveFlag(p.country ?? '');
+            const rank = p.rank ?? (i + 1);
+            const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : null;
+            const flag = p.flag && p.flag !== '🏳️' ? p.flag : resolveFlag(p.country ?? '');
             const rankDir = p.prev_rank == null ? null
               : p.prev_rank > rank ? 'up'
-              : p.prev_rank < rank ? 'down'
-              : 'same';
+                : p.prev_rank < rank ? 'down'
+                  : 'same';
 
             return (
               <div

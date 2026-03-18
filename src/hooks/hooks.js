@@ -177,18 +177,36 @@ export function useMatches() {
 }
 
 // ── useMatchesByDate ──────────────────────────────────────────────────────────
-const matchDateCache = {};
+// AFTER:
+const matchDateCache = {};      // { [dateStr]: { data, ts } }
+const MATCH_DATE_CACHE_TTL = 2 * 60 * 1000; // 2 minutes
+
+function getMatchDateCache(dateString) {
+  const entry = matchDateCache[dateString];
+  if (!entry) return null;
+  if (Date.now() - entry.ts > MATCH_DATE_CACHE_TTL) {
+    delete matchDateCache[dateString];
+    return null;
+  }
+  return entry.data;
+}
+
+function setMatchDateCache(dateString, data) {
+  matchDateCache[dateString] = { data, ts: Date.now() };
+}
 
 export function useMatchesByDate(dateString) {
-  const [matches, setMatches] = useState(matchDateCache[dateString] ?? null);
-  const [loading, setLoading] = useState(!matchDateCache[dateString] && !!dateString);
+  const cached = getMatchDateCache(dateString);
+  const [matches, setMatches] = useState(cached ?? null);
+  const [loading, setLoading] = useState(!cached && !!dateString);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     if (!dateString) return;
 
-    if (matchDateCache[dateString]) {
-      setMatches(matchDateCache[dateString]);
+    const cached = getMatchDateCache(dateString);
+    if (cached) {
+      setMatches(cached);
       setLoading(false);
       return;
     }
@@ -200,7 +218,7 @@ export function useMatchesByDate(dateString) {
     getMatchesByDate(dateString)
       .then(data => {
         if (!cancelled) {
-          matchDateCache[dateString] = data;
+          setMatchDateCache(dateString, data);
           setMatches(data);
         }
       })
@@ -220,7 +238,7 @@ export function useMatchesByDate(dateString) {
     setLoading(true);
     setError(null);
     getMatchesByDate(dateString)
-      .then(data => { matchDateCache[dateString] = data; setMatches(data); })
+      .then(data => { setMatchDateCache(dateString, data); setMatches(data); })
       .catch(e => setError(e.message ?? 'Failed to reload'))
       .finally(() => setLoading(false));
   }, [dateString]);
