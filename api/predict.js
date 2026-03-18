@@ -1,5 +1,6 @@
 // api/predict.js  ← PROJECT ROOT
 const GEMINI_MODEL          = 'gemini-2.5-flash';
+const GEMINI_MODEL_FALLBACK = 'gemini-2.5-flash';
 
 const PREDICTION_SYSTEM_PROMPT = `You are an elite tennis prediction AI with encyclopedic knowledge of every ATP, WTA, ITF, and Challenger circuit player.
 
