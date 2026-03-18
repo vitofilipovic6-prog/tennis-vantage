@@ -47,16 +47,16 @@ function writeSessionMatches(live, upcoming) {
     sessionStorage.setItem(SESSION_MATCHES_KEY, JSON.stringify({
       live, upcoming, ts: Date.now(),
     }));
-  } catch {}
+  } catch { }
 }
 
 export function useMatches() {
   const cached = readSessionMatches();
 
-  const [live,     setLive]     = useState(cached?.live     ?? []);
+  const [live, setLive] = useState(cached?.live ?? []);
   const [upcoming, setUpcoming] = useState(cached?.upcoming ?? []);
-  const [loading,  setLoading]  = useState(!cached);
-  const [error,    setError]    = useState(null);
+  const [loading, setLoading] = useState(!cached);
+  const [error, setError] = useState(null);
 
   const pollRef = useRef(null);
 
@@ -213,12 +213,16 @@ export function useActiveDates(startDate, endDate) {
       return;
     }
 
-    const start = startDate instanceof Date
-      ? startDate.toISOString().split('T')[0]
-      : startDate;
-    const end = endDate instanceof Date
-      ? endDate.toISOString().split('T')[0]
-      : endDate;
+    // REPLACE WITH:
+    const toParisDate = (d) => new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Europe/Paris',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(d);
+
+    const start = startDate instanceof Date ? toParisDate(startDate) : startDate;
+    const end = endDate instanceof Date ? toParisDate(endDate) : endDate;
 
     supabase
       .from('matches')
@@ -244,8 +248,8 @@ const rankingsCache = {};
 
 export function useRankings(tour = 'ATP') {
   const [rankings, setRankings] = useState([]);
-  const [loading,  setLoading]  = useState(true);
-  const [error,    setError]    = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     const cached = rankingsCache[tour];
@@ -312,9 +316,9 @@ export function useRankings(tour = 'ATP') {
 // Returns empty array (never throws) so the UI shows EmptyState, not an error.
 async function fetchAltRankings(tour) {
   const typeMap = {
-    ITF_MEN:   ['itf_men_singles', 'itf_men_doubles'],
+    ITF_MEN: ['itf_men_singles', 'itf_men_doubles'],
     ITF_WOMEN: ['itf_women_singles', 'itf_women_doubles'],
-    UTR_MEN:   ['utr_men_singles'],
+    UTR_MEN: ['utr_men_singles'],
     UTR_WOMEN: ['utr_women_singles'],
   };
   const types = typeMap[tour] ?? [];
@@ -340,7 +344,7 @@ async function fetchAltRankings(tour) {
     if (!data || data.length === 0) return [];
 
     const playerMap = new Map();
-    const winCount  = new Map();
+    const winCount = new Map();
 
     for (const m of data) {
       for (const p of [m.player1, m.player2]) {
@@ -361,8 +365,8 @@ async function fetchAltRankings(tour) {
       .sort((a, b) => (winCount.get(b.id) ?? 0) - (winCount.get(a.id) ?? 0))
       .map((p, i) => ({
         ...p,
-        rank:      i + 1,
-        points:    winCount.get(p.id) ?? 0,
+        rank: i + 1,
+        points: winCount.get(p.id) ?? 0,
         prev_rank: null,
       }));
 
@@ -375,9 +379,9 @@ async function fetchAltRankings(tour) {
 // ── useAllPlayers ─────────────────────────────────────────────────────────────
 // Fetches all players from DB for the search modal.
 // Cached for 10 minutes — busted on manual refresh.
-let allPlayersCache     = null;
+let allPlayersCache = null;
 let allPlayersCacheTime = 0;
-const ALL_PLAYERS_TTL   = 10 * 60 * 1000;
+const ALL_PLAYERS_TTL = 10 * 60 * 1000;
 
 export function useAllPlayers() {
   const isStale = Date.now() - allPlayersCacheTime > ALL_PLAYERS_TTL;
@@ -405,7 +409,7 @@ export function useAllPlayers() {
         if (cancelled) return;
         if (error) { setLoading(false); return; }
         const sorted = (data ?? []).filter(p => p.name && !p.name.includes('/'));
-        allPlayersCache     = sorted;
+        allPlayersCache = sorted;
         allPlayersCacheTime = Date.now();
         setPlayers(sorted);
         setLoading(false);
