@@ -404,11 +404,12 @@ export async function getHeadToHead(p1Id, p2Id) {
 // Uses /api/chat (Gemini) for intelligent, multi-factor analysis.
 // Falls back to algorithmic prediction if AI is unavailable.
 // ── AI-Powered Prediction engine ──────────────────────────────────────────────
+// ── AI-Powered Prediction engine ──────────────────────────────────────────────
 export async function getPrediction(match) {
   const p1 = match.player1;
   const p2 = match.player2;
 
-  // ── Determine how much real data we actually have ─────────────────────────
+  // ── 1. Classify scenario ──────────────────────────────────────────────────
   const p1HasRank    = p1.rank && p1.rank < 900;
   const p2HasRank    = p2.rank && p2.rank < 900;
   const p1HasForm    = p1.recent_form && !p1.recent_form.includes('-');
@@ -417,36 +418,92 @@ export async function getPrediction(match) {
   const p2HasServe   = p2.first_serve_pct && p2.first_serve_pct > 0;
   const p1HasSurface = p1.surface_pref && p1.surface_pref !== 'Hard';
   const p2HasSurface = p2.surface_pref && p2.surface_pref !== 'Hard';
+  const p1HasFatigue = p1.fatigue_score && p1.fatigue_score > 0;
+  const p2HasFatigue = p2.fatigue_score && p2.fatigue_score > 0;
+
+  // Scenario classification — drives how hard the AI should work
+  const scenario = p1HasRank && p2HasRank ? 'ranked_vs_ranked'
+    : p1HasRank || p2HasRank              ? 'ranked_vs_unranked'
+    :                                        'unranked_vs_unranked';
 
   const dataQuality = [p1HasRank, p2HasRank, p1HasForm, p2HasForm].filter(Boolean).length;
-  // 0-1 = almost no data, 2-3 = partial, 4 = full
 
-  // ── Algorithmic baseline (only meaningful when we have real ranks) ─────────
-  const rankDiff  = p1HasRank && p2HasRank ? (p2.rank - p1.rank) : 0;
-  const rankEdge  = p1HasRank && p2HasRank
-    ? Math.min(22, Math.max(-22, rankDiff * 0.8))
+  // ── 2. Improved algorithmic baseline ─────────────────────────────────────
+  // Non-linear rank edge: bigger gaps punish more, capped at ±30
+  let rankEdge = 0;
+  if (p1HasRank && p2HasRank) {
+    const diff = p2.rank - p1.rank;
+    // Logarithmic scale: rank 1 vs 100 = ~25pts, rank 1 vs 500 = ~32pts
+    rankEdge = Math.sign(diff) * Math.min(30, Math.abs(diff) > 0
+      ? Math.log(Math.abs(diff) + 1) * 5.5
+      : 0);
+  } else if (p1HasRank && !p2HasRank) {
+    // Ranked vs unranked: ranked player gets a meaningful but not certain edge
+    rankEdge = p1.rank < 200 ? 18 : p1.rank < 500 ? 12 : 6;
+  } else if (!p1HasRank && p2HasRank) {
+    rankEdge = -(p2.rank < 200 ? 18 : p2.rank < 500 ? 12 : 6);
+  }
+  // unranked vs unranked: rankEdge stays 0, AI must carry the prediction
+
+  // Surface edge — boosted slightly
+  const surfaceEdge = match.surface === p1.surface_pref ? 9
+    : match.surface === p2.surface_pref ? -9 : 0;
+
+  // Form edge — weighted more heavily, recent = more important
+  const countWins = (form) => (form ?? '').split('').filter(c => c === 'W').length;
+  const formEdge  = (p1HasForm && p2HasForm)
+    ? (countWins(p1.recent_form) - countWins(p2.recent_form)) * 3
     : 0;
 
-  const surfaceEdge = match.surface === p1.surface_pref ? 7
-    : match.surface === p2.surface_pref ? -7 : 0;
-
-  const countWins  = (form) => (form ?? '').split('').filter(c => c === 'W').length;
-  const formEdge   = (p1HasForm && p2HasForm)
-    ? (countWins(p1.recent_form) - countWins(p2.recent_form)) * 2
-    : 0;
-
+  // Serve edge
   const serveEdge = (p1HasServe && p2HasServe)
-    ? ((p1.first_serve_pct - p2.first_serve_pct) * 0.15)
+    ? ((p1.first_serve_pct - p2.first_serve_pct) * 0.2)
     : 0;
 
+  // Ace edge
   const aceEdge = (p1.ace_avg && p2.ace_avg)
-    ? ((p1.ace_avg - p2.ace_avg) * 0.5)
+    ? ((p1.ace_avg - p2.ace_avg) * 0.6)
     : 0;
 
-  const rawPct  = 50 + rankEdge + surfaceEdge + formEdge + serveEdge + aceEdge;
-  const basePct = Math.min(88, Math.max(12, Math.round(rawPct)));
+  // Fatigue edge — tired player loses edge (new)
+  const fatigueEdge = (p1HasFatigue || p2HasFatigue)
+    ? ((p2.fatigue_score ?? 0) - (p1.fatigue_score ?? 0)) * 1.5
+    : 0;
 
-  // Build human-readable data summary for prompt (only include real values)
+  // Round prestige weight — later rounds matter more (new)
+  const roundStr = (match.round ?? '').toLowerCase();
+  const roundMultiplier =
+    roundStr.includes('final') && !roundStr.includes('semi') && !roundStr.includes('quarter') ? 1.15
+    : roundStr.includes('semi') ? 1.08
+    : roundStr.includes('quarter') ? 1.04
+    : 1.0;
+
+  const rawPct  = 50 + (rankEdge + surfaceEdge + formEdge + serveEdge + aceEdge + fatigueEdge) * roundMultiplier;
+  const basePct = Math.min(90, Math.max(10, Math.round(rawPct)));
+
+  // ── 3. H2H data — fetch and inject (new) ─────────────────────────────────
+  let h2hSummary = null;
+  try {
+    if (p1?.id && p2?.id && p1.id !== 'p1' && p2.id !== 'p2') {
+      const h2h = await getHeadToHead(p1.id, p2.id);
+      if (h2h && (h2h.p1Wins + h2h.p2Wins) >= 2) {
+        const total = h2h.p1Wins + h2h.p2Wins;
+        h2hSummary = `Head-to-head: ${p1.name} leads ${h2h.p1Wins}-${h2h.p2Wins} (${total} meetings).`;
+        // Surface-specific H2H if available
+        const surfaceMeetings = h2h.meetings?.filter(
+          m => m.surface?.toLowerCase() === (match.surface ?? '').toLowerCase()
+        ) ?? [];
+        if (surfaceMeetings.length >= 2) {
+          const p1SurfaceWins = surfaceMeetings.filter(m => m.winner === 'p1').length;
+          h2hSummary += ` On ${match.surface}: ${p1.name} ${p1SurfaceWins}-${surfaceMeetings.length - p1SurfaceWins}.`;
+        }
+      }
+    }
+  } catch (_) {
+    // H2H fetch is best-effort — never crash the prediction
+  }
+
+  // ── 4. Build human-readable data lines ───────────────────────────────────
   const p1DataLines = [
     p1HasRank    && `Rank: #${p1.rank}`,
     p1.country   && `Country: ${p1.country}`,
@@ -455,6 +512,7 @@ export async function getPrediction(match) {
     p1HasServe   && `1st serve %: ${p1.first_serve_pct}%`,
     p1.ace_avg   && `Aces/match: ${p1.ace_avg}`,
     (p1.wins || p1.losses) && `Season W/L: ${p1.wins ?? 0}W-${p1.losses ?? 0}L`,
+    p1HasFatigue && `Fatigue score: ${p1.fatigue_score}/10`,
   ].filter(Boolean);
 
   const p2DataLines = [
@@ -465,39 +523,47 @@ export async function getPrediction(match) {
     p2HasServe   && `1st serve %: ${p2.first_serve_pct}%`,
     p2.ace_avg   && `Aces/match: ${p2.ace_avg}`,
     (p2.wins || p2.losses) && `Season W/L: ${p2.wins ?? 0}W-${p2.losses ?? 0}L`,
+    p2HasFatigue && `Fatigue score: ${p2.fatigue_score}/10`,
   ].filter(Boolean);
 
-  // ── Build fallback result (used if AI fails) ──────────────────────────────
+  // ── 5. Fallback result ────────────────────────────────────────────────────
   const baseFactors = [
     p1HasRank && p2HasRank
-      ? `Ranking: #${p1.rank} vs #${p2.rank} (${rankDiff > 0 ? '+' : ''}${rankDiff} spots)`
-      : `Rankings unavailable — prediction based on AI knowledge`,
+      ? `Ranking: #${p1.rank} vs #${p2.rank}`
+      : scenario === 'ranked_vs_unranked'
+        ? `${p1HasRank ? p1.name : p2.name} is ranked; opponent has no ATP/WTA rank`
+        : `Neither player has an ATP/WTA rank — prediction based on AI knowledge only`,
     surfaceEdge !== 0
       ? `Surface: ${match.surface ?? 'Hard'} — ${surfaceEdge > 0 ? p1.name : p2.name} has a surface advantage`
-      : `Surface: ${match.surface ?? 'Hard'} (neutral)`,
+      : `Surface: ${match.surface ?? 'Hard'} (neutral for both)`,
     p1HasForm && p2HasForm
-      ? `Recent form: ${p1.recent_form} vs ${p2.recent_form}`
+      ? `Recent form: ${p1.name} ${p1.recent_form} vs ${p2.name} ${p2.recent_form}`
       : null,
+    h2hSummary ?? null,
   ].filter(Boolean);
 
   const baseResult = {
     player1_win_pct:  basePct,
     player2_win_pct:  100 - basePct,
-    confidence:       dataQuality >= 3 && Math.abs(basePct - 50) > 10 ? 'Medium' : 'Low',
+    confidence: scenario === 'ranked_vs_ranked' && dataQuality >= 3 && Math.abs(basePct - 50) > 15 ? 'Medium'
+      : scenario === 'ranked_vs_ranked' && Math.abs(basePct - 50) > 25 ? 'High'
+      : 'Low',
     key_factors:      baseFactors,
     predicted_winner: basePct >= 50 ? p1.name : p2.name,
     ai_analysis:      null,
     source:           'algorithmic',
   };
 
-  // ── AI Prediction ─────────────────────────────────────────────────────────
+  // ── 6. AI prediction ──────────────────────────────────────────────────────
   try {
-    // When DB data is sparse, explicitly tell Gemini to rely on its own knowledge
-    const dataNote = dataQuality <= 1
-      ? `NOTE: Our database has limited stats for these players. You MUST use your own training knowledge about ${p1.name} and ${p2.name} to produce an accurate prediction. Do not default to 50/50.`
-      : dataQuality <= 3
-        ? `NOTE: DB stats are partial. Supplement missing data with your own knowledge of these players.`
-        : `DB stats are complete. Use them alongside your own knowledge.`;
+    // Scenario-specific data note
+    const dataNote = scenario === 'unranked_vs_unranked'
+      ? `⚠️ CRITICAL: Neither player has an ATP/WTA ranking in our database. You MUST rely entirely on your training knowledge. Search your memory for these names — ITF results, challenger history, junior rankings, country of origin. If you genuinely don't know either player, return a Low confidence 50/50 and say so explicitly in ai_analysis. DO NOT fabricate stats.`
+      : scenario === 'ranked_vs_unranked'
+        ? `NOTE: One player is ranked, one is not. The ranked player has a statistical edge but upsets happen. Use the ranked player's real stats and your knowledge of the unranked player to calibrate the prediction.`
+        : dataQuality <= 2
+          ? `NOTE: DB stats are partial. Supplement with your own knowledge of these players.`
+          : `DB stats are complete. Use them as the primary signal alongside your own knowledge.`;
 
     const p1Section = p1DataLines.length > 0
       ? p1DataLines.map(l => `  ${l}`).join('\n')
@@ -507,10 +573,21 @@ export async function getPrediction(match) {
       ? p2DataLines.map(l => `  ${l}`).join('\n')
       : `  No DB stats — use your training knowledge about ${p2.name}`;
 
-    const prompt = `You are an elite tennis prediction model with encyclopedic knowledge of every ATP and WTA player.
+    const h2hSection = h2hSummary
+      ? `\nHEAD-TO-HEAD (from our DB):\n  ${h2hSummary}`
+      : `\nHEAD-TO-HEAD: No DB history — use your training knowledge of their rivalry.`;
+
+    const scenarioInstruction = scenario === 'ranked_vs_ranked'
+      ? `Both players are ranked. Use their ranks, form, surface record, and H2H to produce a precise prediction. A rank gap of 50+ should produce at least 60-65% for the higher ranked player unless form strongly says otherwise.`
+      : scenario === 'ranked_vs_unranked'
+        ? `One player is unranked (no ATP/WTA standing). The ranked player should generally be favoured (55-75% range), but adjust based on what you know about the unranked player. If the unranked player is actually well-known but just missing from our DB, adjust accordingly.`
+        : `Neither player is ranked in our system. This is likely ITF, challenger, or a qualifier match. Use everything you know about these players. If you know nothing, return 50% with Low confidence and an honest explanation.`;
+
+    const prompt = `You are an elite tennis prediction model with encyclopedic knowledge of every ATP and WTA player, including challengers, ITF circuit, and qualifiers.
 
 MATCH: ${p1.name} vs ${p2.name}
 TOURNAMENT: ${match.tournament ?? 'Unknown'} | ROUND: ${match.round ?? 'Unknown'} | SURFACE: ${match.surface ?? 'Hard'}
+SCENARIO: ${scenario.replace(/_/g, ' ').toUpperCase()}
 
 ${dataNote}
 
@@ -519,17 +596,19 @@ ${p1Section}
 
 ${p2.name} (DB data):
 ${p2Section}
+${h2hSection}
 
-ALGORITHMIC BASELINE (DB-only, may be unreliable if data is sparse): ${p1.name} ${basePct}% — ${p2.name} ${100 - basePct}%
+ALGORITHMIC BASELINE: ${p1.name} ${basePct}% — ${p2.name} ${100 - basePct}% (scenario: ${scenario})
 
-Using your deep knowledge of these two players — their ATP/WTA ranking history, head-to-head record, playing style, ${match.surface ?? 'Hard'} court win percentage, Grand Slam results, current season form, and any known injuries or fatigue — give a precise prediction.
+${scenarioInstruction}
 
 RULES:
 - Be specific: 63%, 71%, 38% — NOT round numbers like 55%, 60%, 50% unless genuinely a toss-up
-- If you recognise both players, your knowledge trumps the algorithmic baseline
-- If one player is clearly superior on this surface historically, reflect that strongly (e.g. 75%+)
-- Confidence: "High" if you are certain of the outcome, "Medium" if form is close, "Low" if genuinely uncertain
-- key_factors must name both players and cite real stats, not generic statements
+- Your knowledge of these players ALWAYS overrides the algorithmic baseline
+- If one player is clearly superior on this surface historically, reflect it strongly (75%+)
+- Confidence: "High" = very clear favourite with strong data; "Medium" = slight edge with some uncertainty; "Low" = genuinely close or data missing
+- key_factors must name both players and cite real facts — never generic filler
+- For unranked players: if you truly have no knowledge, say so in ai_analysis honestly
 
 Respond ONLY with valid JSON, no markdown:
 {
@@ -537,16 +616,16 @@ Respond ONLY with valid JSON, no markdown:
   "confidence": "<High|Medium|Low>",
   "predicted_winner": "<exact player name>",
   "key_factors": [
-    "<real stat or historical fact about ${p1.name} on ${match.surface ?? 'Hard'}>",
-    "<real head-to-head or rivalry fact between ${p1.name} and ${p2.name}>",
-    "<form, fitness, or tournament context factor>"
+    "<stat or historical fact about ${p1.name}>",
+    "<H2H or rivalry fact, or surface record>",
+    "<form, fitness, tournament context, or honest uncertainty>"
   ],
-  "ai_analysis": "<1-2 sentences: one concrete stat, one verdict. Name both players. Be direct and confident.>"
+  "ai_analysis": "<2-3 sentences: cite real stats, name both players, give a direct verdict. For unranked players, be honest about data limitations.>"
 }`;
 
     const response = await sendChatMessage(
       [{ role: 'user', content: prompt }],
-      'You are a professional tennis prediction AI with deep knowledge of all ATP and WTA players. Respond only with valid JSON. Never use placeholder text. Always name real players and cite real statistics.'
+      'You are a professional tennis prediction AI with deep knowledge of all ATP, WTA, ITF, and challenger circuit players. Respond only with valid JSON. Never fabricate statistics. Be honest when data is missing.'
     );
 
     const rawText = response?.content?.[0]?.text ?? '';
@@ -562,23 +641,36 @@ Respond ONLY with valid JSON, no markdown:
     ) {
       const aiPct = Math.min(92, Math.max(8, Math.round(parsed.player1_win_pct)));
 
-      // If AI returns 50 but we have real rank data showing a clear favourite,
-      // blend: 60% AI + 40% algorithmic to avoid lazy coin-flip outputs
-      const blendedPct = (aiPct === 50 && dataQuality >= 2 && Math.abs(basePct - 50) > 8)
-        ? Math.round(aiPct * 0.6 + basePct * 0.4)
-        : aiPct;
+      // Smarter blending based on scenario:
+      // - ranked_vs_ranked with good data: trust AI 80%, algo 20%
+      // - ranked_vs_unranked: trust AI 70%, algo 30%
+      // - unranked_vs_unranked: trust AI 90% (algo is meaningless here)
+      // - AI returns 50 but algo has strong signal: blend harder
+      const isLazy50 = aiPct === 50 && Math.abs(basePct - 50) > 10;
+      let blendedPct;
+      if (isLazy50) {
+        blendedPct = Math.round(aiPct * 0.5 + basePct * 0.5);
+      } else if (scenario === 'unranked_vs_unranked') {
+        blendedPct = aiPct; // algo is useless, trust AI fully
+      } else if (scenario === 'ranked_vs_unranked') {
+        blendedPct = Math.round(aiPct * 0.7 + basePct * 0.3);
+      } else {
+        // ranked_vs_ranked — algo is meaningful, blend lightly
+        blendedPct = Math.round(aiPct * 0.8 + basePct * 0.2);
+      }
+      blendedPct = Math.min(92, Math.max(8, blendedPct));
 
       return {
         player1_win_pct:  blendedPct,
         player2_win_pct:  100 - blendedPct,
         confidence:       parsed.confidence,
-        key_factors:      (parsed.key_factors ?? []).filter(f =>
-          // Filter out any generic placeholder factors Gemini might slip in
-          f && !f.includes('<') && !f.includes('factor') && f.length > 10
+        key_factors: (parsed.key_factors ?? []).filter(
+          f => f && !f.includes('<') && !f.toLowerCase().includes('factor') && f.length > 10
         ),
         predicted_winner: blendedPct >= 50 ? p1.name : p2.name,
         ai_analysis:      parsed.ai_analysis,
         source:           'ai',
+        scenario,         // expose scenario so UI can show a badge if needed
       };
     }
   } catch (e) {
