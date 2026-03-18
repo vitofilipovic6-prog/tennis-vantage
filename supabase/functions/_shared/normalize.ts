@@ -240,19 +240,22 @@ function computeLocalDate(timestampSeconds: number): string {
   if (!timestampSeconds || timestampSeconds <= 0) {
     return new Intl.DateTimeFormat('en-CA', {
       timeZone: 'Europe/Paris',
+      year: 'numeric', month: '2-digit', day: '2-digit',
     }).format(new Date());
   }
 
   const d = new Date(timestampSeconds * 1000);
 
-  const parisDate   = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris',    year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
-  const easternDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
-  const pacificDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
-
-  // Use the earliest date — covers EU morning matches and US late-night matches
-  // A match on March 17 at 11 PM ET (= March 18 UTC) correctly gets 2026-03-17
-  const dates = [parisDate, easternDate, pacificDate].sort();
-  return dates[0];
+  // Use Paris as primary — it's CET/CEST and covers most European tournaments.
+  // For US tournaments (Miami, Indian Wells), the match_date stored in DB is
+  // already the correct local date from the API, so Paris tz is close enough
+  // and avoids the "minimum date" bug that was shifting EU matches one day back.
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Paris',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d);
 }
 
 export function resolveTour(event: any): 'ATP' | 'WTA' | 'ITF' | 'UTR' | null {
