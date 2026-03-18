@@ -151,342 +151,342 @@ export default function Dashboard({ showToast }) {
     <div style={{ minHeight: '100dvh', background: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
 
       {/* ── Top Navbar ───────────────────────────────────────────────────── */}
-<nav style={{
-  position: 'sticky', top: 0, zIndex: 100,
-  background: 'rgba(7,11,20,0.92)', backdropFilter: 'blur(20px)',
-  borderBottom: '1px solid var(--border)',
-  padding: '0 clamp(12px,3vw,32px)',
-  display: 'flex', alignItems: 'center', height: '60px', gap: '12px',
-}}>
-  {/* Logo */}
-  <div style={{ flexShrink: 0 }}>
-    <Logo size="sm" />
-  </div>
-
-  {/* Desktop tabs */}
-  <div className="hide-md" style={{ display: 'flex', gap: '4px', marginLeft: '16px' }}>
-    {tabs.map(t => (
-      <button
-        key={t.id}
-        onClick={() => switchTab(t.id)}
-        style={{
-          padding: '6px 14px', borderRadius: '8px',
-          background: activeTab === t.id ? 'var(--bg-glass-md)' : 'transparent',
-          border: activeTab === t.id ? '1px solid var(--border-md)' : '1px solid transparent',
-          color: activeTab === t.id ? 'var(--lime)' : 'var(--text-muted)',
-          fontFamily: 'var(--font-body)', fontWeight: 600, fontSize: '13px',
-          cursor: 'pointer', transition: 'var(--t)', whiteSpace: 'nowrap',
-        }}
-      >
-        {t.icon} {t.label}
-      </button>
-    ))}
-  </div>
-
-  {/* Spacer */}
-  <div style={{ flex: 1 }} />
-
-  {/* Search button */}
-  <button
-    onClick={() => setSearchOpen(true)}
-    style={{
-      display: 'flex', alignItems: 'center', gap: '8px',
-      padding: '7px 12px', borderRadius: '8px',
-      background: 'var(--bg-glass)', border: '1px solid var(--border)',
-      color: 'var(--text-muted)', fontFamily: 'var(--font-body)',
-      fontSize: '13px', cursor: 'pointer', transition: 'var(--t)',
-      minWidth: 0, maxWidth: '220px', flex: '1',
-    }}
-  >
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0 }}>
-      <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
-    </svg>
-    <span className="hide-sm">Search players…</span>
-  </button>
-
-  {/* Sync indicator */}
-  {matchesSyncing && (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 6,
-      padding: '4px 10px', borderRadius: 999,
-      background: 'rgba(159,239,102,0.08)',
-      border: '1px solid rgba(159,239,102,0.2)',
-      fontSize: 11, color: 'var(--lime)', fontWeight: 600,
-      flexShrink: 0,
-    }}>
-      <div style={{
-        width: 8, height: 8, borderRadius: '50%',
-        border: '2px solid transparent',
-        borderTop: '2px solid var(--lime)',
-        animation: 'tv-spin 0.7s linear infinite',
-      }} />
-      Syncing
-    </div>
-  )}
-
-  {/* Desktop: avatar dropdown — MUST wrap button + dropdown together in the ref div */}
-  <div className="hide-md" style={{ position: 'relative', flexShrink: 0 }} ref={avatarMenuRef}>
-    <button
-      onClick={() => setAvatarMenuOpen(prev => !prev)}
-      style={{
-        width: '34px', height: '34px', borderRadius: '50%', padding: 0,
-        background: profile?.avatar_url
-          ? 'transparent'
-          : 'linear-gradient(135deg, var(--lime), var(--clay))',
-        border: avatarMenuOpen ? '2px solid var(--lime)' : '2px solid transparent',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: '14px', fontWeight: 800, color: '#070B14',
-        cursor: 'pointer', flexShrink: 0, transition: 'border-color 0.15s',
-        overflow: 'hidden',
-      }}
-      aria-label="Account menu"
-      aria-expanded={avatarMenuOpen}
-    >
-      {profile?.avatar_url
-        ? <img
-            src={profile.avatar_url}
-            alt="Avatar"
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-            onError={e => { e.currentTarget.style.display = 'none'; }}
-          />
-        : avatarInitial
-      }
-    </button>
-
-    {/* Dropdown */}
-    {avatarMenuOpen && (
-      <div style={{
-        position: 'absolute', top: 'calc(100% + 8px)', right: 0,
-        background: 'var(--bg-card)', border: '1px solid var(--border-md)',
-        borderRadius: '12px', overflow: 'hidden', minWidth: '190px',
-        boxShadow: '0 16px 40px rgba(0,0,0,0.5)',
-        animation: 'tv-slide-up 0.15s ease',
-        zIndex: 200,
+      <nav style={{
+        position: 'sticky', top: 0, zIndex: 100,
+        background: 'rgba(7,11,20,0.92)', backdropFilter: 'blur(20px)',
+        borderBottom: '1px solid var(--border)',
+        padding: '0 clamp(12px,3vw,32px)',
+        display: 'flex', alignItems: 'center', height: '60px', gap: '12px',
       }}>
-        <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
-          <p style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text)', margin: 0 }}>
-            {firstName ?? 'Player'}
-          </p>
-          <p style={{
-            fontSize: '11px', color: 'var(--text-faint)', margin: '2px 0 0',
-            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          }}>
-            {user?.email}
-          </p>
+        {/* Logo */}
+        <div style={{ flexShrink: 0 }}>
+          <Logo size="sm" />
         </div>
 
-        <button
-          onClick={() => { setAvatarMenuOpen(false); setProfileOpen(true); }}
-          style={{
-            width: '100%', textAlign: 'left', padding: '12px 16px',
-            background: 'none', border: 'none', color: 'var(--text)',
-            fontFamily: 'var(--font-body)', fontSize: '14px', cursor: 'pointer',
-            display: 'flex', alignItems: 'center', gap: '10px',
-            transition: 'background 0.1s',
-          }}
-          onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-glass)'}
-          onMouseLeave={e => e.currentTarget.style.background = 'none'}
-        >
-          <span style={{ fontSize: '16px' }}>👤</span>
-          My Profile
-        </button>
-
-        <button
-          onClick={handleLogout}
-          style={{
-            width: '100%', textAlign: 'left', padding: '12px 16px',
-            background: 'none', border: 'none', borderTop: '1px solid var(--border)',
-            color: 'var(--clay)', fontFamily: 'var(--font-body)',
-            fontSize: '14px', cursor: 'pointer',
-            display: 'flex', alignItems: 'center', gap: '10px',
-            transition: 'background 0.1s',
-          }}
-          onMouseEnter={e => e.currentTarget.style.background = 'rgba(251,146,60,0.08)'}
-          onMouseLeave={e => e.currentTarget.style.background = 'none'}
-        >
-          <span style={{ fontSize: '16px' }}>🚪</span>
-          Sign Out
-        </button>
-      </div>
-    )}
-  </div>
-
-  {/* Mobile: avatar with dropdown */}
-  <div className="show-md" style={{ position: 'relative', flexShrink: 0 }} ref={avatarMenuRefMobile}>
-    <button
-      onClick={() => setAvatarMenuOpen(prev => !prev)}
-      style={{
-        width: '36px', height: '36px', borderRadius: '50%', padding: 0,
-        background: profile?.avatar_url
-          ? 'transparent'
-          : 'linear-gradient(135deg, var(--lime), var(--clay))',
-        border: avatarMenuOpen ? '2px solid var(--lime)' : '2px solid transparent',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: '14px', fontWeight: 800, color: '#070B14',
-        cursor: 'pointer', flexShrink: 0, transition: 'border-color 0.15s',
-        overflow: 'hidden',
-      }}
-      aria-label="Account menu"
-      aria-expanded={avatarMenuOpen}
-    >
-      {profile?.avatar_url
-        ? <img
-            src={profile.avatar_url}
-            alt="Avatar"
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-            onError={e => { e.currentTarget.style.display = 'none'; }}
-          />
-        : avatarInitial
-      }
-    </button>
-
-    {avatarMenuOpen && (
-      <div style={{
-        position: 'absolute', top: 'calc(100% + 8px)', right: 0,
-        background: 'var(--bg-card)', border: '1px solid var(--border-md)',
-        borderRadius: '12px', overflow: 'hidden', minWidth: '180px',
-        boxShadow: '0 16px 40px rgba(0,0,0,0.5)',
-        animation: 'tv-slide-up 0.15s ease',
-        zIndex: 200,
-      }}>
-        <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
-          <p style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text)', margin: 0 }}>
-            {firstName ?? 'Player'}
-          </p>
-          <p style={{
-            fontSize: '11px', color: 'var(--text-faint)', margin: '2px 0 0',
-            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          }}>
-            {user?.email}
-          </p>
+        {/* Desktop tabs */}
+        <div className="hide-md" style={{ display: 'flex', gap: '4px', marginLeft: '16px' }}>
+          {tabs.map(t => (
+            <button
+              key={t.id}
+              onClick={() => switchTab(t.id)}
+              style={{
+                padding: '6px 14px', borderRadius: '8px',
+                background: activeTab === t.id ? 'var(--bg-glass-md)' : 'transparent',
+                border: activeTab === t.id ? '1px solid var(--border-md)' : '1px solid transparent',
+                color: activeTab === t.id ? 'var(--lime)' : 'var(--text-muted)',
+                fontFamily: 'var(--font-body)', fontWeight: 600, fontSize: '13px',
+                cursor: 'pointer', transition: 'var(--t)', whiteSpace: 'nowrap',
+              }}
+            >
+              {t.icon} {t.label}
+            </button>
+          ))}
         </div>
 
+        {/* Spacer */}
+        <div style={{ flex: 1 }} />
+
+        {/* Search button */}
         <button
-          onClick={() => { setAvatarMenuOpen(false); setProfileOpen(true); }}
+          onClick={() => setSearchOpen(true)}
           style={{
-            width: '100%', textAlign: 'left',
-            padding: '12px 16px', background: 'none', border: 'none',
-            color: 'var(--text)', fontFamily: 'var(--font-body)',
-            fontSize: '14px', cursor: 'pointer',
-            display: 'flex', alignItems: 'center', gap: '10px',
-            transition: 'background 0.1s',
+            display: 'flex', alignItems: 'center', gap: '8px',
+            padding: '7px 12px', borderRadius: '8px',
+            background: 'var(--bg-glass)', border: '1px solid var(--border)',
+            color: 'var(--text-muted)', fontFamily: 'var(--font-body)',
+            fontSize: '13px', cursor: 'pointer', transition: 'var(--t)',
+            minWidth: 0, maxWidth: '220px', flex: '1',
           }}
-          onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-glass)'}
-          onMouseLeave={e => e.currentTarget.style.background = 'none'}
         >
-          <span style={{ fontSize: '16px' }}>👤</span>
-          My Profile
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0 }}>
+            <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+          </svg>
+          <span className="hide-sm">Search players…</span>
         </button>
 
-        <button
-          onClick={handleLogout}
-          style={{
-            width: '100%', textAlign: 'left',
-            padding: '12px 16px', background: 'none', border: 'none',
-            borderTop: '1px solid var(--border)',
-            color: 'var(--clay)', fontFamily: 'var(--font-body)',
-            fontSize: '14px', cursor: 'pointer',
-            display: 'flex', alignItems: 'center', gap: '10px',
-            transition: 'background 0.1s',
-          }}
-          onMouseEnter={e => e.currentTarget.style.background = 'rgba(251,146,60,0.08)'}
-          onMouseLeave={e => e.currentTarget.style.background = 'none'}
-        >
-          <span style={{ fontSize: '16px' }}>🚪</span>
-          Sign Out
-        </button>
-      </div>
-    )}
-  </div>
-</nav>
+        {/* Sync indicator */}
+        {matchesSyncing && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: '4px 10px', borderRadius: 999,
+            background: 'rgba(159,239,102,0.08)',
+            border: '1px solid rgba(159,239,102,0.2)',
+            fontSize: 11, color: 'var(--lime)', fontWeight: 600,
+            flexShrink: 0,
+          }}>
+            <div style={{
+              width: 8, height: 8, borderRadius: '50%',
+              border: '2px solid transparent',
+              borderTop: '2px solid var(--lime)',
+              animation: 'tv-spin 0.7s linear infinite',
+            }} />
+            Syncing
+          </div>
+        )}
 
-    {/* ── Main content ─────────────────────────────────────────────────── */ }
-    < main className = "tv-main-content" style = {{
-    flex: 1, padding: 'clamp(16px,3vw,32px) clamp(12px,3vw,32px)',
-      maxWidth: '1200px', margin: '0 auto', width: '100%',
+        {/* Desktop: avatar dropdown — MUST wrap button + dropdown together in the ref div */}
+        <div className="hide-md" style={{ position: 'relative', flexShrink: 0 }} ref={avatarMenuRef}>
+          <button
+            onClick={() => setAvatarMenuOpen(prev => !prev)}
+            style={{
+              width: '34px', height: '34px', borderRadius: '50%', padding: 0,
+              background: profile?.avatar_url
+                ? 'transparent'
+                : 'linear-gradient(135deg, var(--lime), var(--clay))',
+              border: avatarMenuOpen ? '2px solid var(--lime)' : '2px solid transparent',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: '14px', fontWeight: 800, color: '#070B14',
+              cursor: 'pointer', flexShrink: 0, transition: 'border-color 0.15s',
+              overflow: 'hidden',
+            }}
+            aria-label="Account menu"
+            aria-expanded={avatarMenuOpen}
+          >
+            {profile?.avatar_url
+              ? <img
+                src={profile.avatar_url}
+                alt="Avatar"
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                onError={e => { e.currentTarget.style.display = 'none'; }}
+              />
+              : avatarInitial
+            }
+          </button>
+
+          {/* Dropdown */}
+          {avatarMenuOpen && (
+            <div style={{
+              position: 'absolute', top: 'calc(100% + 8px)', right: 0,
+              background: 'var(--bg-card)', border: '1px solid var(--border-md)',
+              borderRadius: '12px', overflow: 'hidden', minWidth: '190px',
+              boxShadow: '0 16px 40px rgba(0,0,0,0.5)',
+              animation: 'tv-slide-up 0.15s ease',
+              zIndex: 200,
+            }}>
+              <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
+                <p style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text)', margin: 0 }}>
+                  {firstName ?? 'Player'}
+                </p>
+                <p style={{
+                  fontSize: '11px', color: 'var(--text-faint)', margin: '2px 0 0',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>
+                  {user?.email}
+                </p>
+              </div>
+
+              <button
+                onClick={() => { setAvatarMenuOpen(false); setProfileOpen(true); }}
+                style={{
+                  width: '100%', textAlign: 'left', padding: '12px 16px',
+                  background: 'none', border: 'none', color: 'var(--text)',
+                  fontFamily: 'var(--font-body)', fontSize: '14px', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: '10px',
+                  transition: 'background 0.1s',
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-glass)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'none'}
+              >
+                <span style={{ fontSize: '16px' }}>👤</span>
+                My Profile
+              </button>
+
+              <button
+                onClick={handleLogout}
+                style={{
+                  width: '100%', textAlign: 'left', padding: '12px 16px',
+                  background: 'none', border: 'none', borderTop: '1px solid var(--border)',
+                  color: 'var(--clay)', fontFamily: 'var(--font-body)',
+                  fontSize: '14px', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: '10px',
+                  transition: 'background 0.1s',
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(251,146,60,0.08)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'none'}
+              >
+                <span style={{ fontSize: '16px' }}>🚪</span>
+                Sign Out
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Mobile: avatar with dropdown */}
+        <div className="show-md" style={{ position: 'relative', flexShrink: 0 }} ref={avatarMenuRefMobile}>
+          <button
+            onClick={() => setAvatarMenuOpen(prev => !prev)}
+            style={{
+              width: '36px', height: '36px', borderRadius: '50%', padding: 0,
+              background: profile?.avatar_url
+                ? 'transparent'
+                : 'linear-gradient(135deg, var(--lime), var(--clay))',
+              border: avatarMenuOpen ? '2px solid var(--lime)' : '2px solid transparent',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: '14px', fontWeight: 800, color: '#070B14',
+              cursor: 'pointer', flexShrink: 0, transition: 'border-color 0.15s',
+              overflow: 'hidden',
+            }}
+            aria-label="Account menu"
+            aria-expanded={avatarMenuOpen}
+          >
+            {profile?.avatar_url
+              ? <img
+                src={profile.avatar_url}
+                alt="Avatar"
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                onError={e => { e.currentTarget.style.display = 'none'; }}
+              />
+              : avatarInitial
+            }
+          </button>
+
+          {avatarMenuOpen && (
+            <div style={{
+              position: 'absolute', top: 'calc(100% + 8px)', right: 0,
+              background: 'var(--bg-card)', border: '1px solid var(--border-md)',
+              borderRadius: '12px', overflow: 'hidden', minWidth: '180px',
+              boxShadow: '0 16px 40px rgba(0,0,0,0.5)',
+              animation: 'tv-slide-up 0.15s ease',
+              zIndex: 200,
+            }}>
+              <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
+                <p style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text)', margin: 0 }}>
+                  {firstName ?? 'Player'}
+                </p>
+                <p style={{
+                  fontSize: '11px', color: 'var(--text-faint)', margin: '2px 0 0',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>
+                  {user?.email}
+                </p>
+              </div>
+
+              <button
+                onClick={() => { setAvatarMenuOpen(false); setProfileOpen(true); }}
+                style={{
+                  width: '100%', textAlign: 'left',
+                  padding: '12px 16px', background: 'none', border: 'none',
+                  color: 'var(--text)', fontFamily: 'var(--font-body)',
+                  fontSize: '14px', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: '10px',
+                  transition: 'background 0.1s',
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-glass)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'none'}
+              >
+                <span style={{ fontSize: '16px' }}>👤</span>
+                My Profile
+              </button>
+
+              <button
+                onClick={handleLogout}
+                style={{
+                  width: '100%', textAlign: 'left',
+                  padding: '12px 16px', background: 'none', border: 'none',
+                  borderTop: '1px solid var(--border)',
+                  color: 'var(--clay)', fontFamily: 'var(--font-body)',
+                  fontSize: '14px', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: '10px',
+                  transition: 'background 0.1s',
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(251,146,60,0.08)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'none'}
+              >
+                <span style={{ fontSize: '16px' }}>🚪</span>
+                Sign Out
+              </button>
+            </div>
+          )}
+        </div>
+      </nav>
+
+      {/* ── Main content ─────────────────────────────────────────────────── */}
+      < main className="tv-main-content" style={{
+        flex: 1, padding: 'clamp(16px,3vw,32px) clamp(12px,3vw,32px)',
+        maxWidth: '1200px', margin: '0 auto', width: '100%',
       }
-}>
-  { activeTab === 'matches' && (
-    <MatchesTab
-      live={live}
-      upcoming={upcoming}
-      loading={matchesLoading}
-      error={matchesError}
-      refresh={refresh}
-      onSelectMatch={handleSelectMatch}
-      wtaPlayerIds={wtaPlayerIds}
-    />
-  )}
-{
-  activeTab === 'predictions' && (
-    <PredictionsTab
-      allMatches={allMatches}
-      matchesLoading={matchesLoading}
-      selectedMatch={selectedMatch}
-      onSelectMatch={setSelectedMatch}
-      wtaPlayerIds={wtaPlayerIds}
-    />
-  )
-}
-{
-  activeTab === 'rankings' && (
-    <RankingsTab onSelectPlayer={p => setBioPlayer(p)} />
-  )
-}
-{
-  activeTab === 'chat' && (
-    <AiChatTab contextMatch={selectedMatch} />
-  )
-}
+      }>
+        {activeTab === 'matches' && (
+          <MatchesTab
+            live={live}
+            upcoming={upcoming}
+            loading={matchesLoading}
+            error={matchesError}
+            refresh={refresh}
+            onSelectMatch={handleSelectMatch}
+            wtaPlayerIds={wtaPlayerIds}
+          />
+        )}
+        {
+          activeTab === 'predictions' && (
+            <PredictionsTab
+              allMatches={allMatches}
+              matchesLoading={matchesLoading}
+              selectedMatch={selectedMatch}
+              onSelectMatch={setSelectedMatch}
+              wtaPlayerIds={wtaPlayerIds}
+            />
+          )
+        }
+        {
+          activeTab === 'rankings' && (
+            <RankingsTab onSelectPlayer={p => setBioPlayer(p)} />
+          )
+        }
+        {
+          activeTab === 'chat' && (
+            <AiChatTab contextMatch={selectedMatch} />
+          )
+        }
       </main >
 
-  {/* ── Bottom nav bar (mobile) ───────────────────────────────────────── */ }
-  < nav className = "tv-bottom-nav" >
-  {
-    tabs.map(t => (
-      <button
-        key={t.id}
-        className={`tv-bottom-nav__item${activeTab === t.id ? ' active' : ''}`}
-        onClick={() => switchTab(t.id)}
-      >
-        <span style={{ fontSize: '20px', lineHeight: 1 }}>{t.icon}</span>
-        <span>{t.label}</span>
-      </button>
-    ))
-  }
+      {/* ── Bottom nav bar (mobile) ───────────────────────────────────────── */}
+      < nav className="tv-bottom-nav" >
+        {
+          tabs.map(t => (
+            <button
+              key={t.id}
+              className={`tv-bottom-nav__item${activeTab === t.id ? ' active' : ''}`}
+              onClick={() => switchTab(t.id)}
+            >
+              <span style={{ fontSize: '20px', lineHeight: 1 }}>{t.icon}</span>
+              <span>{t.label}</span>
+            </button>
+          ))
+        }
       </nav >
 
-  {/* ── Modals ─────────────────────────────────────────────────────────── */ }
-{
-  searchOpen && (
-    <PlayerSearchModal
-      allPlayers={allPlayersForSearch}
-      onClose={() => setSearchOpen(false)}
-      onChatAboutPlayer={handleChatAboutPlayer}
-    />
-  )
-}
-{
-  bioPlayer && (
-    <PlayerBioModal
-      player={bioPlayer}
-      onClose={() => setBioPlayer(null)}
-      onChat={handleChatAboutPlayer}
-    />
-  )
-}
+      {/* ── Modals ─────────────────────────────────────────────────────────── */}
+      {
+        searchOpen && (
+          <PlayerSearchModal
+            allPlayers={allPlayersForSearch}
+            onClose={() => setSearchOpen(false)}
+            onChatAboutPlayer={handleChatAboutPlayer}
+          />
+        )
+      }
+      {
+        bioPlayer && (
+          <PlayerBioModal
+            player={bioPlayer}
+            onClose={() => setBioPlayer(null)}
+            onChat={handleChatAboutPlayer}
+          />
+        )
+      }
 
-{/* Profile page overlay */ }
-{
-  profileOpen && (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'var(--bg)', overflowY: 'auto' }}>
-      <ProfilePage
-        onBack={() => setProfileOpen(false)}
-        showToast={showToast}
-      />
-    </div>
-  )
-}
+      {/* Profile page overlay */}
+      {
+        profileOpen && (
+          <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'var(--bg)', overflowY: 'auto' }}>
+            <ProfilePage
+              onBack={() => setProfileOpen(false)}
+              showToast={showToast}
+            />
+          </div>
+        )
+      }
     </div >
   );
 }
@@ -625,105 +625,113 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
   const todayMatches = (() => {
     const map = new Map();
 
-    // 1. upcoming rows that are dated today
+    // Helper: always use Paris timezone for the date fallback, same as DB writes
+    const toLocalDateStr = (m) => {
+      if (m.local_date) return m.local_date;
+      if (m.date) {
+        return new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'Europe/Paris',
+          year: 'numeric', month: '2-digit', day: '2-digit',
+        }).format(new Date(m.date));
+      }
+      return null;
+    };
+
+    // 1. upcoming rows dated today
     upcoming.forEach(m => {
-      const d = m.local_date ?? (m.date ? new Date(m.date).toLocaleDateString('en-CA') : null);
+      const d = toLocalDateStr(m);
       if (d === todayStr) map.set(m.id, m);
     });
 
-    // 2. live rows — always include (they're already in-progress today)
-    //    overwrite the upcoming version if it exists
-    live.forEach(m => {
-      const d = m.local_date ?? (m.date ? new Date(m.date).toLocaleDateString('en-CA') : null);
-      if (!d || d === todayStr) map.set(m.id, m);
-    });
+    // 2. live rows — always include regardless of date
+    live.forEach(m => map.set(m.id, m));
 
     return [...map.values()].sort(
       (a, b) => new Date(a.date ?? 0).getTime() - new Date(b.date ?? 0).getTime()
     );
   })();
 
-  // ── Active pool: today's merged list OR calendar-date results ───────────────
-  const pool = isToday ? todayMatches : dateMatches;
+// ── Active pool: today's merged list OR calendar-date results ───────────────
+const pool = isToday ? todayMatches : dateMatches;
 
-  // ── Filter by the selected type pill ────────────────────────────────────────
-  const byType = (arr) => arr.filter(m => deriveMatchType(m, wtaPlayerIds) === activeFilter);
-  const activeFilterDef = MATCH_FILTERS.find(f => f.id === activeFilter);
+// ── Filter by the selected type pill ────────────────────────────────────────
+const byType = (arr) => arr.filter(m => deriveMatchType(m, wtaPlayerIds) === activeFilter);
+const activeFilterDef = MATCH_FILTERS.find(f => f.id === activeFilter);
 
-  const filteredPool = byType(pool);
-  const filteredLive = filteredPool.filter(m => m.status === 'live');
-  const filteredNonLive = filteredPool.filter(m => m.status !== 'live');
+const filteredPool = byType(pool);
+const filteredLive = filteredPool.filter(m => m.status === 'live');
+const filteredNonLive = filteredPool.filter(m => m.status !== 'live');
 
-  const sectionLabel = isToday
-    ? `${activeFilterDef?.label} — Today's Matches`
-    : `${activeFilterDef?.label} — ${selectedDay?.toLocaleDateString('en-GB', {
-      weekday: 'long', day: 'numeric', month: 'short',
-    }) ?? ''
-    }`;
+const sectionLabel = isToday
+  ? `${activeFilterDef?.label} — Today's Matches`
+  : `${activeFilterDef?.label} — ${selectedDay?.toLocaleDateString('en-GB', {
+    weekday: 'long', day: 'numeric', month: 'short',
+  }) ?? ''
+  }`;
 
-  return (
-    <div className="tv-fade-up">
-      <FilterPills activeFilter={activeFilter} onSelect={setActiveFilter} />
+return (
+  <div className="tv-fade-up">
+    <FilterPills activeFilter={activeFilter} onSelect={setActiveFilter} />
 
-      <MatchCalendar
-        onSelectDate={(date, dateStr) => {
-          setCalendarDate(date);
-          setCalendarDateStr(dateStr);
-        }}
-      />
+    <MatchCalendar
+      onSelectDate={(date, dateStr) => {
+        setCalendarDate(date);
+        setCalendarDateStr(dateStr);
+      }}
+    />
 
-      {dateLoading ? (
-        <LoadingGrid />
-      ) : (
-        <>
-          {/* ── Live now section ── */}
-          {filteredLive.length > 0 && (
-            <section style={{ marginBottom: '40px' }}>
-              <SectionHeading label="Live Now" dot />
-              <div style={gridStyle}>
-                {filteredLive.map(m => (
+    {dateLoading ? (
+      <LoadingGrid />
+    ) : (
+      <>
+        {/* ── Live now section ── */}
+        {filteredLive.length > 0 && (
+          <section style={{ marginBottom: '40px' }}>
+            <SectionHeading label="Live Now" dot />
+            <div style={gridStyle}>
+              {filteredLive.map(m => (
+                <MatchCard
+                  key={m.id}
+                  match={m}
+                  onPredict={() => onSelectMatch(m)}
+                  wtaPlayerIds={wtaPlayerIds}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* ── Scheduled / all matches section ── */}
+        <section>
+          <SectionHeading label={sectionLabel} />
+          {filteredNonLive.length === 0 && filteredLive.length === 0 ? (
+            <EmptyState
+              icon={isToday ? '🎾' : '📅'}
+              title={`No ${activeFilterDef?.label} matches`}
+              desc={
+                isToday
+                  ? 'No matches found for this filter today.'
+                  : 'No matches found for this filter on this day.'
+              }
+            />
+          ) : filteredNonLive.length === 0 ? null : (
+            <div style={gridStyle}>
+              {filteredNonLive.map((m, i) => (
+                <div key={m.id} className={`tv-fade-up d${Math.min(i + 1, 5)}`}>
                   <MatchCard
-                    key={m.id}
                     match={m}
                     onPredict={() => onSelectMatch(m)}
                     wtaPlayerIds={wtaPlayerIds}
                   />
-                ))}
-              </div>
-            </section>
+                </div>
+              ))}
+            </div>
           )}
-
-          {/* ── Scheduled / all matches section ── */}
-          <section>
-            <SectionHeading label={sectionLabel} />
-            {filteredNonLive.length === 0 && filteredLive.length === 0 ? (
-              <EmptyState
-                icon={isToday ? '🎾' : '📅'}
-                title={`No ${activeFilterDef?.label} matches`}
-                desc={
-                  isToday
-                    ? 'No matches found for this filter today.'
-                    : 'No matches found for this filter on this day.'
-                }
-              />
-            ) : filteredNonLive.length === 0 ? null : (
-              <div style={gridStyle}>
-                {filteredNonLive.map((m, i) => (
-                  <div key={m.id} className={`tv-fade-up d${Math.min(i + 1, 5)}`}>
-                    <MatchCard
-                      match={m}
-                      onPredict={() => onSelectMatch(m)}
-                      wtaPlayerIds={wtaPlayerIds}
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-        </>
-      )}
-    </div>
-  );
+        </section>
+      </>
+    )}
+  </div>
+);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
