@@ -117,8 +117,8 @@ Deno.serve(async (req: Request) => {
   const authHeader = req.headers.get('Authorization') ?? '';
   const token = authHeader.replace(/^Bearer\s+/i, '');
 
-  const SYNC_SECRET  = Deno.env.get('SYNC_SECRET') ?? '';
-  const ANON_KEY     = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+  const SYNC_SECRET = Deno.env.get('SYNC_SECRET') ?? '';
+  const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
 
   const isAuthorized = token === SYNC_SECRET || token === ANON_KEY;
 
@@ -159,10 +159,16 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── 2. Date-range matches ─────────────────────────────────────────────────
+    // ── 2. Date-range matches ─────────────────────────────────────────────────
+    const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
     const dates = dateRange(2, 3);
     const todayUTC = new Date().toISOString().slice(0, 10);
 
-    for (const { day, month, year } of dates) {
+    for (const [i, { day, month, year }] of dates.entries()) {
+      // ⏱ Throttle: BASIC plan = 1 req/sec. Live call already used 1 slot,
+      // so wait 1.1s before each date request to stay safely under the limit.
+      if (i > 0) await sleep(1100);
+
       const label = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
       try {
         log.push(`[DATES] Fetching ${label}...`);
