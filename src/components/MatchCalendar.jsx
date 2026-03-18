@@ -17,7 +17,7 @@ export default function MatchCalendar({ onSelectDate }) {
   }), [today]);
 
   const windowStart = dates[0];
-  const windowEnd   = dates[dates.length - 1];
+  const windowEnd = dates[dates.length - 1];
 
   const [selectedDate, setSelectedDate] = useState(today);
   const scrollRef = useRef(null);
@@ -35,21 +35,24 @@ export default function MatchCalendar({ onSelectDate }) {
 
   useEffect(() => {
     onSelectDate?.(today, toDateStr(today));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // AFTER — uses Europe/Paris timezone, matches MatchesTab and the DB
   function toDateStr(d) {
-    const y  = d.getFullYear();
-    const mo = String(d.getMonth() + 1).padStart(2, '0');
-    const dy = String(d.getDate()).padStart(2, '0');
-    return `${y}-${mo}-${dy}`;
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Europe/Paris',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(d);
   }
 
   function isSameDay(a, b) {
     return (
       a.getFullYear() === b.getFullYear() &&
-      a.getMonth()    === b.getMonth()    &&
-      a.getDate()     === b.getDate()
+      a.getMonth() === b.getMonth() &&
+      a.getDate() === b.getDate()
     );
   }
 
@@ -100,13 +103,13 @@ export default function MatchCalendar({ onSelectDate }) {
         >
           {dates.map((date, i) => {
             const isSelected = isSameDay(date, selectedDate);
-            const isToday    = isSameDay(date, today);
-            const isPast     = date < today && !isToday;
-            const dateStr    = toDateStr(date);
+            const isToday = isSameDay(date, today);
+            const isPast = date < today && !isToday;
+            const dateStr = toDateStr(date);
             const hasMatches = activeDates.has(dateStr);
-            const dayName    = date.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
-            const dayNum     = date.getDate();
-            const monthName  = date.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
+            const dayName = date.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+            const dayNum = date.getDate();
+            const monthName = date.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
 
             return (
               <button
@@ -115,31 +118,30 @@ export default function MatchCalendar({ onSelectDate }) {
                 data-today={isToday ? 'true' : 'false'}
                 onClick={() => handleDateSelect(date)}
                 style={{
-                  display:        'flex',
-                  flexDirection:  'column',
-                  alignItems:     'center',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
                   justifyContent: 'center',
-                  gap:            '3px',
-                  flexShrink:     0,
-                  minWidth:       '64px',
-                  padding:        '10px 8px',
-                  border: `1px solid ${
-                    isSelected
+                  gap: '3px',
+                  flexShrink: 0,
+                  minWidth: '64px',
+                  padding: '10px 8px',
+                  border: `1px solid ${isSelected
                       ? 'rgba(159,239,102,0.5)'
                       : isToday
                         ? 'rgba(159,239,102,0.25)'
                         : 'var(--border)'
-                  }`,
-                  borderRadius:   'var(--radius-sm)',
+                    }`,
+                  borderRadius: 'var(--radius-sm)',
                   background: isSelected
                     ? 'rgba(159,239,102,0.12)'
                     : isToday
                       ? 'rgba(159,239,102,0.05)'
                       : 'var(--bg-card)',
-                  cursor:     'pointer',
+                  cursor: 'pointer',
                   transition: 'var(--t)',
-                  outline:    'none',
-                  opacity:    isPast && !isSelected ? 0.5 : 1,
+                  outline: 'none',
+                  opacity: isPast && !isSelected ? 0.5 : 1,
                   fontFamily: 'var(--font-body)',
                   WebkitTapHighlightColor: 'transparent',
                   userSelect: 'none',
