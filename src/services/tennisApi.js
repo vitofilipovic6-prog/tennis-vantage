@@ -658,14 +658,22 @@ Respond ONLY with valid JSON, no markdown:
   "ai_analysis": "<2-3 sentences with a real stat or match result from your memory, both players named, direct verdict>"
 }`;
 
-    const response = await sendChatMessage(
-      [{ role: 'user', content: prompt }],
-      'You are a professional tennis prediction AI with encyclopedic knowledge of all ATP, WTA, ITF, and challenger players. You actively recall specific recent match results, tournament outcomes, and head-to-head history from your training data. Respond only with valid JSON. Never write generic filler. Always cite real match results and statistics.'
-    );
+    const predRes = await fetch('/api/predict', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ prompt }),
+    });
 
-    const rawText = response?.content?.[0]?.text ?? '';
-    const cleaned = rawText.replace(/```json\s*/gi, '').replace(/```/g, '').trim();
-    const parsed  = JSON.parse(cleaned);
+    if (!predRes.ok) {
+      const errJson = await predRes.json().catch(() => ({}));
+      if (predRes.status === 429) throw new Error(errJson.message ?? 'AI is busy, try again shortly');
+      throw new Error(`Predict API error ${predRes.status}`);
+    }
+
+    const response = await predRes.json();
+    const rawText  = response?.content?.[0]?.text ?? '';
+    const cleaned  = rawText.replace(/```json\s*/gi, '').replace(/```/g, '').trim();
+    const parsed   = JSON.parse(cleaned);
 
     if (
       typeof parsed.player1_win_pct === 'number' &&
