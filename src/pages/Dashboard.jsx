@@ -610,8 +610,15 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
     const reclassify = (m) => {
       if (m.status !== 'upcoming') return m;
       const matchTime = m.date ? new Date(m.date).getTime() : null;
-      if (matchTime && now > matchTime + 5 * 60 * 1000) {
+      if (!matchTime) return m;
+      const minsElapsed = (now - matchTime) / 60_000;
+      // Only show as live if between 5 min and 4 hours after scheduled time
+      // Beyond 4 hours — assume it finished and hide it
+      if (minsElapsed > 5 && minsElapsed < 240) {
         return { ...m, status: 'live' };
+      }
+      if (minsElapsed >= 240) {
+        return { ...m, status: 'finished' };
       }
       return m;
     };
@@ -929,7 +936,7 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
           </p>
           <FilterPills activeFilter={predFilter} onSelect={setPredFilter} size="small" />
         </div>
-        
+
         <div style={{ maxHeight: '60dvh', overflowY: 'auto', padding: '8px' }}>
           {matchesLoading ? (
             <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-faint)' }}>Loading…</div>
