@@ -6,6 +6,7 @@
 //  [MOBILE-SO]  Avatar tap shows dropdown with Profile + Sign Out (not just Profile)
 //  [SEARCH]     allPlayersForSearch now pulls from full DB via useAllPlayers hook
 //  [AI-PRED]    PredictionCard shows AI analysis field + "AI Powered" badge
+//  [LIVE]       Client-side reclassify bridges gap between sync-live cron runs
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState, useMemo, useEffect, useRef, useCallback, memo } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -60,7 +61,8 @@ export default function Dashboard({ showToast }) {
   const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
   const avatarMenuRef = useRef(null);
 
-  const { live, upcoming, loading: matchesLoading, error: matchesError, syncing: matchesSyncing, refresh } = useMatches();
+  // ── CHANGE 1: removed syncing: matchesSyncing — syncing is now cron-driven ──
+  const { live, upcoming, loading: matchesLoading, error: matchesError, refresh } = useMatches();
   const allMatches = useMemo(() => [...live, ...upcoming], [live, upcoming]);
 
   // Full player list from DB — feeds search modal
@@ -204,27 +206,9 @@ export default function Dashboard({ showToast }) {
           <span className="hide-sm">Search players…</span>
         </button>
 
-        {/* Sync indicator */}
-        {matchesSyncing && (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            padding: '4px 10px', borderRadius: 999,
-            background: 'rgba(159,239,102,0.08)',
-            border: '1px solid rgba(159,239,102,0.2)',
-            fontSize: 11, color: 'var(--lime)', fontWeight: 600,
-            flexShrink: 0,
-          }}>
-            <div style={{
-              width: 8, height: 8, borderRadius: '50%',
-              border: '2px solid transparent',
-              borderTop: '2px solid var(--lime)',
-              animation: 'tv-spin 0.7s linear infinite',
-            }} />
-            Syncing
-          </div>
-        )}
+        {/* ── CHANGE 2: Syncing indicator removed — sync is now cron-driven ── */}
 
-        {/* Desktop: avatar dropdown — MUST wrap button + dropdown together in the ref div */}
+        {/* Desktop: avatar dropdown */}
         <div className="hide-md" style={{ position: 'relative', flexShrink: 0 }} ref={avatarMenuRef}>
           <button
             onClick={() => setAvatarMenuOpen(prev => !prev)}
@@ -401,11 +385,10 @@ export default function Dashboard({ showToast }) {
       </nav>
 
       {/* ── Main content ─────────────────────────────────────────────────── */}
-      < main className="tv-main-content" style={{
+      <main className="tv-main-content" style={{
         flex: 1, padding: 'clamp(16px,3vw,32px) clamp(12px,3vw,32px)',
         maxWidth: '1200px', margin: '0 auto', width: '100%',
-      }
-      }>
+      }}>
         {activeTab === 'matches' && (
           <MatchesTab
             live={live}
@@ -417,77 +400,63 @@ export default function Dashboard({ showToast }) {
             wtaPlayerIds={wtaPlayerIds}
           />
         )}
-        {
-          activeTab === 'predictions' && (
-            <PredictionsTab
-              allMatches={allMatches}
-              matchesLoading={matchesLoading}
-              selectedMatch={selectedMatch}
-              onSelectMatch={setSelectedMatch}
-              wtaPlayerIds={wtaPlayerIds}
-            />
-          )
-        }
-        {
-          activeTab === 'rankings' && (
-            <RankingsTab onSelectPlayer={p => setBioPlayer(p)} />
-          )
-        }
-        {
-          activeTab === 'chat' && (
-            <AiChatTab contextMatch={selectedMatch} />
-          )
-        }
-      </main >
+        {activeTab === 'predictions' && (
+          <PredictionsTab
+            allMatches={allMatches}
+            matchesLoading={matchesLoading}
+            selectedMatch={selectedMatch}
+            onSelectMatch={setSelectedMatch}
+            wtaPlayerIds={wtaPlayerIds}
+          />
+        )}
+        {activeTab === 'rankings' && (
+          <RankingsTab onSelectPlayer={p => setBioPlayer(p)} />
+        )}
+        {activeTab === 'chat' && (
+          <AiChatTab contextMatch={selectedMatch} />
+        )}
+      </main>
 
       {/* ── Bottom nav bar (mobile) ───────────────────────────────────────── */}
-      < nav className="tv-bottom-nav" >
-        {
-          tabs.map(t => (
-            <button
-              key={t.id}
-              className={`tv-bottom-nav__item${activeTab === t.id ? ' active' : ''}`}
-              onClick={() => switchTab(t.id)}
-            >
-              <span style={{ fontSize: '20px', lineHeight: 1 }}>{t.icon}</span>
-              <span>{t.label}</span>
-            </button>
-          ))
-        }
-      </nav >
+      <nav className="tv-bottom-nav">
+        {tabs.map(t => (
+          <button
+            key={t.id}
+            className={`tv-bottom-nav__item${activeTab === t.id ? ' active' : ''}`}
+            onClick={() => switchTab(t.id)}
+          >
+            <span style={{ fontSize: '20px', lineHeight: 1 }}>{t.icon}</span>
+            <span>{t.label}</span>
+          </button>
+        ))}
+      </nav>
 
       {/* ── Modals ─────────────────────────────────────────────────────────── */}
-      {
-        searchOpen && (
-          <PlayerSearchModal
-            allPlayers={allPlayersForSearch}
-            onClose={() => setSearchOpen(false)}
-            onChatAboutPlayer={handleChatAboutPlayer}
-          />
-        )
-      }
-      {
-        bioPlayer && (
-          <PlayerBioModal
-            player={bioPlayer}
-            onClose={() => setBioPlayer(null)}
-            onChat={handleChatAboutPlayer}
-          />
-        )
-      }
+      {searchOpen && (
+        <PlayerSearchModal
+          allPlayers={allPlayersForSearch}
+          onClose={() => setSearchOpen(false)}
+          onChatAboutPlayer={handleChatAboutPlayer}
+        />
+      )}
+      {bioPlayer && (
+        <PlayerBioModal
+          player={bioPlayer}
+          onClose={() => setBioPlayer(null)}
+          onChat={handleChatAboutPlayer}
+        />
+      )}
 
       {/* Profile page overlay */}
-      {
-        profileOpen && (
-          <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'var(--bg)', overflowY: 'auto' }}>
-            <ProfilePage
-              onBack={() => setProfileOpen(false)}
-              showToast={showToast}
-            />
-          </div>
-        )
-      }
-    </div >
+      {profileOpen && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'var(--bg)', overflowY: 'auto' }}>
+          <ProfilePage
+            onBack={() => setProfileOpen(false)}
+            showToast={showToast}
+          />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -581,9 +550,6 @@ function FilterPills({ activeFilter, onSelect, size = 'normal' }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // MATCHES TAB
 // ─────────────────────────────────────────────────────────────────────────────
-// ─────────────────────────────────────────────────────────────────────────────
-// MATCHES TAB
-// ─────────────────────────────────────────────────────────────────────────────
 function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wtaPlayerIds }) {
   const [activeFilter, setActiveFilter] = useState('atp_singles');
   const [calendarDate, setCalendarDate] = useState(null);
@@ -621,11 +587,10 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
   if (error) return <ErrorMessage msg={error} onRetry={refresh} />;
 
   // ── Build today's unified match list ────────────────────────────────────────
-  // Use a Map so live matches overwrite any stale "upcoming" entry for same id.
   const todayMatches = (() => {
     const map = new Map();
 
-    // Helper: always use Paris timezone for the date fallback, same as DB writes
+    // Always use Paris timezone for date fallback — matches how DB writes local_date
     const toLocalDateStr = (m) => {
       if (m.local_date) return m.local_date;
       if (m.date) {
@@ -637,13 +602,27 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
       return null;
     };
 
-    // 1. upcoming rows dated today
+    // ── CHANGE 3: Client-side reclassify ─────────────────────────────────────
+    // If a match's scheduled time has passed by 5+ minutes and it's still
+    // "upcoming" in DB, show it as live on the client.
+    // This bridges the gap between sync-live cron runs (every 5 min).
+    const now = Date.now();
+    const reclassify = (m) => {
+      if (m.status !== 'upcoming') return m;
+      const matchTime = m.date ? new Date(m.date).getTime() : null;
+      if (matchTime && now > matchTime + 5 * 60 * 1000) {
+        return { ...m, status: 'live' };
+      }
+      return m;
+    };
+
+    // 1. upcoming rows dated today (reclassify overdue ones to live)
     upcoming.forEach(m => {
       const d = toLocalDateStr(m);
-      if (d === todayStr) map.set(m.id, m);
+      if (d === todayStr) map.set(m.id, reclassify(m));
     });
 
-    // 2. live rows — always include regardless of date
+    // 2. live rows — always include, overwrite upcoming version
     live.forEach(m => map.set(m.id, m));
 
     return [...map.values()].sort(
@@ -651,87 +630,86 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
     );
   })();
 
-// ── Active pool: today's merged list OR calendar-date results ───────────────
-const pool = isToday ? todayMatches : dateMatches;
+  // ── Active pool: today's merged list OR calendar-date results ───────────────
+  const pool = isToday ? todayMatches : dateMatches;
 
-// ── Filter by the selected type pill ────────────────────────────────────────
-const byType = (arr) => arr.filter(m => deriveMatchType(m, wtaPlayerIds) === activeFilter);
-const activeFilterDef = MATCH_FILTERS.find(f => f.id === activeFilter);
+  // ── Filter by the selected type pill ────────────────────────────────────────
+  const byType = (arr) => arr.filter(m => deriveMatchType(m, wtaPlayerIds) === activeFilter);
+  const activeFilterDef = MATCH_FILTERS.find(f => f.id === activeFilter);
 
-const filteredPool = byType(pool);
-const filteredLive = filteredPool.filter(m => m.status === 'live');
-const filteredNonLive = filteredPool.filter(m => m.status !== 'live');
+  const filteredPool = byType(pool);
+  const filteredLive = filteredPool.filter(m => m.status === 'live');
+  const filteredNonLive = filteredPool.filter(m => m.status !== 'live');
 
-const sectionLabel = isToday
-  ? `${activeFilterDef?.label} — Today's Matches`
-  : `${activeFilterDef?.label} — ${selectedDay?.toLocaleDateString('en-GB', {
-    weekday: 'long', day: 'numeric', month: 'short',
-  }) ?? ''
-  }`;
+  const sectionLabel = isToday
+    ? `${activeFilterDef?.label} — Today's Matches`
+    : `${activeFilterDef?.label} — ${selectedDay?.toLocaleDateString('en-GB', {
+      weekday: 'long', day: 'numeric', month: 'short',
+    }) ?? ''}`;
 
-return (
-  <div className="tv-fade-up">
-    <FilterPills activeFilter={activeFilter} onSelect={setActiveFilter} />
+  return (
+    <div className="tv-fade-up">
+      <FilterPills activeFilter={activeFilter} onSelect={setActiveFilter} />
 
-    <MatchCalendar
-      onSelectDate={(date, dateStr) => {
-        setCalendarDate(date);
-        setCalendarDateStr(dateStr);
-      }}
-    />
+      <MatchCalendar
+        onSelectDate={(date, dateStr) => {
+          setCalendarDate(date);
+          setCalendarDateStr(dateStr);
+        }}
+      />
 
-    {dateLoading ? (
-      <LoadingGrid />
-    ) : (
-      <>
-        {/* ── Live now section ── */}
-        {filteredLive.length > 0 && (
-          <section style={{ marginBottom: '40px' }}>
-            <SectionHeading label="Live Now" dot />
-            <div style={gridStyle}>
-              {filteredLive.map(m => (
-                <MatchCard
-                  key={m.id}
-                  match={m}
-                  onPredict={() => onSelectMatch(m)}
-                  wtaPlayerIds={wtaPlayerIds}
-                />
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* ── Scheduled / all matches section ── */}
-        <section>
-          <SectionHeading label={sectionLabel} />
-          {filteredNonLive.length === 0 && filteredLive.length === 0 ? (
-            <EmptyState
-              icon={isToday ? '🎾' : '📅'}
-              title={`No ${activeFilterDef?.label} matches`}
-              desc={
-                isToday
-                  ? 'No matches found for this filter today.'
-                  : 'No matches found for this filter on this day.'
-              }
-            />
-          ) : filteredNonLive.length === 0 ? null : (
-            <div style={gridStyle}>
-              {filteredNonLive.map((m, i) => (
-                <div key={m.id} className={`tv-fade-up d${Math.min(i + 1, 5)}`}>
+      {dateLoading ? (
+        <LoadingGrid />
+      ) : (
+        <>
+          {/* ── Live now section ── */}
+          {filteredLive.length > 0 && (
+            <section style={{ marginBottom: '40px' }}>
+              <SectionHeading label="Live Now" dot />
+              <div style={gridStyle}>
+                {filteredLive.map(m => (
                   <MatchCard
+                    key={m.id}
                     match={m}
                     onPredict={() => onSelectMatch(m)}
                     wtaPlayerIds={wtaPlayerIds}
                   />
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            </section>
           )}
-        </section>
-      </>
-    )}
-  </div>
-);
+
+          {/* ── Scheduled / all matches section ── */}
+          <section>
+            <SectionHeading label={sectionLabel} />
+            {filteredNonLive.length === 0 && filteredLive.length === 0 ? (
+              <EmptyState
+                icon={isToday ? '🎾' : '📅'}
+                title={`No ${activeFilterDef?.label} matches`}
+                desc={
+                  isToday
+                    ? 'No matches found for this filter today.'
+                    : 'No matches found for this filter on this day.'
+                }
+              />
+            ) : filteredNonLive.length === 0 ? null : (
+              <div style={gridStyle}>
+                {filteredNonLive.map((m, i) => (
+                  <div key={m.id} className={`tv-fade-up d${Math.min(i + 1, 5)}`}>
+                    <MatchCard
+                      match={m}
+                      onPredict={() => onSelectMatch(m)}
+                      wtaPlayerIds={wtaPlayerIds}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </>
+      )}
+    </div>
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -901,11 +879,10 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
     day: '2-digit',
   }).format(new Date());
 
-  // AFTER — only today's matches + anything currently live
+  // Only today's matches + anything currently live
   const predictableMatches = allMatches.filter(m => {
     if (m.status === 'finished') return false;
     if (m.status === 'live') return true;
-    // upcoming: only show today's matches
     const d = m.local_date ?? (m.date ? new Date(m.date).toLocaleDateString('en-CA') : null);
     return d === todayStr;
   });
@@ -1064,7 +1041,7 @@ function MatchPickerRow({ match: m, selected, onSelect, wtaPlayerIds = new Set()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PREDICTION CARD — now shows AI analysis + source badge
+// PREDICTION CARD — shows AI analysis + source badge
 // ─────────────────────────────────────────────────────────────────────────────
 function PredictionCard({ match: m, prediction: pred }) {
   const p1 = m.player1;
@@ -1076,7 +1053,6 @@ function PredictionCard({ match: m, prediction: pred }) {
   const p2WinPct = pred.player2_win_pct ?? (100 - p1WinPct);
   const isAi = pred.source === 'ai';
 
-  // Resolve flags
   const p1Flag = p1?.flag && p1.flag !== '🏳️' ? p1.flag : resolveFlag(p1?.country ?? '');
   const p2Flag = p2?.flag && p2.flag !== '🏳️' ? p2.flag : resolveFlag(p2?.country ?? '');
 
@@ -1289,7 +1265,6 @@ function RankingsTab({ onSelectPlayer }) {
   const [hovRow, setHovRow] = useState(null);
   const { rankings, loading, error } = useRankings(tour);
 
-  // Derive these ONCE at the top so every part of the render can use them
   const tourDef = RANKING_TOURS.find(t => t.id === tour) ?? RANKING_TOURS[0];
   const isClickable = tourDef.interactive;
   const isAltTour = !isClickable;
@@ -1440,7 +1415,7 @@ function RankingsTab({ onSelectPlayer }) {
             );
           })}
 
-          {/* Footer — isClickable is now in scope here */}
+          {/* Footer */}
           <div style={{
             padding: '10px 16px', borderTop: '1px solid var(--border)',
             fontSize: '11px', color: 'var(--text-faint)', textAlign: 'center',
@@ -1474,17 +1449,14 @@ function AiChatTab({ contextMatch }) {
     if (!input.trim() || typing) return;
     sendMessage(input);
     setInput('');
-    // Reset textarea height after clearing
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
   }
 
-  // Auto-grow textarea up to 5 lines
   function handleInputChange(e) {
     const val = e.target.value.slice(0, CHAT_MAX_CHARS);
     setInput(val);
-    // Auto-resize
     const el = e.target;
     el.style.height = 'auto';
     el.style.height = Math.min(el.scrollHeight, 120) + 'px';
@@ -1503,7 +1475,6 @@ function AiChatTab({ contextMatch }) {
   return (
     <div className="tv-fade-up tv-chat-layout" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '20px' }}>
 
-      {/* ── Chat shell — height is controlled entirely by CSS class ───────── */}
       <div className="tv-chat-shell">
 
         {/* Header */}
@@ -1539,7 +1510,7 @@ function AiChatTab({ contextMatch }) {
           </button>
         </div>
 
-        {/* Messages — flex: 1 makes this fill remaining height and scroll */}
+        {/* Messages */}
         <div style={{
           flex: 1,
           overflowY: 'auto',
@@ -1547,7 +1518,6 @@ function AiChatTab({ contextMatch }) {
           background: 'var(--bg-card)',
           border: '1px solid var(--border)', borderTop: 'none', borderBottom: 'none',
           display: 'flex', flexDirection: 'column', gap: '16px',
-          // Momentum scroll on iOS
           WebkitOverflowScrolling: 'touch',
         }}>
           {contextMatch && (
@@ -1595,7 +1565,6 @@ function AiChatTab({ contextMatch }) {
                 lineHeight: 1.65,
                 color: 'var(--text)',
                 wordBreak: 'break-word',
-                // Render newlines from AI response
                 whiteSpace: 'pre-wrap',
               }}>
                 {msg.content}
@@ -1624,7 +1593,7 @@ function AiChatTab({ contextMatch }) {
           <div ref={bottomRef} style={{ flexShrink: 0 }} />
         </div>
 
-        {/* Suggestion chips — only shown when no messages yet */}
+        {/* Suggestion chips */}
         {messages.length === 0 && !typing && (
           <div
             className="tv-chat-suggestions"
@@ -1640,7 +1609,6 @@ function AiChatTab({ contextMatch }) {
                   background: 'var(--bg-glass)', color: 'var(--text-muted)',
                   fontSize: '12px', cursor: 'pointer', fontFamily: 'var(--font-body)',
                   transition: 'var(--t)', flexShrink: 0,
-                  // Tap target size on mobile
                   minHeight: '36px',
                   WebkitTapHighlightColor: 'transparent',
                 }}
@@ -1661,8 +1629,6 @@ function AiChatTab({ contextMatch }) {
               value={input}
               onChange={handleInputChange}
               onKeyDown={e => {
-                // On mobile (touch devices) Enter should insert newline, not submit
-                // On desktop Enter (without Shift) submits
                 if (e.key === 'Enter' && !e.shiftKey && !('ontouchstart' in window)) {
                   e.preventDefault();
                   submit();
@@ -1685,13 +1651,11 @@ function AiChatTab({ contextMatch }) {
                 overflowY: 'hidden',
                 transition: 'border-color 0.15s',
                 boxSizing: 'border-box',
-                // Prevent iOS zoom on focus (font-size must be ≥16px or use this)
                 WebkitTextSizeAdjust: '100%',
               }}
               onFocus={e => e.target.style.borderColor = 'rgba(159,239,102,0.4)'}
               onBlur={e => e.target.style.borderColor = 'var(--border)'}
             />
-            {/* Char counter inside textarea */}
             <span style={{
               position: 'absolute', right: '10px', bottom: '10px',
               fontSize: '10px', color: charColor,
@@ -1701,7 +1665,6 @@ function AiChatTab({ contextMatch }) {
             </span>
           </div>
 
-          {/* Send button — uses CSS class for proper 44px tap target */}
           <button
             className="tv-chat-send-btn"
             onClick={submit}

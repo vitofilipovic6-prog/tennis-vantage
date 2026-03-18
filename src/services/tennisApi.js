@@ -168,45 +168,38 @@ export function deriveMatchType(m, wtaPlayerIds = new Set()) {
   const p2Name     = m.player2?.name ?? '';
   const tournament = (m.tournament ?? '').toLowerCase();
   const stored     = m.match_type ?? 'atp_singles';
+  const isDoubles  = p1Name.includes('/') || p2Name.includes('/');
 
-  const isDoubles = p1Name.includes('/') || p2Name.includes('/');
+  // Trust stored value first — set correctly at sync time
+  if (stored.startsWith('itf_'))  return stored;
+  if (stored.startsWith('utr_'))  return stored;
+  if (stored === 'mixed_doubles') return stored;
+  if (stored === 'wta_singles')   return stored;
+  if (stored === 'wta_doubles')   return stored;
 
-  // Trust stored value for ITF and UTR — set correctly at sync time
-  if (stored.startsWith('itf_') || stored.startsWith('utr_')) return stored;
-
-  // UTR by name (fallback for old rows)
+  // UTR fallback by tournament name
   if (tournament.includes('utr')) {
-    const isWomen = tournament.includes('women');
-    return isWomen ? 'utr_women_singles' : 'utr_men_singles';
+    return tournament.includes('women') ? 'utr_women_singles' : 'utr_men_singles';
   }
 
-  // ITF by name (fallback for old rows)
-  const isItfByName = tournament.includes('itf') ||
-    /\bw\d{2}\b/.test(tournament) ||
-    /\bm\d{2}\b/.test(tournament);
-
-  if (isItfByName) {
+  // ITF fallback by tournament name
+  const isItf = tournament.includes('itf') ||
+    /\bw\d{2}\b/.test(tournament) || /\bm\d{2}\b/.test(tournament);
+  if (isItf) {
     const isWomen = tournament.includes('women') || /\bw\d{2}\b/.test(tournament);
     if (isDoubles) return isWomen ? 'itf_women_doubles' : 'itf_men_doubles';
     return isWomen ? 'itf_women_singles' : 'itf_men_singles';
   }
 
-  const p1IsWta         = wtaPlayerIds.size > 0 && wtaPlayerIds.has(m.player1?.id);
-  const p2IsWta         = wtaPlayerIds.size > 0 && wtaPlayerIds.has(m.player2?.id);
-  const isWtaByRankings = p1IsWta || p2IsWta;
+  // WTA detection — only runs if stored value wasn't wta_singles/wta_doubles
+  const isWtaByRankings   = wtaPlayerIds.size > 0 &&
+    (wtaPlayerIds.has(m.player1?.id) || wtaPlayerIds.has(m.player2?.id));
   const isWtaByTournament = tournament.includes('wta') ||
     tournament.includes('women') || tournament.includes('ladies');
-  const isWtaByStored   = stored === 'wta_singles' || stored === 'wta_doubles';
-  const isMixedByStored = stored === 'mixed_doubles';
-  const isWta = isWtaByRankings || isWtaByTournament || isWtaByStored;
+  const isWta = isWtaByRankings || isWtaByTournament;
 
-  if (isDoubles) {
-    if (isMixedByStored) return 'mixed_doubles';
-    if (isWta)           return 'wta_doubles';
-    return 'atp_doubles';
-  }
-
-  if (isWta) return 'wta_singles';
+  if (isDoubles) return isWta ? 'wta_doubles' : 'atp_doubles';
+  if (isWta)     return 'wta_singles';
   return stored;
 }
 
@@ -242,7 +235,7 @@ export async function getLiveMatches(wtaPlayerIds = new Set()) {
       .select(MATCH_SELECT)
       .eq('status', 'live')
       .order('match_date', { ascending: true })
-      .limit(30);
+      .limit(200);
 
     if (error) throw error;
     return (data ?? []).map(m => normaliseMatch(m, wtaPlayerIds));
@@ -267,9 +260,9 @@ export async function getUpcomingMatches(wtaPlayerIds = new Set()) {
       .from('matches')
       .select(MATCH_SELECT)
       .eq('status', 'upcoming')
-      .eq('local_date', todayLocalDate)   // ← exact match, today ONLY
+      .eq('local_date', todayLocalDate)  // today ONLY — exact match
       .order('match_date', { ascending: true })
-      .limit(500);                         // ← safe ceiling, today won't have 500
+      .limit(800);
 
     if (error) throw error;
     return (data ?? []).map(m => normaliseMatch(m, wtaPlayerIds));

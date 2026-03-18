@@ -22,16 +22,13 @@ export function detectTour(tournamentNameOrMatch) {
 }
 
 // ── useMatches ────────────────────────────────────────────────────────────────
-// Two-layer refresh strategy:
-//  1. Every 30 seconds  → re-reads live match scores from DB (cheap, no API call)
-//  2. Every 30 minutes  → triggers sync-matches Edge Function (fetches fresh data
-//     from RapidAPI into DB), then immediately re-reads everything from DB
-// Tab visibility aware — pauses all polling when tab is hidden.
-// Persists last known matches in sessionStorage so on refresh the user sees
-// data instantly while fresh data loads in the background.
+// Strategy: pure DB reads only — no Edge Function calls from client.
+// sync-matches cron (0:00 + 12:00) keeps schedule fresh.
+// sync-live cron (every 5 min) keeps status/scores fresh.
+// Frontend polls DB every 60s to pick up those changes.
 // ─────────────────────────────────────────────────────────────────────────────
 const SESSION_MATCHES_KEY = 'tv_matches_cache';
-const SESSION_MATCHES_TTL = 5 * 60 * 1000; // 5 min — stale after this, bg refresh
+const SESSION_MATCHES_TTL = 5 * 60 * 1000;
 
 function readSessionMatches() {
   try {
@@ -50,9 +47,7 @@ function writeSessionMatches(live, upcoming) {
     sessionStorage.setItem(SESSION_MATCHES_KEY, JSON.stringify({
       live, upcoming, ts: Date.now(),
     }));
-  } catch {
-    // sessionStorage full or unavailable — not critical
-  }
+  } catch {}
 }
 
 export function useMatches() {
@@ -60,12 +55,10 @@ export function useMatches() {
 
   const [live,     setLive]     = useState(cached?.live     ?? []);
   const [upcoming, setUpcoming] = useState(cached?.upcoming ?? []);
-  const [loading,  setLoading]  = useState(!cached); // instant if cached
+  const [loading,  setLoading]  = useState(!cached);
   const [error,    setError]    = useState(null);
-  const [syncing,  setSyncing]  = useState(false);
 
-  const liveIntervalRef = useRef(null);
-  const syncIntervalRef = useRef(null);
+  const pollRef = useRef(null);
 
   const fetchAll = useCallback(async (background = false) => {
     if (!background) setLoading(true);
@@ -79,74 +72,31 @@ export function useMatches() {
       setError(null);
       writeSessionMatches(liveData, upcomingData);
     } catch (e) {
-      setError(e.message ?? 'Failed to load matches');
+      if (!background) setError(e.message ?? 'Failed to load matches');
     } finally {
-      setLoading(false);
+      if (!background) setLoading(false);
     }
   }, []);
-
-  const fetchLive = useCallback(async () => {
-    try {
-      const liveData = await getLiveMatches();
-      setLive(liveData);
-      const cur = readSessionMatches();
-      if (cur) writeSessionMatches(liveData, cur.upcoming);
-    } catch {
-      // silent
-    }
-  }, []);
-
-  const triggerSync = useCallback(async () => {
-    if (document.hidden) return;
-    setSyncing(true);
-    try {
-      await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-matches`,
-        {
-          method:  'POST',
-          headers: {
-            'Content-Type':  'application/json',
-            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          },
-          body: '{}',
-        }
-      );
-    } catch {
-      // silent — still re-read DB below
-    } finally {
-      setSyncing(false);
-      await fetchAll(true);
-    }
-  }, [fetchAll]);
 
   const startPolling = useCallback(() => {
-    liveIntervalRef.current = setInterval(() => {
-      if (!document.hidden) fetchLive();
-    }, 30_000);
-    syncIntervalRef.current = setInterval(() => {
-      if (!document.hidden) triggerSync();
-    }, 30 * 60 * 1000);
-  }, [fetchLive, triggerSync]);
+    pollRef.current = setInterval(() => {
+      if (!document.hidden) fetchAll(true);
+    }, 60_000);
+  }, [fetchAll]);
 
   const stopPolling = useCallback(() => {
-    clearInterval(liveIntervalRef.current);
-    clearInterval(syncIntervalRef.current);
+    clearInterval(pollRef.current);
   }, []);
 
   useEffect(() => {
     const cached = readSessionMatches();
-    const hasFreshCache = !!cached;
 
-    if (hasFreshCache) {
-      const t = setTimeout(() => triggerSync(), 1000);
+    if (cached) {
+      const t = setTimeout(() => fetchAll(true), 1000);
       startPolling();
       const handleVisibility = () => {
-        if (document.hidden) {
-          stopPolling();
-        } else {
-          triggerSync();
-          startPolling();
-        }
+        if (document.hidden) { stopPolling(); }
+        else { fetchAll(true); startPolling(); }
       };
       document.addEventListener('visibilitychange', handleVisibility);
       return () => {
@@ -155,15 +105,11 @@ export function useMatches() {
         document.removeEventListener('visibilitychange', handleVisibility);
       };
     } else {
-      triggerSync();
+      fetchAll(false);
       startPolling();
       const handleVisibility = () => {
-        if (document.hidden) {
-          stopPolling();
-        } else {
-          triggerSync();
-          startPolling();
-        }
+        if (document.hidden) { stopPolling(); }
+        else { fetchAll(true); startPolling(); }
       };
       document.addEventListener('visibilitychange', handleVisibility);
       return () => {
@@ -171,15 +117,14 @@ export function useMatches() {
         document.removeEventListener('visibilitychange', handleVisibility);
       };
     }
-  }, [triggerSync, fetchAll, startPolling, stopPolling]);
+  }, [fetchAll, startPolling, stopPolling]);
 
-  return { live, upcoming, loading, error, syncing, refresh: () => fetchAll(false) };
+  return { live, upcoming, loading, error, syncing: false, refresh: () => fetchAll(false) };
 }
 
 // ── useMatchesByDate ──────────────────────────────────────────────────────────
-// AFTER:
-const matchDateCache = {};      // { [dateStr]: { data, ts } }
-const MATCH_DATE_CACHE_TTL = 2 * 60 * 1000; // 2 minutes
+const matchDateCache = {};
+const MATCH_DATE_CACHE_TTL = 3 * 60 * 1000; // 3 minutes
 
 function getMatchDateCache(dateString) {
   const entry = matchDateCache[dateString];
