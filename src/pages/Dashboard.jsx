@@ -602,16 +602,54 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
     const map = new Map();
 
     // Always use Paris timezone for date fallback — matches how DB writes local_date
-    const toLocalDateStr = (m) => {
-      if (m.local_date) return m.local_date;
-      if (m.date) {
-        return new Intl.DateTimeFormat('en-CA', {
-          timeZone: 'Europe/Paris',
-          year: 'numeric', month: '2-digit', day: '2-digit',
-        }).format(new Date(m.date));
-      }
-      return null;
-    };
+    // ── Build today's unified match list ────────────────────────────────────────
+    const todayMatches = (() => {
+      const map = new Map();
+
+      const toLocalDateStr = (m) => {
+        if (m.local_date) return m.local_date;
+        if (m.date) {
+          return new Intl.DateTimeFormat('en-CA', {
+            timeZone: 'Europe/Paris',
+            year: 'numeric', month: '2-digit', day: '2-digit',
+          }).format(new Date(m.date));
+        }
+        return null;
+      };
+
+      // Reclassify: if a match is still "upcoming" in DB but its scheduled
+      // time passed 5+ minutes ago, show it as live on the client.
+      // REMOVED the ">= 240 minutes → finished" branch — that was silently
+      // hiding matches that sync-live hadn't caught up with yet.
+      const now = Date.now();
+      const reclassify = (m) => {
+        if (m.status !== 'upcoming') return m;
+        const matchTime = m.date ? new Date(m.date).getTime() : null;
+        if (!matchTime) return m;
+        const minsElapsed = (now - matchTime) / 60_000;
+        // Only promote to live if between 5 min and 6 hours overdue.
+        // Do NOT flip to finished — let sync-live handle that.
+        if (minsElapsed > 5 && minsElapsed < 360) {
+          return { ...m, status: 'live' };
+        }
+        return m;
+      };
+
+      // 1. All of today's upcoming/live from getUpcomingMatches
+      //    (now includes matches already promoted to 'live' in Supabase)
+      upcoming.forEach(m => {
+        const d = toLocalDateStr(m);
+        if (d === todayStr) map.set(m.id, reclassify(m));
+      });
+
+      // 2. getLiveMatches() results — always include, overwrite if already present
+      //    (getLiveMatches has no local_date filter so catches any cross-day edge cases)
+      live.forEach(m => map.set(m.id, m));
+
+      return [...map.values()].sort(
+        (a, b) => new Date(a.date ?? 0).getTime() - new Date(b.date ?? 0).getTime()
+      );
+    })();
 
     // ── CHANGE 3: Client-side reclassify ─────────────────────────────────────
     // If a match's scheduled time has passed by 5+ minutes and it's still

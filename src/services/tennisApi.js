@@ -280,6 +280,7 @@ export async function getLiveMatches(wtaPlayerIds = new Set()) {
 }
 
 // ── Upcoming matches ──────────────────────────────────────────────────────────
+// ── Upcoming matches (today only — both upcoming AND live status) ──────────────
 export async function getUpcomingMatches(wtaPlayerIds = new Set()) {
   try {
     const todayLocalDate = new Intl.DateTimeFormat('en-CA', {
@@ -289,11 +290,14 @@ export async function getUpcomingMatches(wtaPlayerIds = new Set()) {
       day:      '2-digit',
     }).format(new Date());
 
+    // Fetch BOTH upcoming and live for today — live matches have
+    // already been promoted by sync-live and won't appear in
+    // an upcoming-only query, causing them to silently disappear.
     const [atpWta, itf, utr, doubles] = await Promise.all([
       supabase
         .from('matches')
         .select(MATCH_SELECT)
-        .eq('status', 'upcoming')
+        .in('status', ['upcoming', 'live'])   // ← KEY FIX: include live
         .eq('local_date', todayLocalDate)
         .in('match_type', ['atp_singles', 'wta_singles'])
         .order('match_date', { ascending: true })
@@ -302,7 +306,7 @@ export async function getUpcomingMatches(wtaPlayerIds = new Set()) {
       supabase
         .from('matches')
         .select(MATCH_SELECT)
-        .eq('status', 'upcoming')
+        .in('status', ['upcoming', 'live'])   // ← KEY FIX
         .eq('local_date', todayLocalDate)
         .in('match_type', ['itf_men_singles', 'itf_women_singles', 'itf_men_doubles', 'itf_women_doubles'])
         .order('match_date', { ascending: true })
@@ -311,7 +315,7 @@ export async function getUpcomingMatches(wtaPlayerIds = new Set()) {
       supabase
         .from('matches')
         .select(MATCH_SELECT)
-        .eq('status', 'upcoming')
+        .in('status', ['upcoming', 'live'])   // ← KEY FIX
         .eq('local_date', todayLocalDate)
         .in('match_type', ['utr_men_singles', 'utr_women_singles'])
         .order('match_date', { ascending: true })
@@ -320,7 +324,7 @@ export async function getUpcomingMatches(wtaPlayerIds = new Set()) {
       supabase
         .from('matches')
         .select(MATCH_SELECT)
-        .eq('status', 'upcoming')
+        .in('status', ['upcoming', 'live'])   // ← KEY FIX
         .eq('local_date', todayLocalDate)
         .in('match_type', ['atp_doubles', 'wta_doubles', 'mixed_doubles'])
         .order('match_date', { ascending: true })
