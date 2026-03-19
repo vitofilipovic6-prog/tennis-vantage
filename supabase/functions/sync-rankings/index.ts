@@ -1,20 +1,6 @@
 // supabase/functions/sync-rankings/index.ts
-// ─────────────────────────────────────────────────────────────────────────────
-// Syncs ATP and WTA rankings into Supabase.
-//
-// ENDPOINTS:
-//   GET https://tennisapi1.p.rapidapi.com/api/tennis/ranking/atp
-//   GET https://tennisapi1.p.rapidapi.com/api/tennis/ranking/wta
-//
-// CONFIRMED RESPONSE (from atpRankings screenshot):
-//   Root is a flat array — no wrapper key.
-//   Carlos Alcaraz: ranking:1, points:13550, previousRanking:1, team.id:275923
-//   Jannik Sinner:  ranking:2, team.id confirmed in screenshot
-//   WTA: Aryna Sabalenka ranking:1, points:10675, team.id:157754
-//        Iga Swiatek ranking:2, team.id confirmed
-// ─────────────────────────────────────────────────────────────────────────────
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { extractArray, normalizeRankingRow } from '../_shared/normalize.ts';
+import { normalizeRankingRow } from '../_shared/normalize.ts';
 
 const RAPIDAPI_KEY     = Deno.env.get('RAPIDAPI_KEY')!;
 const RAPIDAPI_HOST    = 'tennisapi1.p.rapidapi.com';
@@ -53,13 +39,52 @@ async function rapidGet(path: string): Promise<any | null> {
   }
 }
 
+// ── Local extractArray — handles flat array or wrapped object ─────────────────
+function extractArray(raw: any): any[] {
+  if (Array.isArray(raw))           return raw;
+  if (Array.isArray(raw?.rankings)) return raw.rankings;
+  if (Array.isArray(raw?.data))     return raw.data;
+  if (Array.isArray(raw?.result))   return raw.result;
+  if (Array.isArray(raw?.results))  return raw.results;
+  // Sometimes rankings come back as { "1": {...}, "2": {...} }
+  if (raw && typeof raw === 'object') {
+    const vals = Object.values(raw);
+    if (vals.length > 0 && typeof vals[0] === 'object') return vals;
+  }
+  return [];
+}
+
 Deno.serve(async (req: Request) => {
+  // ── CORS preflight ──────────────────────────────────────────────────────────
   if (req.method === 'OPTIONS') {
     return new Response('ok', {
       headers: {
         'Access-Control-Allow-Origin':  '*',
-        'Access-Control-Allow-Headers': 'Authorization',
+        'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
       },
+    });
+  }
+
+  // ── Auth guard ──────────────────────────────────────────────────────────────
+  // Accepts: SYNC_SECRET, SUPABASE_ANON_KEY, or SUPABASE_SERVICE_ROLE_KEY
+  // This allows both cron jobs (service role) and manual triggers to work
+  const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
+
+  const SYNC_SECRET      = Deno.env.get('SYNC_SECRET')               ?? '';
+  const ANON_KEY         = Deno.env.get('SUPABASE_ANON_KEY')         ?? '';
+  const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+
+  const isAuthorized = (
+    token === SYNC_SECRET      ||
+    token === ANON_KEY         ||
+    token === SERVICE_ROLE_KEY
+  );
+
+  if (!isAuthorized) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' },
     });
   }
 
@@ -76,7 +101,6 @@ Deno.serve(async (req: Request) => {
         continue;
       }
 
-      // Rankings come back as a flat array — extractArray handles this
       const list = extractArray(raw);
       log.push(`[${tour}] ${list.length} rows received`);
 
@@ -85,17 +109,14 @@ Deno.serve(async (req: Request) => {
         continue;
       }
 
-      // Log first row to verify field mapping on real data
       log.push(`[${tour}] Row[0]: ${JSON.stringify(list[0]).slice(0, 500)}`);
 
       const playerRows:  object[] = [];
       const rankingRows: object[] = [];
 
-      // Take top 100 — API typically returns full list
       for (let i = 0; i < Math.min(list.length, 100); i++) {
         const { player, ranking } = normalizeRankingRow(list[i], tour, i);
 
-        // Log first 5 to verify country/flag resolution
         if (i < 5) {
           log.push(`[${tour}] #${player.rank} ${player.name} | country:${player.country} flag:${player.flag} | pts:${ranking.points}`);
         }
@@ -114,7 +135,7 @@ Deno.serve(async (req: Request) => {
 
       if (pErr) {
         errors.push(`[${tour}] players upsert failed: ${pErr.message}`);
-        continue; // Don't attempt rankings if players failed
+        continue;
       }
       log.push(`[${tour}] ✓ Upserted ${playerRows.length} players`);
 
@@ -139,7 +160,10 @@ Deno.serve(async (req: Request) => {
     JSON.stringify({ ok: errors.length === 0, log, errors }),
     {
       status:  errors.length ? 207 : 200,
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+      },
     },
   );
 });

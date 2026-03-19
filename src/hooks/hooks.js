@@ -550,3 +550,44 @@ export function useToast() {
 
   return { toasts, show, dismiss };
 }
+
+// ── useEarliestMatchDate ──────────────────────────────────────────────────────
+// Fetches the earliest local_date that has matches in the DB
+export function useEarliestMatchDate() {
+  const [earliestDate, setEarliestDate] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    supabase
+      .from('matches')
+      .select('local_date')
+      .not('local_date', 'is', null)
+      .order('local_date', { ascending: true })
+      .limit(1)
+      .then(({ data, error }) => {
+        if (!error && data?.[0]?.local_date) {
+          // Parse the YYYY-MM-DD string into a local midnight Date object
+          const [year, month, day] = data[0].local_date.split('-').map(Number);
+          const d = new Date(year, month - 1, day);
+          d.setHours(0, 0, 0, 0);
+          setEarliestDate(d);
+        } else {
+          // Fallback to 30 days ago if query fails
+          const fallback = new Date();
+          fallback.setDate(fallback.getDate() - 30);
+          fallback.setHours(0, 0, 0, 0);
+          setEarliestDate(fallback);
+        }
+        setLoading(false);
+      })
+      .catch(() => {
+        const fallback = new Date();
+        fallback.setDate(fallback.getDate() - 30);
+        fallback.setHours(0, 0, 0, 0);
+        setEarliestDate(fallback);
+        setLoading(false);
+      });
+  }, []);
+
+  return { earliestDate, loading };
+}

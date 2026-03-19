@@ -119,8 +119,12 @@ Deno.serve(async (req: Request) => {
 
   const SYNC_SECRET = Deno.env.get('SYNC_SECRET') ?? '';
   const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
-
-  const isAuthorized = token === SYNC_SECRET || token === ANON_KEY;
+  const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+  const isAuthorized = (
+    token === SYNC_SECRET ||
+    token === ANON_KEY ||
+    token === SERVICE_ROLE_KEY
+  );
 
   if (!isAuthorized) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
@@ -161,7 +165,7 @@ Deno.serve(async (req: Request) => {
     // ── 2. Date-range matches ─────────────────────────────────────────────────
     // ── 2. Date-range matches ─────────────────────────────────────────────────
     const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-    const dates = dateRange(2, 3);
+    const dates = dateRange(0, 0);
     const todayUTC = new Date().toISOString().slice(0, 10);
 
     for (const [i, { day, month, year }] of dates.entries()) {
