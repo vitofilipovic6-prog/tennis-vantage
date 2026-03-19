@@ -549,7 +549,8 @@ function EmptyState({ icon, title, desc }) {
   );
 }
 
-function FilterPills({ activeFilter, onSelect, size = 'normal' }) {
+function FilterPills({ activeFilter, onSelect, size = 'normal', counts = {} }) {
+  const hasCounts = Object.keys(counts).length > 0;
   return (
     <div className="tv-rankings-filters" style={{
       display: 'flex', gap: '6px', flexWrap: 'wrap',
@@ -557,6 +558,7 @@ function FilterPills({ activeFilter, onSelect, size = 'normal' }) {
     }}>
       {MATCH_FILTERS.map(f => {
         const active = activeFilter === f.id;
+        const count = counts[f.id] ?? 0;
         return (
           <button
             key={f.id}
@@ -566,13 +568,30 @@ function FilterPills({ activeFilter, onSelect, size = 'normal' }) {
               borderRadius: '999px',
               border: active ? 'none' : '1px solid var(--border)',
               background: active ? f.color : 'var(--bg-glass-md)',
-              color: active ? '#070B14' : 'var(--text-muted)',
+              color: active ? '#070B14' : count > 0 ? 'var(--text-muted)' : 'var(--text-faint)',
               fontFamily: 'var(--font-body)', fontWeight: 700,
               fontSize: size === 'small' ? '11px' : '12px',
               cursor: 'pointer', transition: 'var(--t)', whiteSpace: 'nowrap',
+              display: 'inline-flex', alignItems: 'center', gap: '5px',
+              // Fade out pills with 0 matches once we know the counts
+              opacity: hasCounts && count === 0 && !active ? 0.38 : 1,
             }}
           >
             {size === 'small' ? f.shortLabel : f.label}
+            {count > 0 && (
+              <span style={{
+                background: active ? 'rgba(0,0,0,0.22)' : `${f.color}28`,
+                color: active ? '#070B14' : f.color,
+                fontSize: size === 'small' ? '9px' : '10px',
+                fontWeight: 800,
+                padding: '1px 5px',
+                borderRadius: '99px',
+                fontFamily: 'var(--font-mono)',
+                lineHeight: 1.6,
+              }}>
+                {count}
+              </span>
+            )}
           </button>
         );
       })}
@@ -620,54 +639,44 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
   if (error) return <ErrorMessage msg={error} onRetry={refresh} />;
 
   // ── Build today's unified match list ──────────────────────────────────────
+  // ── Build today's unified match list ──────────────────────────────────────
   const todayMatches = (() => {
     const map = new Map();
-
-    const toLocalDateStr = (m) => {
-      if (m.local_date) return m.local_date;
-      if (m.date) {
-        return new Intl.DateTimeFormat('en-CA', {
-          timeZone: 'Europe/Paris',
-          year: 'numeric', month: '2-digit', day: '2-digit',
-        }).format(new Date(m.date));
-      }
-      return null;
-    };
-
     const now = Date.now();
-    // REPLACE WITH:
+
+    // REMOVED: toLocalDateStr helper — was used for a redundant date check.
+    // getUpcomingMatches() already filters to today via local_date = todayLocalDate.
+    // The extra check was causing matches with any local_date formatting difference
+    // to be silently excluded from the pool.
+
     const reclassify = (m) => {
       const matchTime = m.date ? new Date(m.date).getTime() : null;
       if (!matchTime) return m;
       const minsElapsed = (now - matchTime) / 60_000;
 
       if (m.status === 'upcoming') {
-        // 5–240 min overdue → almost certainly in progress
+        // Negative minsElapsed = scheduled in the future → stays upcoming ✓
+        // 5–240 min past scheduled time → almost certainly in progress
         if (minsElapsed > 5 && minsElapsed < 240) return { ...m, status: 'live' };
-        // 240+ min (4 hours) since scheduled and still "upcoming" in the DB →
-        // sync-live missed it. No tennis match runs 4 h without appearing in the
-        // live feed, so we can safely treat it as finished client-side.
+        // 4+ hours past scheduled and still "upcoming" in DB → finished
         if (minsElapsed >= 240) return { ...m, status: 'finished' };
       }
 
       if (m.status === 'live') {
-        // 5-hour absolute ceiling — even the longest slams end by then.
-        // Catches live rows that the live-sync cron marked but never finished.
+        // 5-hour ceiling — no match runs longer without appearing in live feed
         if (minsElapsed >= 300) return { ...m, status: 'finished' };
       }
 
       return m;
     };
 
-    // 1. Today's upcoming/live rows from getUpcomingMatches
-    //    (now includes matches already promoted to 'live' in Supabase
-    //    because we query ['upcoming','live'] in tennisApi.js)
+    // getUpcomingMatches() fetches status IN ('upcoming','live') for today.
+    // No extra date check needed — all entries in upcoming[] are already today.
     upcoming.forEach(m => {
-      const d = toLocalDateStr(m);
-      if (d === todayStr) map.set(m.id, reclassify(m));
+      map.set(m.id, reclassify(m));
     });
 
-    // 2. getLiveMatches() results — always overwrite so live status wins
+    // getLiveMatches() results always overwrite so DB live status wins
     live.forEach(m => map.set(m.id, m));
 
     return [...map.values()].sort(
@@ -677,6 +686,18 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
 
   // ── Active pool: today's merged list OR calendar-date results ─────────────
   const pool = isToday ? todayMatches : dateMatches;
+
+  // Count live + upcoming matches per type — drives filter pill badges
+  // so users can immediately see which filter has active content
+  const matchCounts = (() => {
+    const counts = {};
+    pool.forEach(m => {
+      if (m.status === 'finished') return; // only show active matches in badge
+      const type = deriveMatchType(m, wtaPlayerIds);
+      counts[type] = (counts[type] ?? 0) + 1;
+    });
+    return counts;
+  })();
 
   // ── Filter by the selected type pill ──────────────────────────────────────
   const byType = (arr) => arr.filter(m => deriveMatchType(m, wtaPlayerIds) === activeFilter);
@@ -694,7 +715,7 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
 
   return (
     <div className="tv-fade-up">
-      <FilterPills activeFilter={activeFilter} onSelect={setActiveFilter} />
+      <FilterPills activeFilter={activeFilter} onSelect={setActiveFilter} counts={matchCounts} />
 
       <MatchCalendar
         onSelectDate={(date, dateStr) => {
@@ -972,7 +993,19 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
           <p style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '8px' }}>
             Filter
           </p>
-          <FilterPills activeFilter={predFilter} onSelect={setPredFilter} size="small" />
+          <FilterPills
+            activeFilter={predFilter}
+            onSelect={setPredFilter}
+            size="small"
+            counts={(() => {
+              const counts = {};
+              predictableMatches.forEach(m => {
+                const type = deriveMatchType(m, wtaPlayerIds);
+                counts[type] = (counts[type] ?? 0) + 1;
+              });
+              return counts;
+            })()}
+          />
         </div>
 
         <div style={{ maxHeight: '60dvh', overflowY: 'auto', padding: '8px' }}>

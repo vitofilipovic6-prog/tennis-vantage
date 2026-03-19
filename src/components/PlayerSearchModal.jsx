@@ -134,8 +134,9 @@ export default function PlayerSearchModal({ onClose, allPlayers = [], onChatAbou
         <div style={{
           maxHeight: '60dvh',
           overflowY: 'auto',
-          overscrollBehavior: 'contain',    // ← ADD
-          WebkitOverflowScrolling: 'touch', // ← ADD
+          overscrollBehavior: 'contain',
+          WebkitOverflowScrolling: 'touch',
+          touchAction: 'pan-y',            // ← ADD: tells iOS this div scrolls vertically
         }}>
           {results.length === 0 ? (
             <div style={{ padding: '32px 20px', textAlign: 'center' }}>

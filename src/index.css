@@ -567,17 +567,19 @@ a { color: inherit; text-decoration: none; }
   }
 }
 
-/* ── Modal open — block all background interaction and scrolling ─────────── */
+/* ── Modal open — block background scrolling only ───────────────────────── */
 body.modal-open {
-  /* JS sets position:fixed + top offset for iOS-safe locking.
-     We only need the scrollbar-width compensation here. */
+  /* JS sets position:fixed + top offset — that alone prevents scroll.
+     Only need scrollbar-width here to prevent layout shift on lock. */
   padding-right: var(--scrollbar-width, 0px);
 }
 
-body.modal-open > #root {
-  /* Block clicks/touches on background content.
-     Do NOT add overflow:hidden here — it breaks scrolling inside
-     fixed-position modal children on Safari & Chrome mobile. */
-  pointer-events: none;
-}
+/*
+  DO NOT add pointer-events: none to #root here.
+  The body position:fixed already stops background scrolling.
+  The modal backdrop div handles background click prevention.
+  pointer-events: none on #root propagates to ALL fixed children
+  rendered inside #root (ProfilePage overlay, PlayerSearchModal)
+  making them completely non-interactive.
+*/
 
