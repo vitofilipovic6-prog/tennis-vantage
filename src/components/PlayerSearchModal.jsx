@@ -7,13 +7,14 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState, useEffect, useRef } from 'react';
 import PlayerBioModal from './PlayerBioModal';
+import { useScrollLock } from '../hooks/useScrollLock';
 
 const surfaceColors = { Clay: '#f97316', Hard: '#60a5fa', Grass: '#4ade80' };
 
 export default function PlayerSearchModal({ onClose, allPlayers = [], onChatAboutPlayer }) {
-  const [query,    setQuery]    = useState('');
+  const [query, setQuery] = useState('');
   const [selected, setSelected] = useState(null);
-  const inputRef               = useRef(null);
+  const inputRef = useRef(null);
 
   // Auto-focus input
   useEffect(() => {
@@ -29,26 +30,16 @@ export default function PlayerSearchModal({ onClose, allPlayers = [], onChatAbou
   }, [onClose, selected]);
 
   // Lock body scroll while modal is open
-  useEffect(() => {
-  const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
-  document.documentElement.style.setProperty('--scrollbar-width', `${scrollbarWidth}px`);
-  document.body.style.overflow = 'hidden';
-  document.body.classList.add('modal-open');
-  return () => {
-    document.body.style.overflow = '';
-    document.body.classList.remove('modal-open');
-    document.documentElement.style.removeProperty('--scrollbar-width');
-  };
-}, []);
+  useScrollLock();
 
   // Filter players
   const results = query.trim()
     ? allPlayers
-        .filter(p =>
-          p.name?.toLowerCase().includes(query.toLowerCase()) ||
-          p.country?.toLowerCase().includes(query.toLowerCase())
-        )
-        .slice(0, 8)
+      .filter(p =>
+        p.name?.toLowerCase().includes(query.toLowerCase()) ||
+        p.country?.toLowerCase().includes(query.toLowerCase())
+      )
+      .slice(0, 8)
     : allPlayers.slice(0, 8);
 
   // Show bio on top if one is selected
@@ -100,7 +91,7 @@ export default function PlayerSearchModal({ onClose, allPlayers = [], onChatAbou
           borderBottom: '1px solid var(--border)',
         }}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" style={{ flexShrink: 0 }}>
-            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
           </svg>
           <input
             ref={inputRef}
@@ -140,7 +131,12 @@ export default function PlayerSearchModal({ onClose, allPlayers = [], onChatAbou
         </div>
 
         {/* Results list */}
-        <div style={{ maxHeight: '60dvh', overflowY: 'auto' }}>
+        <div style={{
+          maxHeight: '60dvh',
+          overflowY: 'auto',
+          overscrollBehavior: 'contain',    // ← ADD
+          WebkitOverflowScrolling: 'touch', // ← ADD
+        }}>
           {results.length === 0 ? (
             <div style={{ padding: '32px 20px', textAlign: 'center' }}>
               <p style={{ fontSize: '32px', marginBottom: '8px' }}>🔍</p>

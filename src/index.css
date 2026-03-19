@@ -569,13 +569,15 @@ a { color: inherit; text-decoration: none; }
 
 /* ── Modal open — block all background interaction and scrolling ─────────── */
 body.modal-open {
-  overflow: hidden;
-  /* Prevent layout shift from scrollbar disappearing */
+  /* JS sets position:fixed + top offset for iOS-safe locking.
+     We only need the scrollbar-width compensation here. */
   padding-right: var(--scrollbar-width, 0px);
 }
 
 body.modal-open > #root {
+  /* Block clicks/touches on background content.
+     Do NOT add overflow:hidden here — it breaks scrolling inside
+     fixed-position modal children on Safari & Chrome mobile. */
   pointer-events: none;
-  overflow: hidden;
 }
 

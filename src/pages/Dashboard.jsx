@@ -109,14 +109,30 @@ export default function Dashboard({ showToast }) {
   // Add this useEffect inside the Dashboard component
   // alongside the other useEffects at the top:
   // In Dashboard.jsx — replace the existing profileOpen useEffect
+  // REPLACE WITH — uses the same iOS-safe position:fixed approach:
   useEffect(() => {
     if (!profileOpen) return;
+    const scrollY = window.scrollY;
+    const { body } = document;
     const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+
     document.documentElement.style.setProperty('--scrollbar-width', `${scrollbarWidth}px`);
-    document.body.classList.add('modal-open');
+    body.style.overflow = 'hidden';
+    body.style.position = 'fixed';
+    body.style.top = `-${scrollY}px`;
+    body.style.left = '0';
+    body.style.right = '0';
+    body.classList.add('modal-open');
+
     return () => {
-      document.body.classList.remove('modal-open');
+      body.style.overflow = '';
+      body.style.position = '';
+      body.style.top = '';
+      body.style.left = '';
+      body.style.right = '';
+      body.classList.remove('modal-open');
       document.documentElement.style.removeProperty('--scrollbar-width');
+      window.scrollTo(0, scrollY);
     };
   }, [profileOpen]);
 
@@ -463,11 +479,14 @@ export default function Dashboard({ showToast }) {
 
       {/* Profile page overlay */}
       {profileOpen && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'var(--bg)', overflowY: 'auto' }}>
-          <ProfilePage
-            onBack={() => setProfileOpen(false)}
-            showToast={showToast}
-          />
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 300,
+          background: 'var(--bg)',
+          overflowY: 'auto',
+          overscrollBehavior: 'contain',    // ← ADD
+          WebkitOverflowScrolling: 'touch', // ← ADD
+        }}>
+          <ProfilePage onBack={() => setProfileOpen(false)} showToast={showToast} />
         </div>
       )}
     </div>
@@ -616,16 +635,27 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
     };
 
     const now = Date.now();
+    // REPLACE WITH:
     const reclassify = (m) => {
-      if (m.status !== 'upcoming') return m;
       const matchTime = m.date ? new Date(m.date).getTime() : null;
       if (!matchTime) return m;
       const minsElapsed = (now - matchTime) / 60_000;
-      // Promote to live if 5–360 min overdue. Never flip to finished
-      // client-side — let sync-live handle that.
-      if (minsElapsed > 5 && minsElapsed < 360) {
-        return { ...m, status: 'live' };
+
+      if (m.status === 'upcoming') {
+        // 5–240 min overdue → almost certainly in progress
+        if (minsElapsed > 5 && minsElapsed < 240) return { ...m, status: 'live' };
+        // 240+ min (4 hours) since scheduled and still "upcoming" in the DB →
+        // sync-live missed it. No tennis match runs 4 h without appearing in the
+        // live feed, so we can safely treat it as finished client-side.
+        if (minsElapsed >= 240) return { ...m, status: 'finished' };
       }
+
+      if (m.status === 'live') {
+        // 5-hour absolute ceiling — even the longest slams end by then.
+        // Catches live rows that the live-sync cron marked but never finished.
+        if (minsElapsed >= 300) return { ...m, status: 'finished' };
+      }
+
       return m;
     };
 

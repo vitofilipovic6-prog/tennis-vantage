@@ -1,6 +1,7 @@
 // src/components/PlayerBioModal.jsx
 import { useEffect, useState } from 'react';
 import { supabase } from '../services/supabase';
+import { useScrollLock } from '../hooks/useScrollLock';
 
 const surfaceColors = { Clay: '#f97316', Hard: '#60a5fa', Grass: '#4ade80' };
 const CACHE_TTL_DAYS = 7;
@@ -95,17 +96,7 @@ export default function PlayerBioModal({ player: p, onClose, onChat }) {
   const [fromCache, setFromCache] = useState(false);
 
   // Lock scroll
-  useEffect(() => {
-  const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
-  document.documentElement.style.setProperty('--scrollbar-width', `${scrollbarWidth}px`);
-  document.body.style.overflow = 'hidden';
-  document.body.classList.add('modal-open');
-  return () => {
-    document.body.style.overflow = '';
-    document.body.classList.remove('modal-open');
-    document.documentElement.style.removeProperty('--scrollbar-width');
-  };
-}, []);
+  useScrollLock();
 
   // ESC to close
   useEffect(() => {
@@ -205,12 +196,13 @@ export default function PlayerBioModal({ player: p, onClose, onChat }) {
           style={{
             width: '100%', maxWidth: 560,
             maxHeight: '92dvh', overflowY: 'auto',
+            overscrollBehavior: 'contain',      // ← ADD: prevents scroll chaining to body
+            WebkitOverflowScrolling: 'touch',   // ← already there, keep it
             background: 'var(--bg-card)',
             borderRadius: '20px 20px 0 0',
             border: '1px solid var(--border-md)',
             borderBottom: 'none',
             pointerEvents: 'all',
-            WebkitOverflowScrolling: 'touch',
           }}
         >
           {/* ── Header ─────────────────────────────────────────────────────── */}
