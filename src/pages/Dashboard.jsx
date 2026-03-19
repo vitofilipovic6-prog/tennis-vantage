@@ -36,6 +36,26 @@ const MATCH_FILTERS = [
   { id: 'mixed_doubles', label: 'Mixed Doubles', shortLabel: 'Mixed', color: '#34d399' },
 ];
 
+// ─── Client-side match status reclassification ────────────────────────────
+// DB status can be stale between cron runs. Corrects it based on elapsed time.
+// Used by BOTH MatchesTab and PredictionsTab so they stay in sync.
+function reclassifyMatch(m) {
+  const matchTime = m.date ? new Date(m.date).getTime() : null;
+  if (!matchTime) return m;
+  const minsElapsed = (Date.now() - matchTime) / 60_000;
+
+  if (m.status === 'upcoming') {
+    // Negative = future → leave as upcoming
+    if (minsElapsed > 5 && minsElapsed < 240) return { ...m, status: 'live' };
+    if (minsElapsed >= 240) return { ...m, status: 'finished' };
+  }
+  if (m.status === 'live') {
+    // 5-hour hard ceiling — no match runs longer
+    if (minsElapsed >= 300) return { ...m, status: 'finished' };
+  }
+  return m;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // LAYOUT SHELL
 // ─────────────────────────────────────────────────────────────────────────────
@@ -640,43 +660,15 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
 
   // ── Build today's unified match list ──────────────────────────────────────
   // ── Build today's unified match list ──────────────────────────────────────
+  // ── Build today's unified match list ──────────────────────────────────────
   const todayMatches = (() => {
     const map = new Map();
-    const now = Date.now();
 
-    // REMOVED: toLocalDateStr helper — was used for a redundant date check.
-    // getUpcomingMatches() already filters to today via local_date = todayLocalDate.
-    // The extra check was causing matches with any local_date formatting difference
-    // to be silently excluded from the pool.
+    // getUpcomingMatches() already filters to today — no extra date check needed.
+    // Use module-level reclassifyMatch so status is consistent with PredictTab.
+    upcoming.forEach(m => { map.set(m.id, reclassifyMatch(m)); });
 
-    const reclassify = (m) => {
-      const matchTime = m.date ? new Date(m.date).getTime() : null;
-      if (!matchTime) return m;
-      const minsElapsed = (now - matchTime) / 60_000;
-
-      if (m.status === 'upcoming') {
-        // Negative minsElapsed = scheduled in the future → stays upcoming ✓
-        // 5–240 min past scheduled time → almost certainly in progress
-        if (minsElapsed > 5 && minsElapsed < 240) return { ...m, status: 'live' };
-        // 4+ hours past scheduled and still "upcoming" in DB → finished
-        if (minsElapsed >= 240) return { ...m, status: 'finished' };
-      }
-
-      if (m.status === 'live') {
-        // 5-hour ceiling — no match runs longer without appearing in live feed
-        if (minsElapsed >= 300) return { ...m, status: 'finished' };
-      }
-
-      return m;
-    };
-
-    // getUpcomingMatches() fetches status IN ('upcoming','live') for today.
-    // No extra date check needed — all entries in upcoming[] are already today.
-    upcoming.forEach(m => {
-      map.set(m.id, reclassify(m));
-    });
-
-    // getLiveMatches() results always overwrite so DB live status wins
+    // Live rows always overwrite upcoming so DB live status wins
     live.forEach(m => map.set(m.id, m));
 
     return [...map.values()].sort(
@@ -687,29 +679,30 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
   // ── Active pool: today's merged list OR calendar-date results ─────────────
   const pool = isToday ? todayMatches : dateMatches;
 
-  // Count live + upcoming matches per type — drives filter pill badges
-  // so users can immediately see which filter has active content
-  const matchCounts = (() => {
-    const counts = {};
-    pool.forEach(m => {
-      if (m.status === 'finished') return; // only show active matches in badge
-      const type = deriveMatchType(m, wtaPlayerIds);
-      counts[type] = (counts[type] ?? 0) + 1;
-    });
-    return counts;
-  })();
-
   // ── Filter by the selected type pill ──────────────────────────────────────
   const byType = (arr) => arr.filter(m => deriveMatchType(m, wtaPlayerIds) === activeFilter);
   const activeFilterDef = MATCH_FILTERS.find(f => f.id === activeFilter);
 
   const filteredPool = byType(pool);
   const filteredLive = filteredPool.filter(m => m.status === 'live');
-  const filteredNonLive = filteredPool.filter(m => m.status !== 'live');
+  const filteredUpcoming = filteredPool.filter(m => m.status === 'upcoming');
+  const filteredFinished = filteredPool.filter(m => m.status === 'finished');
 
-  const sectionLabel = isToday
-    ? `${activeFilterDef?.label} — Today's Matches`
-    : `${activeFilterDef?.label} — ${selectedDay?.toLocaleDateString('en-GB', {
+  // Badge counts: only live + upcoming (active matches)
+  // This keeps matchCounts consistent with what PredictTab shows
+  const matchCounts = (() => {
+    const counts = {};
+    pool.forEach(m => {
+      if (m.status !== 'live' && m.status !== 'upcoming') return;
+      const type = deriveMatchType(m, wtaPlayerIds);
+      counts[type] = (counts[type] ?? 0) + 1;
+    });
+    return counts;
+  })();
+
+  const dayLabel = isToday
+    ? ''
+    : ` — ${selectedDay?.toLocaleDateString('en-GB', {
       weekday: 'long', day: 'numeric', month: 'short',
     }) ?? ''}`;
 
@@ -728,15 +721,14 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
         <LoadingGrid />
       ) : (
         <>
-          {/* ── Live now section ── */}
+          {/* ── 1. Live Now ─────────────────────────────────────────────────── */}
           {filteredLive.length > 0 && (
             <section style={{ marginBottom: '40px' }}>
               <SectionHeading label="Live Now" dot />
               <div style={gridStyle}>
                 {filteredLive.map(m => (
                   <MatchCard
-                    key={m.id}
-                    match={m}
+                    key={m.id} match={m}
                     onPredict={() => onSelectMatch(m)}
                     wtaPlayerIds={wtaPlayerIds}
                   />
@@ -745,22 +737,40 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
             </section>
           )}
 
-          {/* ── Scheduled / all matches section ── */}
-          <section>
-            <SectionHeading label={sectionLabel} />
-            {filteredNonLive.length === 0 && filteredLive.length === 0 ? (
-              <EmptyState
-                icon={isToday ? '🎾' : '📅'}
-                title={`No ${activeFilterDef?.label} matches`}
-                desc={
-                  isToday
-                    ? 'No matches found for this filter today.'
-                    : 'No matches found for this filter on this day.'
-                }
-              />
-            ) : filteredNonLive.length === 0 ? null : (
+          {/* ── 2. Upcoming / Scheduled ──────────────────────────────────────── */}
+          <section style={{ marginBottom: filteredFinished.length > 0 ? '40px' : '0' }}>
+            <SectionHeading
+              label={`${activeFilterDef?.label}${dayLabel} — Upcoming`}
+            />
+            {filteredUpcoming.length === 0 ? (
+              filteredLive.length === 0 && filteredFinished.length === 0 ? (
+                // Nothing at all for this filter
+                <EmptyState
+                  icon={isToday ? '🎾' : '📅'}
+                  title={`No ${activeFilterDef?.label} matches`}
+                  desc={
+                    isToday
+                      ? 'No matches found for this filter today.'
+                      : 'No matches found for this filter on this day.'
+                  }
+                />
+              ) : (
+                // There are live or finished matches — just no upcoming ones
+                <div style={{
+                  padding: '16px 20px',
+                  background: 'var(--bg-glass)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius)',
+                  textAlign: 'center',
+                }}>
+                  <p style={{ fontSize: '13px', color: 'var(--text-faint)' }}>
+                    No more upcoming {activeFilterDef?.label} matches today
+                  </p>
+                </div>
+              )
+            ) : (
               <div style={gridStyle}>
-                {filteredNonLive.map((m, i) => (
+                {filteredUpcoming.map((m, i) => (
                   <div key={m.id} className={`tv-fade-up d${Math.min(i + 1, 5)}`}>
                     <MatchCard
                       match={m}
@@ -772,6 +782,26 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
               </div>
             )}
           </section>
+
+          {/* ── 3. Earlier Today (finished) ──────────────────────────────────── */}
+          {filteredFinished.length > 0 && (
+            <section>
+              <SectionHeading
+                label={`${activeFilterDef?.label}${dayLabel} — Earlier Today`}
+              />
+              <div style={gridStyle}>
+                {filteredFinished.map((m, i) => (
+                  <div key={m.id} className={`tv-fade-up d${Math.min(i + 1, 5)}`}>
+                    <MatchCard
+                      match={m}
+                      onPredict={() => onSelectMatch(m)}
+                      wtaPlayerIds={wtaPlayerIds}
+                    />
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
         </>
       )}
     </div>
@@ -955,11 +985,20 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
     day: '2-digit',
   }).format(new Date());
 
-  // Only today's matches + anything currently live
+  // Apply reclassifyMatch so PredictTab is IDENTICAL to MatchesTab in what
+  // counts as active. Old "upcoming" matches that are 4h+ past their
+  // scheduled time are treated as finished here too.
   const predictableMatches = allMatches.filter(m => {
-    if (m.status === 'finished') return false;
-    if (m.status === 'live') return true;
-    const d = m.local_date ?? (m.date ? new Date(m.date).toLocaleDateString('en-CA') : null);
+    const r = reclassifyMatch(m);
+    if (r.status === 'finished') return false;
+    if (r.status === 'live') return true;
+    // upcoming: must be today
+    const d = m.local_date ?? (m.date
+      ? new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Europe/Paris',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+      }).format(new Date(m.date))
+      : null);
     return d === todayStr;
   });
 
