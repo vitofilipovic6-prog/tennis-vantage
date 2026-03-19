@@ -230,15 +230,48 @@ function normaliseMatch(m, wtaPlayerIds = new Set()) {
 // ── Live matches ──────────────────────────────────────────────────────────────
 export async function getLiveMatches(wtaPlayerIds = new Set()) {
   try {
-    const { data, error } = await supabase
-      .from('matches')
-      .select(MATCH_SELECT)
-      .eq('status', 'live')
-      .order('match_date', { ascending: true })
-      .limit(200);
+    const [atpWta, itf, utr, doubles] = await Promise.all([
+      supabase
+        .from('matches')
+        .select(MATCH_SELECT)
+        .eq('status', 'live')
+        .in('match_type', ['atp_singles', 'wta_singles'])
+        .order('match_date', { ascending: true })
+        .limit(200),
 
-    if (error) throw error;
-    return (data ?? []).map(m => normaliseMatch(m, wtaPlayerIds));
+      supabase
+        .from('matches')
+        .select(MATCH_SELECT)
+        .eq('status', 'live')
+        .in('match_type', ['itf_men_singles', 'itf_women_singles', 'itf_men_doubles', 'itf_women_doubles'])
+        .order('match_date', { ascending: true })
+        .limit(150),
+
+      supabase
+        .from('matches')
+        .select(MATCH_SELECT)
+        .eq('status', 'live')
+        .in('match_type', ['utr_men_singles', 'utr_women_singles'])
+        .order('match_date', { ascending: true })
+        .limit(50),
+
+      supabase
+        .from('matches')
+        .select(MATCH_SELECT)
+        .eq('status', 'live')
+        .in('match_type', ['atp_doubles', 'wta_doubles', 'mixed_doubles'])
+        .order('match_date', { ascending: true })
+        .limit(100),
+    ]);
+
+    const combined = [
+      ...(atpWta.data  ?? []),
+      ...(itf.data     ?? []),
+      ...(utr.data     ?? []),
+      ...(doubles.data ?? []),
+    ];
+
+    return combined.map(m => normaliseMatch(m, wtaPlayerIds));
   } catch (e) {
     if (e?.name === 'AbortError') return [];
     console.error('[getLiveMatches]', e.message);
@@ -256,16 +289,52 @@ export async function getUpcomingMatches(wtaPlayerIds = new Set()) {
       day:      '2-digit',
     }).format(new Date());
 
-    const { data, error } = await supabase
-      .from('matches')
-      .select(MATCH_SELECT)
-      .eq('status', 'upcoming')
-      .eq('local_date', todayLocalDate)  // today ONLY — exact match
-      .order('match_date', { ascending: true })
-      .limit(800);
+    const [atpWta, itf, utr, doubles] = await Promise.all([
+      supabase
+        .from('matches')
+        .select(MATCH_SELECT)
+        .eq('status', 'upcoming')
+        .eq('local_date', todayLocalDate)
+        .in('match_type', ['atp_singles', 'wta_singles'])
+        .order('match_date', { ascending: true })
+        .limit(500),
 
-    if (error) throw error;
-    return (data ?? []).map(m => normaliseMatch(m, wtaPlayerIds));
+      supabase
+        .from('matches')
+        .select(MATCH_SELECT)
+        .eq('status', 'upcoming')
+        .eq('local_date', todayLocalDate)
+        .in('match_type', ['itf_men_singles', 'itf_women_singles', 'itf_men_doubles', 'itf_women_doubles'])
+        .order('match_date', { ascending: true })
+        .limit(300),
+
+      supabase
+        .from('matches')
+        .select(MATCH_SELECT)
+        .eq('status', 'upcoming')
+        .eq('local_date', todayLocalDate)
+        .in('match_type', ['utr_men_singles', 'utr_women_singles'])
+        .order('match_date', { ascending: true })
+        .limit(100),
+
+      supabase
+        .from('matches')
+        .select(MATCH_SELECT)
+        .eq('status', 'upcoming')
+        .eq('local_date', todayLocalDate)
+        .in('match_type', ['atp_doubles', 'wta_doubles', 'mixed_doubles'])
+        .order('match_date', { ascending: true })
+        .limit(200),
+    ]);
+
+    const combined = [
+      ...(atpWta.data  ?? []),
+      ...(itf.data     ?? []),
+      ...(utr.data     ?? []),
+      ...(doubles.data ?? []),
+    ];
+
+    return combined.map(m => normaliseMatch(m, wtaPlayerIds));
   } catch (e) {
     if (e?.name === 'AbortError') return [];
     console.error('[getUpcomingMatches]', e.message);

@@ -30,9 +30,13 @@ export default function PlayerSearchModal({ onClose, allPlayers = [], onChatAbou
 
   // Lock body scroll while modal is open
   useEffect(() => {
-    document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = ''; };
-  }, []);
+  document.body.style.overflow = 'hidden';
+  document.body.classList.add('modal-open');
+  return () => {
+    document.body.style.overflow = '';
+    document.body.classList.remove('modal-open');
+  };
+}, []);
 
   // Filter players
   const results = query.trim()

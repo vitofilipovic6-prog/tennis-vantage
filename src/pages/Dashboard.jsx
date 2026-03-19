@@ -106,6 +106,17 @@ export default function Dashboard({ showToast }) {
     return () => document.removeEventListener('pointerup', handler);
   }, [avatarMenuOpen]);
 
+  // Add this useEffect inside the Dashboard component
+  // alongside the other useEffects at the top:
+  useEffect(() => {
+    if (profileOpen) {
+      document.body.classList.add('modal-open');
+    } else {
+      document.body.classList.remove('modal-open');
+    }
+    return () => document.body.classList.remove('modal-open');
+  }, [profileOpen]);
+
   // Keyboard shortcut: Cmd/Ctrl+K opens search
   useEffect(() => {
     const handler = (e) => {

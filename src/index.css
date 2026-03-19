@@ -567,3 +567,8 @@ a { color: inherit; text-decoration: none; }
   }
 }
 
+/* ── Modal open — block all background interaction ───────────────────────── */
+body.modal-open > #root {
+  pointer-events: none;
+}
+
