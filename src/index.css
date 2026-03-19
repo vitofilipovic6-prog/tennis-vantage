@@ -567,8 +567,15 @@ a { color: inherit; text-decoration: none; }
   }
 }
 
-/* ── Modal open — block all background interaction ───────────────────────── */
+/* ── Modal open — block all background interaction and scrolling ─────────── */
+body.modal-open {
+  overflow: hidden;
+  /* Prevent layout shift from scrollbar disappearing */
+  padding-right: var(--scrollbar-width, 0px);
+}
+
 body.modal-open > #root {
   pointer-events: none;
+  overflow: hidden;
 }
 

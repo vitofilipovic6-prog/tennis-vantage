@@ -108,13 +108,16 @@ export default function Dashboard({ showToast }) {
 
   // Add this useEffect inside the Dashboard component
   // alongside the other useEffects at the top:
+  // In Dashboard.jsx — replace the existing profileOpen useEffect
   useEffect(() => {
-    if (profileOpen) {
-      document.body.classList.add('modal-open');
-    } else {
+    if (!profileOpen) return;
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    document.documentElement.style.setProperty('--scrollbar-width', `${scrollbarWidth}px`);
+    document.body.classList.add('modal-open');
+    return () => {
       document.body.classList.remove('modal-open');
-    }
-    return () => document.body.classList.remove('modal-open');
+      document.documentElement.style.removeProperty('--scrollbar-width');
+    };
   }, [profileOpen]);
 
   // Keyboard shortcut: Cmd/Ctrl+K opens search
@@ -656,8 +659,8 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
   const sectionLabel = isToday
     ? `${activeFilterDef?.label} — Today's Matches`
     : `${activeFilterDef?.label} — ${selectedDay?.toLocaleDateString('en-GB', {
-        weekday: 'long', day: 'numeric', month: 'short',
-      }) ?? ''}`;
+      weekday: 'long', day: 'numeric', month: 'short',
+    }) ?? ''}`;
 
   return (
     <div className="tv-fade-up">
