@@ -597,88 +597,44 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
   if (loading) return <LoadingGrid />;
   if (error) return <ErrorMessage msg={error} onRetry={refresh} />;
 
-  // ── Build today's unified match list ────────────────────────────────────────
+  // ── Build today's unified match list ──────────────────────────────────────
   const todayMatches = (() => {
     const map = new Map();
 
-    // Always use Paris timezone for date fallback — matches how DB writes local_date
-    // ── Build today's unified match list ────────────────────────────────────────
-    const todayMatches = (() => {
-      const map = new Map();
+    const toLocalDateStr = (m) => {
+      if (m.local_date) return m.local_date;
+      if (m.date) {
+        return new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'Europe/Paris',
+          year: 'numeric', month: '2-digit', day: '2-digit',
+        }).format(new Date(m.date));
+      }
+      return null;
+    };
 
-      const toLocalDateStr = (m) => {
-        if (m.local_date) return m.local_date;
-        if (m.date) {
-          return new Intl.DateTimeFormat('en-CA', {
-            timeZone: 'Europe/Paris',
-            year: 'numeric', month: '2-digit', day: '2-digit',
-          }).format(new Date(m.date));
-        }
-        return null;
-      };
-
-      // Reclassify: if a match is still "upcoming" in DB but its scheduled
-      // time passed 5+ minutes ago, show it as live on the client.
-      // REMOVED the ">= 240 minutes → finished" branch — that was silently
-      // hiding matches that sync-live hadn't caught up with yet.
-      const now = Date.now();
-      const reclassify = (m) => {
-        if (m.status !== 'upcoming') return m;
-        const matchTime = m.date ? new Date(m.date).getTime() : null;
-        if (!matchTime) return m;
-        const minsElapsed = (now - matchTime) / 60_000;
-        // Only promote to live if between 5 min and 6 hours overdue.
-        // Do NOT flip to finished — let sync-live handle that.
-        if (minsElapsed > 5 && minsElapsed < 360) {
-          return { ...m, status: 'live' };
-        }
-        return m;
-      };
-
-      // 1. All of today's upcoming/live from getUpcomingMatches
-      //    (now includes matches already promoted to 'live' in Supabase)
-      upcoming.forEach(m => {
-        const d = toLocalDateStr(m);
-        if (d === todayStr) map.set(m.id, reclassify(m));
-      });
-
-      // 2. getLiveMatches() results — always include, overwrite if already present
-      //    (getLiveMatches has no local_date filter so catches any cross-day edge cases)
-      live.forEach(m => map.set(m.id, m));
-
-      return [...map.values()].sort(
-        (a, b) => new Date(a.date ?? 0).getTime() - new Date(b.date ?? 0).getTime()
-      );
-    })();
-
-    // ── CHANGE 3: Client-side reclassify ─────────────────────────────────────
-    // If a match's scheduled time has passed by 5+ minutes and it's still
-    // "upcoming" in DB, show it as live on the client.
-    // This bridges the gap between sync-live cron runs (every 5 min).
     const now = Date.now();
     const reclassify = (m) => {
       if (m.status !== 'upcoming') return m;
       const matchTime = m.date ? new Date(m.date).getTime() : null;
       if (!matchTime) return m;
       const minsElapsed = (now - matchTime) / 60_000;
-      // Only show as live if between 5 min and 4 hours after scheduled time
-      // Beyond 4 hours — assume it finished and hide it
-      if (minsElapsed > 5 && minsElapsed < 240) {
+      // Promote to live if 5–360 min overdue. Never flip to finished
+      // client-side — let sync-live handle that.
+      if (minsElapsed > 5 && minsElapsed < 360) {
         return { ...m, status: 'live' };
-      }
-      if (minsElapsed >= 240) {
-        return { ...m, status: 'finished' };
       }
       return m;
     };
 
-    // 1. upcoming rows dated today (reclassify overdue ones to live)
+    // 1. Today's upcoming/live rows from getUpcomingMatches
+    //    (now includes matches already promoted to 'live' in Supabase
+    //    because we query ['upcoming','live'] in tennisApi.js)
     upcoming.forEach(m => {
       const d = toLocalDateStr(m);
       if (d === todayStr) map.set(m.id, reclassify(m));
     });
 
-    // 2. live rows — always include, overwrite upcoming version
+    // 2. getLiveMatches() results — always overwrite so live status wins
     live.forEach(m => map.set(m.id, m));
 
     return [...map.values()].sort(
@@ -686,10 +642,10 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
     );
   })();
 
-  // ── Active pool: today's merged list OR calendar-date results ───────────────
+  // ── Active pool: today's merged list OR calendar-date results ─────────────
   const pool = isToday ? todayMatches : dateMatches;
 
-  // ── Filter by the selected type pill ────────────────────────────────────────
+  // ── Filter by the selected type pill ──────────────────────────────────────
   const byType = (arr) => arr.filter(m => deriveMatchType(m, wtaPlayerIds) === activeFilter);
   const activeFilterDef = MATCH_FILTERS.find(f => f.id === activeFilter);
 
@@ -700,8 +656,8 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
   const sectionLabel = isToday
     ? `${activeFilterDef?.label} — Today's Matches`
     : `${activeFilterDef?.label} — ${selectedDay?.toLocaleDateString('en-GB', {
-      weekday: 'long', day: 'numeric', month: 'short',
-    }) ?? ''}`;
+        weekday: 'long', day: 'numeric', month: 'short',
+      }) ?? ''}`;
 
   return (
     <div className="tv-fade-up">
