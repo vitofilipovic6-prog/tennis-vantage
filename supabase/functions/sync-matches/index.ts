@@ -1,18 +1,9 @@
-// supabase/functions/sync-matches/index.ts
-//
-// RANK FIX: Players are now upserted via the upsert_player_preserve_rank()
-// SQL function which uses a conditional ON CONFLICT DO UPDATE:
-//   - Rank is ONLY overwritten when incoming < 999 OR stored >= 999
-//   - Real ATP/WTA ranks from sync-rankings are never replaced with 999
-//   - name/country/flag are always updated to stay fresh
-//   - wins/losses use GREATEST() so we never lose historical data
-// ─────────────────────────────────────────────────────────────────────────────
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { normalizeEvent, resolveTour } from '../_shared/normalize.ts';
 
-const RAPIDAPI_KEY = Deno.env.get('RAPIDAPI_KEY')!;
-const RAPIDAPI_HOST = 'tennisapi1.p.rapidapi.com';
-const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
+const RAPIDAPI_KEY     = Deno.env.get('RAPIDAPI_KEY')!;
+const RAPIDAPI_HOST    = 'tennisapi1.p.rapidapi.com';
+const SUPABASE_URL     = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SVC_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SVC_KEY);
@@ -22,8 +13,8 @@ async function rapidGet(path: string) {
   console.log('GET', url);
   const res = await fetch(url, {
     headers: {
-      'Content-Type': 'application/json',
-      'x-rapidapi-key': RAPIDAPI_KEY,
+      'Content-Type':    'application/json',
+      'x-rapidapi-key':  RAPIDAPI_KEY,
       'x-rapidapi-host': RAPIDAPI_HOST,
     },
   });
@@ -34,11 +25,11 @@ async function rapidGet(path: string) {
 }
 
 function extractEvents(data: any): any[] {
-  if (Array.isArray(data)) return data;
-  if (Array.isArray(data?.events)) return data.events;
-  if (Array.isArray(data?.result)) return data.result;
-  if (Array.isArray(data?.results)) return data.results;
-  if (Array.isArray(data?.matches)) return data.matches;
+  if (Array.isArray(data))            return data;
+  if (Array.isArray(data?.events))    return data.events;
+  if (Array.isArray(data?.result))    return data.result;
+  if (Array.isArray(data?.results))   return data.results;
+  if (Array.isArray(data?.matches))   return data.matches;
   return [];
 }
 
@@ -58,9 +49,6 @@ function chunk<T>(arr: T[], n: number): T[][] {
   return out;
 }
 
-// ── Rank-safe player upsert ───────────────────────────────────────────────────
-// Calls the Postgres function created by the SQL migration.
-// This is the only correct way to upsert match-API players without nuking ranks.
 async function upsertPlayersPreservingRank(
   players: any[],
   log: string[],
@@ -68,65 +56,94 @@ async function upsertPlayersPreservingRank(
 ): Promise<void> {
   if (players.length === 0) return;
 
+  const CHUNK_SIZE = 100;
   let successCount = 0;
-  let errorCount = 0;
 
-  for (const p of players) {
-    const { error } = await supabase.rpc('upsert_player_preserve_rank', {
-      p_id: String(p.id),
-      p_name: String(p.name),
-      p_country: String(p.country ?? ''),
-      p_flag: String(p.flag ?? '🏳️'),
-      p_rank: Number(p.rank ?? 999),
-      p_wins: Number(p.wins ?? 0),
-      p_losses: Number(p.losses ?? 0),
-      p_ace_avg: Number(p.ace_avg ?? 5.5),
-      p_surface_pref: String(p.surface_pref ?? 'Hard'),
-      p_first_serve: Number(p.first_serve_pct ?? 60),
-      p_recent_form: String(p.recent_form ?? '- - - - -'),
-      p_injury_notes: p.injury_notes ?? null,
-      p_fatigue: Number(p.fatigue_score ?? 0),
+  for (let i = 0; i < players.length; i += CHUNK_SIZE) {
+    const batch = players.slice(i, i + CHUNK_SIZE);
+
+    const { error } = await supabase.rpc('upsert_players_bulk', {
+      p_players: batch.map(p => ({
+        id:              String(p.id),
+        name:            String(p.name),
+        country:         String(p.country ?? ''),
+        flag:            String(p.flag ?? '🏳️'),
+        rank:            Number(p.rank ?? 999),
+        wins:            Number(p.wins ?? 0),
+        losses:          Number(p.losses ?? 0),
+        ace_avg:         Number(p.ace_avg ?? 5.5),
+        surface_pref:    String(p.surface_pref ?? 'Hard'),
+        first_serve_pct: Number(p.first_serve_pct ?? 60),
+        recent_form:     String(p.recent_form ?? '- - - - -'),
+        injury_notes:    p.injury_notes ?? null,
+        fatigue_score:   Number(p.fatigue_score ?? 0),
+      })),
     });
 
     if (error) {
-      errorCount++;
-      if (errorCount <= 3) errors.push(`[PLAYERS/RPC] ${p.name}: ${error.message}`);
+      log.push(`[PLAYERS] Bulk upsert failed, falling back to individual: ${error.message}`);
+      for (const p of batch) {
+        const { error: rpcErr } = await supabase.rpc('upsert_player_preserve_rank', {
+          p_id:           String(p.id),
+          p_name:         String(p.name),
+          p_country:      String(p.country ?? ''),
+          p_flag:         String(p.flag ?? '🏳️'),
+          p_rank:         Number(p.rank ?? 999),
+          p_wins:         Number(p.wins ?? 0),
+          p_losses:       Number(p.losses ?? 0),
+          p_ace_avg:      Number(p.ace_avg ?? 5.5),
+          p_surface_pref: String(p.surface_pref ?? 'Hard'),
+          p_first_serve:  Number(p.first_serve_pct ?? 60),
+          p_recent_form:  String(p.recent_form ?? '- - - - -'),
+          p_injury_notes: p.injury_notes ?? null,
+          p_fatigue:      Number(p.fatigue_score ?? 0),
+        });
+        if (rpcErr) errors.push(`[PLAYERS/RPC] ${p.name}: ${rpcErr.message}`);
+        else successCount++;
+      }
     } else {
-      successCount++;
+      successCount += batch.length;
+      log.push(`[PLAYERS] Bulk upserted batch ${Math.floor(i / CHUNK_SIZE) + 1} (${batch.length} players)`);
     }
   }
 
-  log.push(`[PLAYERS] ✓ rank-safe upsert: ${successCount} ok, ${errorCount} errors`);
+  log.push(`[PLAYERS] ✓ Total upserted: ${successCount}`);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// MAIN HANDLER
+// ─────────────────────────────────────────────────────────────────────────────
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', {
       headers: {
-        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Origin':  '*',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
         'Access-Control-Allow-Headers': 'Authorization, Content-Type',
       },
     });
   }
 
-  // ── Auth guard ────────────────────────────────────────────────────────────
-  // Accepts either:
-  //   1. A known SYNC_SECRET token (from cron jobs / server calls)
-  //   2. The Supabase anon key (from the frontend triggerSync call)
-  // Find and replace the entire auth block with this:
+  // ── Auth guard ──────────────────────────────────────────────────────────────
   const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
-  const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-  const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
 
-  if (!token || (token !== SERVICE_ROLE_KEY && token !== ANON_KEY)) {
+  const SYNC_SECRET      = Deno.env.get('SYNC_SECRET') ?? '';
+  const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+  const ANON_KEY         = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+
+  const validTokens = [SYNC_SECRET, SERVICE_ROLE_KEY, ANON_KEY].filter(Boolean);
+
+  if (!token || !validTokens.includes(token)) {
+    console.error('[AUTH] Rejected. Token prefix:', token ? token.slice(0, 20) : 'empty');
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
       headers: { 'Content-Type': 'application/json' },
     });
   }
 
-  const log: string[] = [];
+  console.log('[AUTH] Authorized successfully');
+
+  const log:    string[] = [];
   const errors: string[] = [];
 
   const playersMap = new Map<string, any>();
@@ -136,7 +153,7 @@ Deno.serve(async (req: Request) => {
     // ── 1. Live matches ───────────────────────────────────────────────────────
     try {
       log.push('[LIVE] Fetching live matches...');
-      const raw = await rapidGet('matches/live');
+      const raw    = await rapidGet('matches/live');
       const events = extractEvents(raw);
       log.push(`[LIVE] Got ${events.length} events`);
 
@@ -156,20 +173,17 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── 2. Date-range matches ─────────────────────────────────────────────────
-    // ── 2. Date-range matches ─────────────────────────────────────────────────
     const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-    const dates = dateRange(0, 0);
+    const dates  = dateRange(0, 0);
     const todayUTC = new Date().toISOString().slice(0, 10);
 
     for (const [i, { day, month, year }] of dates.entries()) {
-      // ⏱ Throttle: BASIC plan = 1 req/sec. Live call already used 1 slot,
-      // so wait 1.1s before each date request to stay safely under the limit.
       if (i > 0) await sleep(1100);
 
       const label = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
       try {
         log.push(`[DATES] Fetching ${label}...`);
-        const raw = await rapidGet(`events/${day}/${month}/${year}`);
+        const raw    = await rapidGet(`events/${day}/${month}/${year}`);
         const events = extractEvents(raw);
         log.push(`[DATES] ${label}: ${events.length} events`);
 
@@ -197,8 +211,6 @@ Deno.serve(async (req: Request) => {
     log.push(`[SYNC] Total: ${matchesMap.size} matches, ${playersMap.size} players`);
 
     // ── 3. Rank-safe player upsert ────────────────────────────────────────────
-    // Uses the upsert_player_preserve_rank() Postgres function.
-    // Never overwrites a real rank (< 999) with the match-API placeholder (999).
     if (playersMap.size > 0) {
       await upsertPlayersPreservingRank([...playersMap.values()], log, errors);
     }
@@ -217,16 +229,12 @@ Deno.serve(async (req: Request) => {
       log.push('[MATCHES] No matches to upsert');
     }
 
-    // ── 5. FORCE-FINISH stale matches ─────────────────────────────────────────────
-    // Uses local_date (Europe/Paris timezone) NOT match_date (UTC) to avoid
-    // killing matches that are still live in their local timezone.
+    // ── 5. Force-finish stale matches ─────────────────────────────────────────
     try {
       const todayLocalDate = new Intl.DateTimeFormat('en-CA', {
         timeZone: 'Europe/Paris',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-      }).format(new Date()); // e.g. "2026-03-17"
+        year: 'numeric', month: '2-digit', day: '2-digit',
+      }).format(new Date());
 
       for (const stalledStatus of ['upcoming', 'live'] as const) {
         const { data: staleMatches, error: staleErr } = await supabase
@@ -234,7 +242,7 @@ Deno.serve(async (req: Request) => {
           .select('id, local_date, match_date')
           .eq('status', stalledStatus)
           .not('local_date', 'is', null)
-          .lt('local_date', todayLocalDate); // ← KEY: compare date strings, not timestamps
+          .lt('local_date', todayLocalDate);
 
         if (staleErr) {
           errors.push(`[FORCE-FINISH/${stalledStatus}] ${staleErr.message}`);
@@ -243,25 +251,17 @@ Deno.serve(async (req: Request) => {
 
         if (staleMatches && staleMatches.length > 0) {
           const ids = staleMatches.map((m: any) => m.id);
-          log.push(`[FORCE-FINISH] Finishing ${ids.length} stale '${stalledStatus}' matches with local_date < ${todayLocalDate}`);
-
+          log.push(`[FORCE-FINISH] Finishing ${ids.length} stale '${stalledStatus}' matches`);
           const { error: updateErr } = await supabase
-            .from('matches')
-            .update({ status: 'finished' })
-            .in('id', ids);
-
-          if (updateErr) {
-            errors.push(`[FORCE-FINISH/${stalledStatus}] update error: ${updateErr.message}`);
-          } else {
-            log.push(`[FORCE-FINISH] ✓ Marked ${ids.length} '${stalledStatus}' as finished`);
-          }
+            .from('matches').update({ status: 'finished' }).in('id', ids);
+          if (updateErr) errors.push(`[FORCE-FINISH/${stalledStatus}] ${updateErr.message}`);
+          else log.push(`[FORCE-FINISH] ✓ Marked ${ids.length} as finished`);
         } else {
           log.push(`[FORCE-FINISH/${stalledStatus}] No stale matches found`);
         }
       }
 
-      // Also handle matches with NULL local_date as a safety net —
-      // fall back to UTC date comparison for these orphaned rows only
+      // Null local_date safety net
       const { data: nullDateMatches } = await supabase
         .from('matches')
         .select('id, match_date')
@@ -272,14 +272,13 @@ Deno.serve(async (req: Request) => {
       if (nullDateMatches && nullDateMatches.length > 0) {
         const ids = nullDateMatches.map((m: any) => m.id);
         await supabase.from('matches').update({ status: 'finished' }).in('id', ids);
-        log.push(`[FORCE-FINISH] ✓ Finished ${ids.length} null-local_date orphan matches`);
+        log.push(`[FORCE-FINISH] ✓ Finished ${ids.length} null-local_date orphans`);
       }
-
     } catch (e: unknown) {
       errors.push(`[FORCE-FINISH] ${e instanceof Error ? e.message : String(e)}`);
     }
 
-    // ── 6. BACKFILL match_type ────────────────────────────────────────────────
+    // ── 6. Backfill match_type ────────────────────────────────────────────────
     try {
       const { data: existingMatches, error: fetchErr } = await supabase
         .from('matches')
@@ -290,21 +289,19 @@ Deno.serve(async (req: Request) => {
         const updates: { id: string; match_type: string }[] = [];
 
         for (const m of existingMatches) {
-          const nameLower = (m.tournament ?? '').toLowerCase();
+          const nameLower  = (m.tournament ?? '').toLowerCase();
           const roundLower = (m.round ?? '').toLowerCase();
-          const isDoubles = roundLower.includes('double') || nameLower.includes('double');
-          const isMixed = roundLower.includes('mixed') || nameLower.includes('mixed');
-          const isWta = nameLower.includes('wta');
+          const isDoubles  = roundLower.includes('double') || nameLower.includes('double');
+          const isMixed    = roundLower.includes('mixed')  || nameLower.includes('mixed');
+          const isWta      = nameLower.includes('wta');
 
           let derivedType = m.match_type;
-          if (isMixed && isDoubles) derivedType = 'mixed_doubles';
+          if (isMixed && isDoubles)  derivedType = 'mixed_doubles';
           else if (isDoubles && isWta) derivedType = 'wta_doubles';
-          else if (isDoubles) derivedType = 'atp_doubles';
-          else if (isWta) derivedType = 'wta_singles';
+          else if (isDoubles)          derivedType = 'atp_doubles';
+          else if (isWta)              derivedType = 'wta_singles';
 
-          if (derivedType !== m.match_type) {
-            updates.push({ id: m.id, match_type: derivedType });
-          }
+          if (derivedType !== m.match_type) updates.push({ id: m.id, match_type: derivedType });
         }
 
         if (updates.length > 0) {
@@ -316,8 +313,8 @@ Deno.serve(async (req: Request) => {
           log.push('[BACKFILL] All match_type values correct');
         }
       }
-    } catch (backfillErr: unknown) {
-      errors.push(`[BACKFILL] ${backfillErr instanceof Error ? backfillErr.message : String(backfillErr)}`);
+    } catch (e: unknown) {
+      errors.push(`[BACKFILL] ${e instanceof Error ? e.message : String(e)}`);
     }
 
   } catch (err: unknown) {
@@ -329,7 +326,7 @@ Deno.serve(async (req: Request) => {
     {
       status: errors.length ? 207 : 200,
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type':                'application/json',
         'Access-Control-Allow-Origin': '*',
       },
     }
