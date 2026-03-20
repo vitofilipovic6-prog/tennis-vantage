@@ -2,7 +2,7 @@
 import { supabase } from './supabase';
 
 const MATCH_SELECT = `
-  id, status, tournament, round, surface, score, match_date, local_date, match_type, winner_id,
+  id, status, computed_status, button_text, tournament, round, surface, score, match_date, local_date, match_type, winner_id,
   player1:players!player1_id (
     id, name, country, flag, rank, wins, losses,
     ace_avg, surface_pref, first_serve_pct, recent_form
@@ -212,27 +212,30 @@ function normaliseMatch(m, wtaPlayerIds = new Set()) {
   };
 
   return {
-    id:         m.id,
-    status:     m.status,
-    tournament: m.tournament,
-    round:      m.round,
-    surface:    m.surface,
-    score:      m.score ?? null,
-    date:       m.match_date,
-    local_date: m.local_date ?? null,
-    match_type: m.match_type ?? 'atp_singles',
-    winner_id:  m.winner_id ?? null,
-    player1:    patchFlag(m.player1 ?? { id: 'p1', name: 'TBD', flag: '🏳️', rank: 999 }),
-    player2:    patchFlag(m.player2 ?? { id: 'p2', name: 'TBD', flag: '🏳️', rank: 999 }),
+    id:          m.id,
+    // Use computed_status from view — falls back to raw status if not available
+    status:      m.computed_status ?? m.status,
+    button_text: m.button_text ?? null,
+    tournament:  m.tournament,
+    round:       m.round,
+    surface:     m.surface,
+    score:       m.score ?? null,
+    date:        m.match_date,
+    local_date:  m.local_date ?? null,
+    match_type:  m.match_type ?? 'atp_singles',
+    winner_id:   m.winner_id ?? null,
+    player1:     patchFlag(m.player1 ?? { id: 'p1', name: 'TBD', flag: '🏳️', rank: 999 }),
+    player2:     patchFlag(m.player2 ?? { id: 'p2', name: 'TBD', flag: '🏳️', rank: 999 }),
   };
 }
 
 // ── Live matches ──────────────────────────────────────────────────────────────
+// Queries matches_live_status view so computed_status is always accurate
 export async function getLiveMatches(wtaPlayerIds = new Set()) {
   try {
     const [atpWta, itf, utr, doubles] = await Promise.all([
       supabase
-        .from('matches_live_status') 
+        .from('matches_live_status')
         .select(MATCH_SELECT)
         .eq('computed_status', 'live')
         .in('match_type', ['atp_singles', 'wta_singles'])
@@ -240,7 +243,7 @@ export async function getLiveMatches(wtaPlayerIds = new Set()) {
         .limit(200),
 
       supabase
-        .from('matches_live_status') 
+        .from('matches_live_status')
         .select(MATCH_SELECT)
         .eq('computed_status', 'live')
         .in('match_type', ['itf_men_singles', 'itf_women_singles', 'itf_men_doubles', 'itf_women_doubles'])
@@ -248,7 +251,7 @@ export async function getLiveMatches(wtaPlayerIds = new Set()) {
         .limit(150),
 
       supabase
-        .from('matches_live_status') 
+        .from('matches_live_status')
         .select(MATCH_SELECT)
         .eq('computed_status', 'live')
         .in('match_type', ['utr_men_singles', 'utr_women_singles'])
@@ -256,7 +259,7 @@ export async function getLiveMatches(wtaPlayerIds = new Set()) {
         .limit(50),
 
       supabase
-        .from('matches_live_status') 
+        .from('matches_live_status')
         .select(MATCH_SELECT)
         .eq('computed_status', 'live')
         .in('match_type', ['atp_doubles', 'wta_doubles', 'mixed_doubles'])
@@ -279,8 +282,8 @@ export async function getLiveMatches(wtaPlayerIds = new Set()) {
   }
 }
 
-// ── Upcoming matches ──────────────────────────────────────────────────────────
 // ── Upcoming matches (today only — both upcoming AND live status) ──────────────
+// Queries matches_live_status view so computed_status is always accurate
 export async function getUpcomingMatches(wtaPlayerIds = new Set()) {
   try {
     const todayLocalDate = new Intl.DateTimeFormat('en-CA', {
@@ -290,14 +293,11 @@ export async function getUpcomingMatches(wtaPlayerIds = new Set()) {
       day:      '2-digit',
     }).format(new Date());
 
-    // Fetch BOTH upcoming and live for today — live matches have
-    // already been promoted by sync-live and won't appear in
-    // an upcoming-only query, causing them to silently disappear.
     const [atpWta, itf, utr, doubles] = await Promise.all([
       supabase
         .from('matches_live_status')
         .select(MATCH_SELECT)
-        .in('computed_status', ['upcoming', 'live'])   // ← KEY FIX: include live
+        .in('computed_status', ['upcoming', 'live'])
         .eq('local_date', todayLocalDate)
         .in('match_type', ['atp_singles', 'wta_singles'])
         .order('match_date', { ascending: true })
@@ -306,7 +306,7 @@ export async function getUpcomingMatches(wtaPlayerIds = new Set()) {
       supabase
         .from('matches_live_status')
         .select(MATCH_SELECT)
-        .in('computed_status', ['upcoming', 'live'])   // ← KEY FIX
+        .in('computed_status', ['upcoming', 'live'])
         .eq('local_date', todayLocalDate)
         .in('match_type', ['itf_men_singles', 'itf_women_singles', 'itf_men_doubles', 'itf_women_doubles'])
         .order('match_date', { ascending: true })
@@ -315,7 +315,7 @@ export async function getUpcomingMatches(wtaPlayerIds = new Set()) {
       supabase
         .from('matches_live_status')
         .select(MATCH_SELECT)
-        .in('computed_status', ['upcoming', 'live'])   // ← KEY FIX
+        .in('computed_status', ['upcoming', 'live'])
         .eq('local_date', todayLocalDate)
         .in('match_type', ['utr_men_singles', 'utr_women_singles'])
         .order('match_date', { ascending: true })
@@ -324,7 +324,7 @@ export async function getUpcomingMatches(wtaPlayerIds = new Set()) {
       supabase
         .from('matches_live_status')
         .select(MATCH_SELECT)
-        .in('computed_status', ['upcoming', 'live'])   // ← KEY FIX
+        .in('computed_status', ['upcoming', 'live'])
         .eq('local_date', todayLocalDate)
         .in('match_type', ['atp_doubles', 'wta_doubles', 'mixed_doubles'])
         .order('match_date', { ascending: true })
@@ -347,11 +347,12 @@ export async function getUpcomingMatches(wtaPlayerIds = new Set()) {
 }
 
 // ── Matches by date ───────────────────────────────────────────────────────────
+// Past dates use raw matches table (no live status needed for finished matches)
 export async function getMatchesByDate(dateString, wtaPlayerIds = new Set()) {
   try {
-    // Primary: use local_date column
+    // Primary: use matches_live_status view with local_date
     const { data: byLocalDate, error: e1 } = await supabase
-      .from('matches')
+      .from('matches_live_status')
       .select(MATCH_SELECT)
       .eq('local_date', dateString)
       .order('match_date', { ascending: true });
@@ -366,7 +367,7 @@ export async function getMatchesByDate(dateString, wtaPlayerIds = new Set()) {
     const next = new Date(d); next.setUTCDate(d.getUTCDate() + 1);
 
     const { data, error } = await supabase
-      .from('matches')
+      .from('matches_live_status')
       .select(MATCH_SELECT)
       .gte('match_date', `${prev.toISOString().slice(0, 10)}T00:00:00.000Z`)
       .lte('match_date', `${next.toISOString().slice(0, 10)}T23:59:59.999Z`)
@@ -500,10 +501,6 @@ export async function getRecentMatches(playerId, limit = 5) {
 }
 
 // ── AI-Powered Prediction engine ──────────────────────────────────────────────
-// Uses /api/chat (Gemini) for intelligent, multi-factor analysis.
-// Falls back to algorithmic prediction if AI is unavailable.
-// ── AI-Powered Prediction engine ──────────────────────────────────────────────
-// ── AI-Powered Prediction engine ──────────────────────────────────────────────
 export async function getPrediction(match) {
   const p1 = match.player1;
   const p2 = match.player2;
@@ -585,7 +582,6 @@ export async function getPrediction(match) {
     }
     h2hSection = `HEAD-TO-HEAD (DB):\n  ${h2hText}\n  Last 5 results (from ${p1.name}'s perspective): ${(h2h.last5 ?? []).join(' ')}`;
   } else {
-    // No H2H — show each player's recent matches instead
     h2hSection = `HEAD-TO-HEAD: No meetings in our DB. Use your own knowledge of their rivalry.\n\nRECENT FORM (from DB):\n${formatRecent(p1Matches, p1.name)}\n${formatRecent(p2Matches, p2.name)}`;
   }
 

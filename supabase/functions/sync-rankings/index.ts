@@ -2,9 +2,9 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { normalizeRankingRow } from '../_shared/normalize.ts';
 
-const RAPIDAPI_KEY     = Deno.env.get('RAPIDAPI_KEY')!;
-const RAPIDAPI_HOST    = 'tennisapi1.p.rapidapi.com';
-const SUPABASE_URL     = Deno.env.get('SUPABASE_URL')!;
+const RAPIDAPI_KEY = Deno.env.get('RAPIDAPI_KEY')!;
+const RAPIDAPI_HOST = 'tennisapi1.p.rapidapi.com';
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SVC_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SVC_KEY);
@@ -20,9 +20,9 @@ async function rapidGet(path: string): Promise<any | null> {
 
   const res = await fetch(url, {
     headers: {
-      'Content-Type':    'application/json',
+      'Content-Type': 'application/json',
       'x-rapidapi-host': RAPIDAPI_HOST,
-      'x-rapidapi-key':  RAPIDAPI_KEY,
+      'x-rapidapi-key': RAPIDAPI_KEY,
     },
   });
 
@@ -41,11 +41,11 @@ async function rapidGet(path: string): Promise<any | null> {
 
 // ── Local extractArray — handles flat array or wrapped object ─────────────────
 function extractArray(raw: any): any[] {
-  if (Array.isArray(raw))           return raw;
+  if (Array.isArray(raw)) return raw;
   if (Array.isArray(raw?.rankings)) return raw.rankings;
-  if (Array.isArray(raw?.data))     return raw.data;
-  if (Array.isArray(raw?.result))   return raw.result;
-  if (Array.isArray(raw?.results))  return raw.results;
+  if (Array.isArray(raw?.data)) return raw.data;
+  if (Array.isArray(raw?.result)) return raw.result;
+  if (Array.isArray(raw?.results)) return raw.results;
   // Sometimes rankings come back as { "1": {...}, "2": {...} }
   if (raw && typeof raw === 'object') {
     const vals = Object.values(raw);
@@ -59,7 +59,7 @@ Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', {
       headers: {
-        'Access-Control-Allow-Origin':  '*',
+        'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Headers': 'Authorization, Content-Type',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
       },
@@ -69,26 +69,19 @@ Deno.serve(async (req: Request) => {
   // ── Auth guard ──────────────────────────────────────────────────────────────
   // Accepts: SYNC_SECRET, SUPABASE_ANON_KEY, or SUPABASE_SERVICE_ROLE_KEY
   // This allows both cron jobs (service role) and manual triggers to work
+  // Same change:
   const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
-
-  const SYNC_SECRET      = Deno.env.get('SYNC_SECRET')               ?? '';
-  const ANON_KEY         = Deno.env.get('SUPABASE_ANON_KEY')         ?? '';
   const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+  const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
 
-  const isAuthorized = (
-    token === SYNC_SECRET      ||
-    token === ANON_KEY         ||
-    token === SERVICE_ROLE_KEY
-  );
-
-  if (!isAuthorized) {
+  if (!token || (token !== SERVICE_ROLE_KEY && token !== ANON_KEY)) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
       headers: { 'Content-Type': 'application/json' },
     });
   }
 
-  const log: string[]    = [];
+  const log: string[] = [];
   const errors: string[] = [];
 
   for (const { tour, path } of TOURS) {
@@ -111,7 +104,7 @@ Deno.serve(async (req: Request) => {
 
       log.push(`[${tour}] Row[0]: ${JSON.stringify(list[0]).slice(0, 500)}`);
 
-      const playerRows:  object[] = [];
+      const playerRows: object[] = [];
       const rankingRows: object[] = [];
 
       for (let i = 0; i < Math.min(list.length, 100); i++) {
@@ -159,7 +152,7 @@ Deno.serve(async (req: Request) => {
   return new Response(
     JSON.stringify({ ok: errors.length === 0, log, errors }),
     {
-      status:  errors.length ? 207 : 200,
+      status: errors.length ? 207 : 200,
       headers: {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',

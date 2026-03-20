@@ -1,12 +1,11 @@
 // src/pages/Dashboard.jsx – TennisVantage main app screen
 //
-// FIXES IN THIS VERSION:
-//  [RANKINGS]   ITF Men, ITF Women, UTR Men, UTR Women tabs in Rankings
-//  [FLAGS]      resolveFlag() patched via tennisApi everywhere
-//  [MOBILE-SO]  Avatar tap shows dropdown with Profile + Sign Out (not just Profile)
-//  [SEARCH]     allPlayersForSearch now pulls from full DB via useAllPlayers hook
-//  [AI-PRED]    PredictionCard shows AI analysis field + "AI Powered" badge
-//  [LIVE]       Client-side reclassify bridges gap between sync-live cron runs
+// CHANGES vs original:
+//  [STATUS]      reclassifyMatch() removed — matches_live_status VIEW handles all status logic
+//  [MATCHCARD]   isFinished/isLive now trust m.status directly from view
+//  [MATCHCARD]   button_text from DB view used for predict button label
+//  [PREDICTIONS] predictableMatches filter simplified — no reclassify needed
+//  [TODAY]       todayMatches build simplified — no reclassify needed
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState, useMemo, useEffect, useRef, useCallback, memo } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -25,36 +24,16 @@ import ProfilePage from './ProfilePage';
 // MATCH TYPE FILTER DEFINITIONS
 // ─────────────────────────────────────────────────────────────────────────────
 const MATCH_FILTERS = [
-  { id: 'atp_singles', label: 'ATP', shortLabel: 'ATP', color: '#60a5fa' },
-  { id: 'wta_singles', label: 'WTA', shortLabel: 'WTA', color: '#f472b6' },
-  { id: 'itf_men_singles', label: 'ITF Men', shortLabel: 'ITF M', color: '#fb923c' },
-  { id: 'itf_women_singles', label: 'ITF Women', shortLabel: 'ITF W', color: '#f59e0b' },
-  { id: 'utr_men_singles', label: 'UTR Men', shortLabel: 'UTR M', color: '#a78bfa' },
-  { id: 'utr_women_singles', label: 'UTR Women', shortLabel: 'UTR W', color: '#e879f9' },
-  { id: 'atp_doubles', label: 'ATP Doubles', shortLabel: 'ATP 2×', color: '#818cf8' },
-  { id: 'wta_doubles', label: 'WTA Doubles', shortLabel: 'WTA 2×', color: '#fb7185' },
-  { id: 'mixed_doubles', label: 'Mixed Doubles', shortLabel: 'Mixed', color: '#34d399' },
+  { id: 'atp_singles',       label: 'ATP',           shortLabel: 'ATP',    color: '#60a5fa' },
+  { id: 'wta_singles',       label: 'WTA',           shortLabel: 'WTA',    color: '#f472b6' },
+  { id: 'itf_men_singles',   label: 'ITF Men',       shortLabel: 'ITF M',  color: '#fb923c' },
+  { id: 'itf_women_singles', label: 'ITF Women',     shortLabel: 'ITF W',  color: '#f59e0b' },
+  { id: 'utr_men_singles',   label: 'UTR Men',       shortLabel: 'UTR M',  color: '#a78bfa' },
+  { id: 'utr_women_singles', label: 'UTR Women',     shortLabel: 'UTR W',  color: '#e879f9' },
+  { id: 'atp_doubles',       label: 'ATP Doubles',   shortLabel: 'ATP 2×', color: '#818cf8' },
+  { id: 'wta_doubles',       label: 'WTA Doubles',   shortLabel: 'WTA 2×', color: '#fb7185' },
+  { id: 'mixed_doubles',     label: 'Mixed Doubles', shortLabel: 'Mixed',  color: '#34d399' },
 ];
-
-// ─── Client-side match status reclassification ────────────────────────────
-// DB status can be stale between cron runs. Corrects it based on elapsed time.
-// Used by BOTH MatchesTab and PredictionsTab so they stay in sync.
-function reclassifyMatch(m) {
-  const matchTime = m.date ? new Date(m.date).getTime() : null;
-  if (!matchTime) return m;
-  const minsElapsed = (Date.now() - matchTime) / 60_000;
-
-  if (m.status === 'upcoming') {
-    // Negative = future → leave as upcoming
-    if (minsElapsed > 5 && minsElapsed < 240) return { ...m, status: 'live' };
-    if (minsElapsed >= 240) return { ...m, status: 'finished' };
-  }
-  if (m.status === 'live') {
-    // 5-hour hard ceiling — no match runs longer
-    if (minsElapsed >= 300) return { ...m, status: 'finished' };
-  }
-  return m;
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LAYOUT SHELL
@@ -115,21 +94,18 @@ export default function Dashboard({ showToast }) {
   // Uses 'pointerup' instead of 'mousedown' so dropdown button onClick fires first
   useEffect(() => {
     if (!avatarMenuOpen) return;
-    const handler = (e) => {
+    const fn = (e) => {
       const clickedInsideDesktop = avatarMenuRef.current?.contains(e.target);
       const clickedInsideMobile = avatarMenuRefMobile.current?.contains(e.target);
       if (!clickedInsideDesktop && !clickedInsideMobile) {
         setAvatarMenuOpen(false);
       }
     };
-    document.addEventListener('pointerup', handler);
-    return () => document.removeEventListener('pointerup', handler);
+    document.addEventListener('pointerdown', fn);
+    return () => document.removeEventListener('pointerdown', fn);
   }, [avatarMenuOpen]);
 
-  // Add this useEffect inside the Dashboard component
-  // alongside the other useEffects at the top:
-  // In Dashboard.jsx — replace the existing profileOpen useEffect
-  // REPLACE WITH — uses the same iOS-safe position:fixed approach:
+  // Body scroll lock for profile overlay — iOS-safe position:fixed approach
   useEffect(() => {
     if (!profileOpen) return;
     const scrollY = window.scrollY;
@@ -169,10 +145,10 @@ export default function Dashboard({ showToast }) {
   }, []);
 
   const tabs = [
-    { id: 'matches', label: 'Matches', icon: '🎾' },
-    { id: 'predictions', label: 'Predict', icon: '🔮' },
-    { id: 'rankings', label: 'Rankings', icon: '🏆' },
-    { id: 'chat', label: 'AI Chat', icon: '🤖' },
+    { id: 'matches',     label: 'Matches',  icon: '🎾' },
+    { id: 'predictions', label: 'Predict',  icon: '🔮' },
+    { id: 'rankings',    label: 'Rankings', icon: '🏆' },
+    { id: 'chat',        label: 'AI Chat',  icon: '🤖' },
   ];
 
   async function handleLogout() {
@@ -256,8 +232,6 @@ export default function Dashboard({ showToast }) {
           <span className="hide-sm">Search players…</span>
         </button>
 
-        {/* ── CHANGE 2: Syncing indicator removed — sync is now cron-driven ── */}
-
         {/* Desktop: avatar dropdown */}
         <div className="hide-md" style={{ position: 'relative', flexShrink: 0 }} ref={avatarMenuRef}>
           <button
@@ -278,16 +252,16 @@ export default function Dashboard({ showToast }) {
           >
             {profile?.avatar_url
               ? <img
-                src={profile.avatar_url}
-                alt="Avatar"
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                onError={e => { e.currentTarget.style.display = 'none'; }}
-              />
+                  src={profile.avatar_url}
+                  alt="Avatar"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  onError={e => { e.currentTarget.style.display = 'none'; }}
+                />
               : avatarInitial
             }
           </button>
 
-          {/* Dropdown */}
+          {/* Desktop Dropdown */}
           {avatarMenuOpen && (
             <div style={{
               position: 'absolute', top: 'calc(100% + 8px)', right: 0,
@@ -365,11 +339,11 @@ export default function Dashboard({ showToast }) {
           >
             {profile?.avatar_url
               ? <img
-                src={profile.avatar_url}
-                alt="Avatar"
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                onError={e => { e.currentTarget.style.display = 'none'; }}
-              />
+                  src={profile.avatar_url}
+                  alt="Avatar"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  onError={e => { e.currentTarget.style.display = 'none'; }}
+                />
               : avatarInitial
             }
           </button>
@@ -503,8 +477,8 @@ export default function Dashboard({ showToast }) {
           position: 'fixed', inset: 0, zIndex: 300,
           background: 'var(--bg)',
           overflowY: 'auto',
-          overscrollBehavior: 'contain',    // ← ADD
-          WebkitOverflowScrolling: 'touch', // ← ADD
+          overscrollBehavior: 'contain',
+          WebkitOverflowScrolling: 'touch',
         }}>
           <ProfilePage onBack={() => setProfileOpen(false)} showToast={showToast} />
         </div>
@@ -659,18 +633,12 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
   if (error) return <ErrorMessage msg={error} onRetry={refresh} />;
 
   // ── Build today's unified match list ──────────────────────────────────────
-  // ── Build today's unified match list ──────────────────────────────────────
-  // ── Build today's unified match list ──────────────────────────────────────
+  // Status comes directly from matches_live_status view — no reclassify needed
   const todayMatches = (() => {
     const map = new Map();
-
-    // getUpcomingMatches() already filters to today — no extra date check needed.
-    // Use module-level reclassifyMatch so status is consistent with PredictTab.
-    upcoming.forEach(m => { map.set(m.id, reclassifyMatch(m)); });
-
+    upcoming.forEach(m => { map.set(m.id, m); });
     // Live rows always overwrite upcoming so DB live status wins
     live.forEach(m => map.set(m.id, m));
-
     return [...map.values()].sort(
       (a, b) => new Date(a.date ?? 0).getTime() - new Date(b.date ?? 0).getTime()
     );
@@ -683,8 +651,8 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
   const byType = (arr) => arr.filter(m => deriveMatchType(m, wtaPlayerIds) === activeFilter);
   const activeFilterDef = MATCH_FILTERS.find(f => f.id === activeFilter);
 
-  const filteredPool = byType(pool);
-  const filteredLive = filteredPool.filter(m => m.status === 'live');
+  const filteredPool     = byType(pool);
+  const filteredLive     = filteredPool.filter(m => m.status === 'live');
   const filteredUpcoming = filteredPool.filter(m => m.status === 'upcoming');
   const filteredFinished = filteredPool.filter(m => m.status === 'finished');
 
@@ -818,10 +786,9 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = 
   const effectiveType = deriveMatchType(m, wtaPlayerIds);
   const matchTypeDef = MATCH_FILTERS.find(f => f.id === effectiveType) ?? null;
 
-  const todayLocal = new Date().toLocaleDateString('en-CA');
-  const matchLocal = m.date ? new Date(m.date).toLocaleDateString('en-CA') : null;
-  const isFinished = m.status === 'finished' || (matchLocal && matchLocal < todayLocal);
-  const isLive = m.status === 'live' && !isFinished;
+  // Trust status directly from matches_live_status view — no date math needed
+  const isFinished = m.status === 'finished';
+  const isLive     = m.status === 'live';
 
   // Resolve flags on-the-fly for any missing ones
   const p1Flag = m.player1?.flag && m.player1.flag !== '🏳️' ? m.player1.flag : resolveFlag(m.player1?.country ?? '');
@@ -937,7 +904,7 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = 
         ) : null}
       </div>
 
-      {/* Predict button */}
+      {/* Predict button — uses button_text from DB view */}
       {!isFinished && (
         <button
           onClick={onPredict}
@@ -952,7 +919,7 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = 
           onMouseEnter={e => { e.currentTarget.style.background = 'var(--lime)'; e.currentTarget.style.color = '#070B14'; }}
           onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--lime)'; }}
         >
-          {isLive ? '🔮 Predict winner' : '🔮 Predict this match'}
+          🔮 {m.button_text ?? (isLive ? 'Predict winner' : 'Predict this match')}
         </button>
       )}
     </Card>
@@ -963,7 +930,6 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = 
 // PREDICTIONS TAB
 // ─────────────────────────────────────────────────────────────────────────────
 function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMatch, wtaPlayerIds }) {
-  // REPLACE WITH:
   const [predFilter, setPredFilter] = useState(() =>
     selectedMatch ? (deriveMatchType(selectedMatch, wtaPlayerIds) ?? 'atp_singles') : 'atp_singles'
   );
@@ -974,6 +940,7 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
     const matchType = deriveMatchType(selectedMatch, wtaPlayerIds);
     if (matchType) setPredFilter(matchType);
   }, [selectedMatch?.id]);
+
   const { prediction, loading: predLoading, error: predError } = usePrediction(selectedMatch);
   const [h2h, setH2h] = useState(null);
   const [h2hLoading, setH2hLoading] = useState(false);
@@ -985,19 +952,16 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
     day: '2-digit',
   }).format(new Date());
 
-  // Apply reclassifyMatch so PredictTab is IDENTICAL to MatchesTab in what
-  // counts as active. Old "upcoming" matches that are 4h+ past their
-  // scheduled time are treated as finished here too.
+  // Status comes from view — no reclassify needed
   const predictableMatches = allMatches.filter(m => {
-    const r = reclassifyMatch(m);
-    if (r.status === 'finished') return false;
-    if (r.status === 'live') return true;
+    if (m.status === 'finished') return false;
+    if (m.status === 'live')     return true;
     // upcoming: must be today
     const d = m.local_date ?? (m.date
       ? new Intl.DateTimeFormat('en-CA', {
-        timeZone: 'Europe/Paris',
-        year: 'numeric', month: '2-digit', day: '2-digit',
-      }).format(new Date(m.date))
+          timeZone: 'Europe/Paris',
+          year: 'numeric', month: '2-digit', day: '2-digit',
+        }).format(new Date(m.date))
       : null);
     return d === todayStr;
   });
@@ -1252,7 +1216,7 @@ function PredictionCard({ match: m, prediction: pred }) {
             </span>
           </div>
           <div style={{ height: '8px', borderRadius: '99px', background: 'var(--bg-glass-md)', overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: `${p1WinPct}%`, background: 'var(--lime)', borderRadius: '99px', transition: 'width 0.8s ease' }} />
+            <div style={{ height: '100%', width: `${p1WinPct}%`, background: 'linear-gradient(90deg, #9fef66, #6bc940)', borderRadius: '99px', transition: 'width 0.8s ease' }} />
           </div>
         </div>
 
@@ -1439,12 +1403,12 @@ function H2HPanel({ h2h, match: m }) {
 // RANKINGS TAB
 // ─────────────────────────────────────────────────────────────────────────────
 const RANKING_TOURS = [
-  { id: 'ATP', label: 'ATP', color: '#60a5fa', pointsLabel: 'Points', interactive: true },
-  { id: 'WTA', label: 'WTA', color: '#f472b6', pointsLabel: 'Points', interactive: true },
-  { id: 'ITF_MEN', label: 'ITF Men', color: '#fb923c', pointsLabel: 'Wins', interactive: false },
-  { id: 'ITF_WOMEN', label: 'ITF Women', color: '#f59e0b', pointsLabel: 'Wins', interactive: false },
-  { id: 'UTR_MEN', label: 'UTR Men', color: '#a78bfa', pointsLabel: 'Wins', interactive: false },
-  { id: 'UTR_WOMEN', label: 'UTR Women', color: '#e879f9', pointsLabel: 'Wins', interactive: false },
+  { id: 'ATP',       label: 'ATP',       color: '#60a5fa', pointsLabel: 'Points', interactive: true  },
+  { id: 'WTA',       label: 'WTA',       color: '#f472b6', pointsLabel: 'Points', interactive: true  },
+  { id: 'ITF_MEN',   label: 'ITF Men',   color: '#fb923c', pointsLabel: 'Wins',   interactive: false },
+  { id: 'ITF_WOMEN', label: 'ITF Women', color: '#f59e0b', pointsLabel: 'Wins',   interactive: false },
+  { id: 'UTR_MEN',   label: 'UTR Men',   color: '#a78bfa', pointsLabel: 'Wins',   interactive: false },
+  { id: 'UTR_WOMEN', label: 'UTR Women', color: '#e879f9', pointsLabel: 'Wins',   interactive: false },
 ];
 
 function RankingsTab({ onSelectPlayer }) {

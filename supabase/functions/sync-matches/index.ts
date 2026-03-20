@@ -114,19 +114,12 @@ Deno.serve(async (req: Request) => {
   // Accepts either:
   //   1. A known SYNC_SECRET token (from cron jobs / server calls)
   //   2. The Supabase anon key (from the frontend triggerSync call)
-  const authHeader = req.headers.get('Authorization') ?? '';
-  const token = authHeader.replace(/^Bearer\s+/i, '');
-
-  const SYNC_SECRET = Deno.env.get('SYNC_SECRET') ?? '';
-  const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+  // Find and replace the entire auth block with this:
+  const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
   const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-  const isAuthorized = (
-    token === SYNC_SECRET ||
-    token === ANON_KEY ||
-    token === SERVICE_ROLE_KEY
-  );
+  const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
 
-  if (!isAuthorized) {
+  if (!token || (token !== SERVICE_ROLE_KEY && token !== ANON_KEY)) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
       headers: { 'Content-Type': 'application/json' },
