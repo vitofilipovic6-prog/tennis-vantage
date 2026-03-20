@@ -60,28 +60,32 @@ async function upsertPlayersPreservingRank(
   let successCount = 0;
 
   for (let i = 0; i < players.length; i += CHUNK_SIZE) {
-    const batch = players.slice(i, i + CHUNK_SIZE);
+    const batch    = players.slice(i, i + CHUNK_SIZE);
+    const batchNum = Math.floor(i / CHUNK_SIZE) + 1;
 
+    const payload = batch.map(p => ({
+      id:              String(p.id),
+      name:            String(p.name),
+      country:         String(p.country ?? ''),
+      flag:            String(p.flag ?? '🏳️'),
+      rank:            Number(p.rank ?? 999),
+      wins:            Number(p.wins ?? 0),
+      losses:          Number(p.losses ?? 0),
+      ace_avg:         Number(p.ace_avg ?? 5.5),
+      surface_pref:    String(p.surface_pref ?? 'Hard'),
+      first_serve_pct: Number(p.first_serve_pct ?? 60),
+      recent_form:     String(p.recent_form ?? '- - - - -'),
+      injury_notes:    p.injury_notes ?? null,
+      fatigue_score:   Number(p.fatigue_score ?? 0),
+    }));
+
+    // Pass as JSON string so Supabase casts to jsonb correctly
     const { error } = await supabase.rpc('upsert_players_bulk', {
-      p_players: batch.map(p => ({
-        id:              String(p.id),
-        name:            String(p.name),
-        country:         String(p.country ?? ''),
-        flag:            String(p.flag ?? '🏳️'),
-        rank:            Number(p.rank ?? 999),
-        wins:            Number(p.wins ?? 0),
-        losses:          Number(p.losses ?? 0),
-        ace_avg:         Number(p.ace_avg ?? 5.5),
-        surface_pref:    String(p.surface_pref ?? 'Hard'),
-        first_serve_pct: Number(p.first_serve_pct ?? 60),
-        recent_form:     String(p.recent_form ?? '- - - - -'),
-        injury_notes:    p.injury_notes ?? null,
-        fatigue_score:   Number(p.fatigue_score ?? 0),
-      })),
+      p_players: JSON.stringify(payload),
     });
 
     if (error) {
-      log.push(`[PLAYERS] Bulk upsert failed, falling back to individual: ${error.message}`);
+      log.push(`[PLAYERS] Bulk failed batch ${batchNum}, falling back: ${error.message}`);
       for (const p of batch) {
         const { error: rpcErr } = await supabase.rpc('upsert_player_preserve_rank', {
           p_id:           String(p.id),
@@ -103,7 +107,7 @@ async function upsertPlayersPreservingRank(
       }
     } else {
       successCount += batch.length;
-      log.push(`[PLAYERS] Bulk upserted batch ${Math.floor(i / CHUNK_SIZE) + 1} (${batch.length} players)`);
+      log.push(`[PLAYERS] ✓ Bulk batch ${batchNum} (${batch.length} players)`);
     }
   }
 
@@ -125,23 +129,49 @@ Deno.serve(async (req: Request) => {
   }
 
   // ── Auth guard ──────────────────────────────────────────────────────────────
-  const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
+  // Supabase's gateway validates the JWT signature before the request reaches
+  // us, so we can safely trust the decoded payload role claim.
+  // Cron sends service_role, manual triggers send anon — both are accepted.
+  const rawAuth = req.headers.get('Authorization') ?? '';
+  const token   = rawAuth.replace(/^Bearer\s+/i, '');
 
-  const SYNC_SECRET      = Deno.env.get('SYNC_SECRET') ?? '';
-  const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-  const ANON_KEY         = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
-
-  const validTokens = [SYNC_SECRET, SERVICE_ROLE_KEY, ANON_KEY].filter(Boolean);
-
-  if (!token || !validTokens.includes(token)) {
-    console.error('[AUTH] Rejected. Token prefix:', token ? token.slice(0, 20) : 'empty');
+  if (!token) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
       headers: { 'Content-Type': 'application/json' },
     });
   }
 
-  console.log('[AUTH] Authorized successfully');
+  try {
+    const payloadBase64 = token.split('.')[1];
+    const payload       = JSON.parse(atob(payloadBase64));
+    const role          = payload?.role ?? '';
+
+    console.log('[AUTH] JWT role:', role);
+
+    if (role !== 'service_role' && role !== 'anon') {
+      // Also accept raw SYNC_SECRET for external cron services
+      const SYNC_SECRET = Deno.env.get('SYNC_SECRET') ?? '';
+      if (!SYNC_SECRET || token !== SYNC_SECRET) {
+        return new Response(JSON.stringify({ error: 'Unauthorized', role }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
+    console.log('[AUTH] Authorized as:', payload?.role ?? 'sync_secret');
+  } catch (_) {
+    // Token is not a JWT — check if it matches SYNC_SECRET
+    const SYNC_SECRET = Deno.env.get('SYNC_SECRET') ?? '';
+    if (!SYNC_SECRET || token !== SYNC_SECRET) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    console.log('[AUTH] Authorized via SYNC_SECRET');
+  }
 
   const log:    string[] = [];
   const errors: string[] = [];
@@ -173,8 +203,8 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── 2. Date-range matches ─────────────────────────────────────────────────
-    const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-    const dates  = dateRange(0, 0);
+    const sleep    = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+    const dates    = dateRange(0, 0);
     const todayUTC = new Date().toISOString().slice(0, 10);
 
     for (const [i, { day, month, year }] of dates.entries()) {
@@ -296,7 +326,7 @@ Deno.serve(async (req: Request) => {
           const isWta      = nameLower.includes('wta');
 
           let derivedType = m.match_type;
-          if (isMixed && isDoubles)  derivedType = 'mixed_doubles';
+          if (isMixed && isDoubles)    derivedType = 'mixed_doubles';
           else if (isDoubles && isWta) derivedType = 'wta_doubles';
           else if (isDoubles)          derivedType = 'atp_doubles';
           else if (isWta)              derivedType = 'wta_singles';

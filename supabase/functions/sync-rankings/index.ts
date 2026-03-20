@@ -1,10 +1,9 @@
-// supabase/functions/sync-rankings/index.ts
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { normalizeRankingRow } from '../_shared/normalize.ts';
 
-const RAPIDAPI_KEY = Deno.env.get('RAPIDAPI_KEY')!;
-const RAPIDAPI_HOST = 'tennisapi1.p.rapidapi.com';
-const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
+const RAPIDAPI_KEY     = Deno.env.get('RAPIDAPI_KEY')!;
+const RAPIDAPI_HOST    = 'tennisapi1.p.rapidapi.com';
+const SUPABASE_URL     = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SVC_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SVC_KEY);
@@ -20,9 +19,9 @@ async function rapidGet(path: string): Promise<any | null> {
 
   const res = await fetch(url, {
     headers: {
-      'Content-Type': 'application/json',
+      'Content-Type':    'application/json',
       'x-rapidapi-host': RAPIDAPI_HOST,
-      'x-rapidapi-key': RAPIDAPI_KEY,
+      'x-rapidapi-key':  RAPIDAPI_KEY,
     },
   });
 
@@ -39,14 +38,12 @@ async function rapidGet(path: string): Promise<any | null> {
   }
 }
 
-// ── Local extractArray — handles flat array or wrapped object ─────────────────
 function extractArray(raw: any): any[] {
-  if (Array.isArray(raw)) return raw;
-  if (Array.isArray(raw?.rankings)) return raw.rankings;
-  if (Array.isArray(raw?.data)) return raw.data;
-  if (Array.isArray(raw?.result)) return raw.result;
-  if (Array.isArray(raw?.results)) return raw.results;
-  // Sometimes rankings come back as { "1": {...}, "2": {...} }
+  if (Array.isArray(raw))              return raw;
+  if (Array.isArray(raw?.rankings))    return raw.rankings;
+  if (Array.isArray(raw?.data))        return raw.data;
+  if (Array.isArray(raw?.result))      return raw.result;
+  if (Array.isArray(raw?.results))     return raw.results;
   if (raw && typeof raw === 'object') {
     const vals = Object.values(raw);
     if (vals.length > 0 && typeof vals[0] === 'object') return vals;
@@ -55,11 +52,10 @@ function extractArray(raw: any): any[] {
 }
 
 Deno.serve(async (req: Request) => {
-  // ── CORS preflight ──────────────────────────────────────────────────────────
   if (req.method === 'OPTIONS') {
     return new Response('ok', {
       headers: {
-        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Origin':  '*',
         'Access-Control-Allow-Headers': 'Authorization, Content-Type',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
       },
@@ -67,21 +63,46 @@ Deno.serve(async (req: Request) => {
   }
 
   // ── Auth guard ──────────────────────────────────────────────────────────────
-  // Accepts: SYNC_SECRET, SUPABASE_ANON_KEY, or SUPABASE_SERVICE_ROLE_KEY
-  // This allows both cron jobs (service role) and manual triggers to work
-  // Same change:
-  const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
-  const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-  const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+  const rawAuth = req.headers.get('Authorization') ?? '';
+  const token   = rawAuth.replace(/^Bearer\s+/i, '');
 
-  if (!token || (token !== SERVICE_ROLE_KEY && token !== ANON_KEY)) {
+  if (!token) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
       headers: { 'Content-Type': 'application/json' },
     });
   }
 
-  const log: string[] = [];
+  try {
+    const payloadBase64 = token.split('.')[1];
+    const payload       = JSON.parse(atob(payloadBase64));
+    const role          = payload?.role ?? '';
+
+    console.log('[AUTH] JWT role:', role);
+
+    if (role !== 'service_role' && role !== 'anon') {
+      const SYNC_SECRET = Deno.env.get('SYNC_SECRET') ?? '';
+      if (!SYNC_SECRET || token !== SYNC_SECRET) {
+        return new Response(JSON.stringify({ error: 'Unauthorized', role }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
+    console.log('[AUTH] Authorized as:', payload?.role ?? 'sync_secret');
+  } catch (_) {
+    const SYNC_SECRET = Deno.env.get('SYNC_SECRET') ?? '';
+    if (!SYNC_SECRET || token !== SYNC_SECRET) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    console.log('[AUTH] Authorized via SYNC_SECRET');
+  }
+
+  const log:    string[] = [];
   const errors: string[] = [];
 
   for (const { tour, path } of TOURS) {
@@ -104,7 +125,7 @@ Deno.serve(async (req: Request) => {
 
       log.push(`[${tour}] Row[0]: ${JSON.stringify(list[0]).slice(0, 500)}`);
 
-      const playerRows: object[] = [];
+      const playerRows:  object[] = [];
       const rankingRows: object[] = [];
 
       for (let i = 0; i < Math.min(list.length, 100); i++) {
@@ -132,7 +153,6 @@ Deno.serve(async (req: Request) => {
       }
       log.push(`[${tour}] ✓ Upserted ${playerRows.length} players`);
 
-      // Now upsert rankings
       const { error: rErr } = await supabase
         .from('rankings')
         .upsert(rankingRows, { onConflict: 'player_id,tour', ignoreDuplicates: false });
@@ -154,7 +174,7 @@ Deno.serve(async (req: Request) => {
     {
       status: errors.length ? 207 : 200,
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type':                'application/json',
         'Access-Control-Allow-Origin': '*',
       },
     },
