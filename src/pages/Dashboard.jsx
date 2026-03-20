@@ -1,11 +1,13 @@
 // src/pages/Dashboard.jsx – TennisVantage main app screen
 //
-// CHANGES vs original:
-//  [STATUS]      reclassifyMatch() removed — matches_live_status VIEW handles all status logic
-//  [MATCHCARD]   isFinished/isLive now trust m.status directly from view
+// FIXES IN THIS VERSION:
+//  [RECLASSIFY]  allMatchesReclassified computed once at top level —
+//                both MatchesTab and PredictionsTab share identical match states
+//  [PREDICTIONS] PredictionsTab receives reclassified matches so counts match
+//  [MATCHES]     MatchesTab receives pre-split live/upcoming from reclassified list
+//  [STATUS]      matches_live_status VIEW handles all status logic from DB
+//  [MATCHCARD]   isFinished/isLive trust m.status directly from view
 //  [MATCHCARD]   button_text from DB view used for predict button label
-//  [PREDICTIONS] predictableMatches filter simplified — no reclassify needed
-//  [TODAY]       todayMatches build simplified — no reclassify needed
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState, useMemo, useEffect, useRef, useCallback, memo } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -42,27 +44,58 @@ export default function Dashboard({ showToast }) {
   const { user, firstName, profile, logout } = useAuth();
 
   const [activeTab, setActiveTab] = useState(() => {
-    // Restore last active tab from sessionStorage on refresh
-    try {
-      return sessionStorage.getItem('tv_active_tab') ?? 'matches';
-    } catch {
-      return 'matches';
-    }
+    try { return sessionStorage.getItem('tv_active_tab') ?? 'matches'; } catch { return 'matches'; }
   });
 
-  const [selectedMatch, setSelectedMatch] = useState(null);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [bioPlayer, setBioPlayer] = useState(null);
-  const [profileOpen, setProfileOpen] = useState(false);
+  const [selectedMatch,  setSelectedMatch]  = useState(null);
+  const [searchOpen,     setSearchOpen]     = useState(false);
+  const [bioPlayer,      setBioPlayer]      = useState(null);
+  const [profileOpen,    setProfileOpen]    = useState(false);
+  const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
+
+  const avatarMenuRef       = useRef(null);
   const avatarMenuRefMobile = useRef(null);
 
-  // Mobile avatar dropdown state
-  const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
-  const avatarMenuRef = useRef(null);
-
-  // ── CHANGE 1: removed syncing: matchesSyncing — syncing is now cron-driven ──
   const { live, upcoming, loading: matchesLoading, error: matchesError, refresh } = useMatches();
+
+  // Raw combined list — used for search modal only
   const allMatches = useMemo(() => [...live, ...upcoming], [live, upcoming]);
+
+  // ── Shared reclassify — computed ONCE so both tabs see identical states ───
+  const todayStr = useMemo(() => new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Paris',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date()), []);
+
+  const allMatchesReclassified = useMemo(() => {
+    const now = Date.now();
+    return allMatches
+      .map(m => {
+        if (m.status !== 'upcoming') return m;
+        const matchTime = m.date ? new Date(m.date).getTime() : null;
+        if (!matchTime) return m;
+        const minsElapsed = (now - matchTime) / 60_000;
+        // Promote to live if 5–360 min overdue. Never flip to finished
+        // client-side — let DB/trigger handle that.
+        if (minsElapsed > 5 && minsElapsed < 360) return { ...m, status: 'live' };
+        return m;
+      })
+      .filter(m => {
+        // Remove upcoming matches from other days
+        if (m.status !== 'upcoming') return true;
+        const d = m.local_date ?? (m.date
+          ? new Intl.DateTimeFormat('en-CA', {
+              timeZone: 'Europe/Paris',
+              year: 'numeric', month: '2-digit', day: '2-digit',
+            }).format(new Date(m.date))
+          : null);
+        return d === todayStr;
+      });
+  }, [allMatches, todayStr]);
+
+  // Split reclassified list for MatchesTab
+  const reclassifiedLive     = useMemo(() => allMatchesReclassified.filter(m => m.status === 'live'),     [allMatchesReclassified]);
+  const reclassifiedUpcoming = useMemo(() => allMatchesReclassified.filter(m => m.status === 'upcoming'), [allMatchesReclassified]);
 
   // Full player list from DB — feeds search modal
   const { players: allDbPlayers } = useAllPlayers();
@@ -77,9 +110,7 @@ export default function Dashboard({ showToast }) {
   // Merge DB players with match players for search — DB list takes precedence
   const allPlayersForSearch = useMemo(() => {
     const seen = new Map();
-    // First add all DB players (has full data including rank)
     allDbPlayers.forEach(p => { if (p?.id) seen.set(p.id, p); });
-    // Then add any players from today's matches not yet in DB list
     allMatches.forEach(m => {
       [m.player1, m.player2].forEach(p => {
         if (p?.id && !seen.has(p.id)) seen.set(p.id, p);
@@ -91,13 +122,11 @@ export default function Dashboard({ showToast }) {
   }, [allDbPlayers, allMatches]);
 
   // Close avatar menu on outside click
-  // Uses 'pointerup' instead of 'mousedown' so dropdown button onClick fires first
   useEffect(() => {
     if (!avatarMenuOpen) return;
     const fn = (e) => {
-      const clickedInsideDesktop = avatarMenuRef.current?.contains(e.target);
-      const clickedInsideMobile = avatarMenuRefMobile.current?.contains(e.target);
-      if (!clickedInsideDesktop && !clickedInsideMobile) {
+      if (!avatarMenuRef.current?.contains(e.target) &&
+          !avatarMenuRefMobile.current?.contains(e.target)) {
         setAvatarMenuOpen(false);
       }
     };
@@ -105,43 +134,25 @@ export default function Dashboard({ showToast }) {
     return () => document.removeEventListener('pointerdown', fn);
   }, [avatarMenuOpen]);
 
-  // Body scroll lock for profile overlay — iOS-safe position:fixed approach
+  // Scroll lock for profile overlay
   useEffect(() => {
     if (!profileOpen) return;
-    const scrollY = window.scrollY;
-    const { body } = document;
     const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
-
     document.documentElement.style.setProperty('--scrollbar-width', `${scrollbarWidth}px`);
-    body.style.overflow = 'hidden';
-    body.style.position = 'fixed';
-    body.style.top = `-${scrollY}px`;
-    body.style.left = '0';
-    body.style.right = '0';
-    body.classList.add('modal-open');
-
+    document.body.classList.add('modal-open');
     return () => {
-      body.style.overflow = '';
-      body.style.position = '';
-      body.style.top = '';
-      body.style.left = '';
-      body.style.right = '';
-      body.classList.remove('modal-open');
+      document.body.classList.remove('modal-open');
       document.documentElement.style.removeProperty('--scrollbar-width');
-      window.scrollTo(0, scrollY);
     };
   }, [profileOpen]);
 
   // Keyboard shortcut: Cmd/Ctrl+K opens search
   useEffect(() => {
-    const handler = (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault();
-        setSearchOpen(prev => !prev);
-      }
+    const fn = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); setSearchOpen(p => !p); }
     };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
+    window.addEventListener('keydown', fn);
+    return () => window.removeEventListener('keydown', fn);
   }, []);
 
   const tabs = [
@@ -159,7 +170,7 @@ export default function Dashboard({ showToast }) {
 
   function switchTab(id) {
     setActiveTab(id);
-    try { sessionStorage.setItem('tv_active_tab', id); } catch { }
+    try { sessionStorage.setItem('tv_active_tab', id); } catch {}
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -175,6 +186,82 @@ export default function Dashboard({ showToast }) {
 
   const avatarInitial = (firstName?.[0] ?? user?.email?.[0] ?? 'P').toUpperCase();
 
+  // ── Avatar dropdown (shared between desktop + mobile) ────────────────────
+  const AvatarDropdown = () => (
+    <div style={{
+      position: 'absolute', top: 'calc(100% + 8px)', right: 0,
+      background: 'var(--bg-card)', border: '1px solid var(--border-md)',
+      borderRadius: '12px', overflow: 'hidden', minWidth: '190px',
+      boxShadow: '0 16px 40px rgba(0,0,0,0.5)',
+      animation: 'tv-slide-up 0.15s ease', zIndex: 200,
+    }}>
+      <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
+        <p style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text)', margin: 0 }}>
+          {firstName ?? 'Player'}
+        </p>
+        <p style={{
+          fontSize: '11px', color: 'var(--text-faint)', margin: '2px 0 0',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {user?.email}
+        </p>
+      </div>
+      <button
+        onClick={() => { setAvatarMenuOpen(false); setProfileOpen(true); }}
+        style={{
+          width: '100%', textAlign: 'left', padding: '12px 16px',
+          background: 'none', border: 'none', color: 'var(--text)',
+          fontFamily: 'var(--font-body)', fontSize: '14px', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', gap: '10px', transition: 'background 0.1s',
+        }}
+        onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-glass)'}
+        onMouseLeave={e => e.currentTarget.style.background = 'none'}
+      >
+        <span style={{ fontSize: '16px' }}>👤</span>My Profile
+      </button>
+      <button
+        onClick={handleLogout}
+        style={{
+          width: '100%', textAlign: 'left', padding: '12px 16px',
+          background: 'none', border: 'none', borderTop: '1px solid var(--border)',
+          color: 'var(--clay)', fontFamily: 'var(--font-body)',
+          fontSize: '14px', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', gap: '10px', transition: 'background 0.1s',
+        }}
+        onMouseEnter={e => e.currentTarget.style.background = 'rgba(251,146,60,0.08)'}
+        onMouseLeave={e => e.currentTarget.style.background = 'none'}
+      >
+        <span style={{ fontSize: '16px' }}>🚪</span>Sign Out
+      </button>
+    </div>
+  );
+
+  const AvatarButton = ({ size = '34px' }) => (
+    <button
+      onClick={() => setAvatarMenuOpen(p => !p)}
+      style={{
+        width: size, height: size, borderRadius: '50%', padding: 0,
+        background: profile?.avatar_url
+          ? 'transparent'
+          : 'linear-gradient(135deg, var(--lime), var(--clay))',
+        border: avatarMenuOpen ? '2px solid var(--lime)' : '2px solid transparent',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: '14px', fontWeight: 800, color: '#070B14',
+        cursor: 'pointer', flexShrink: 0, transition: 'border-color 0.15s', overflow: 'hidden',
+      }}
+      aria-label="Account menu"
+      aria-expanded={avatarMenuOpen}
+    >
+      {profile?.avatar_url
+        ? <img src={profile.avatar_url} alt="Avatar"
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            onError={e => { e.currentTarget.style.display = 'none'; }}
+          />
+        : avatarInitial
+      }
+    </button>
+  );
+
   return (
     <div style={{ minHeight: '100dvh', background: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
 
@@ -186,225 +273,51 @@ export default function Dashboard({ showToast }) {
         padding: '0 clamp(12px,3vw,32px)',
         display: 'flex', alignItems: 'center', height: '60px', gap: '12px',
       }}>
-        {/* Logo */}
-        <div style={{ flexShrink: 0 }}>
-          <Logo size="sm" />
-        </div>
+        <div style={{ flexShrink: 0 }}><Logo size="sm" /></div>
 
         {/* Desktop tabs */}
         <div className="hide-md" style={{ display: 'flex', gap: '4px', marginLeft: '16px' }}>
           {tabs.map(t => (
-            <button
-              key={t.id}
-              onClick={() => switchTab(t.id)}
-              style={{
-                padding: '6px 14px', borderRadius: '8px',
-                background: activeTab === t.id ? 'var(--bg-glass-md)' : 'transparent',
-                border: activeTab === t.id ? '1px solid var(--border-md)' : '1px solid transparent',
-                color: activeTab === t.id ? 'var(--lime)' : 'var(--text-muted)',
-                fontFamily: 'var(--font-body)', fontWeight: 600, fontSize: '13px',
-                cursor: 'pointer', transition: 'var(--t)', whiteSpace: 'nowrap',
-              }}
-            >
+            <button key={t.id} onClick={() => switchTab(t.id)} style={{
+              padding: '6px 14px', borderRadius: '8px',
+              background: activeTab === t.id ? 'var(--bg-glass-md)' : 'transparent',
+              border: activeTab === t.id ? '1px solid var(--border-md)' : '1px solid transparent',
+              color: activeTab === t.id ? 'var(--lime)' : 'var(--text-muted)',
+              fontFamily: 'var(--font-body)', fontWeight: 600, fontSize: '13px',
+              cursor: 'pointer', transition: 'var(--t)', whiteSpace: 'nowrap',
+            }}>
               {t.icon} {t.label}
             </button>
           ))}
         </div>
 
-        {/* Spacer */}
         <div style={{ flex: 1 }} />
 
         {/* Search button */}
-        <button
-          onClick={() => setSearchOpen(true)}
-          style={{
-            display: 'flex', alignItems: 'center', gap: '8px',
-            padding: '7px 12px', borderRadius: '8px',
-            background: 'var(--bg-glass)', border: '1px solid var(--border)',
-            color: 'var(--text-muted)', fontFamily: 'var(--font-body)',
-            fontSize: '13px', cursor: 'pointer', transition: 'var(--t)',
-            minWidth: 0, maxWidth: '220px', flex: '1',
-          }}
-        >
+        <button onClick={() => setSearchOpen(true)} style={{
+          display: 'flex', alignItems: 'center', gap: '8px',
+          padding: '7px 12px', borderRadius: '8px',
+          background: 'var(--bg-glass)', border: '1px solid var(--border)',
+          color: 'var(--text-muted)', fontFamily: 'var(--font-body)',
+          fontSize: '13px', cursor: 'pointer', transition: 'var(--t)',
+          minWidth: 0, maxWidth: '220px', flex: '1',
+        }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0 }}>
             <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
           </svg>
           <span className="hide-sm">Search players…</span>
         </button>
 
-        {/* Desktop: avatar dropdown */}
+        {/* Desktop avatar */}
         <div className="hide-md" style={{ position: 'relative', flexShrink: 0 }} ref={avatarMenuRef}>
-          <button
-            onClick={() => setAvatarMenuOpen(prev => !prev)}
-            style={{
-              width: '34px', height: '34px', borderRadius: '50%', padding: 0,
-              background: profile?.avatar_url
-                ? 'transparent'
-                : 'linear-gradient(135deg, var(--lime), var(--clay))',
-              border: avatarMenuOpen ? '2px solid var(--lime)' : '2px solid transparent',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: '14px', fontWeight: 800, color: '#070B14',
-              cursor: 'pointer', flexShrink: 0, transition: 'border-color 0.15s',
-              overflow: 'hidden',
-            }}
-            aria-label="Account menu"
-            aria-expanded={avatarMenuOpen}
-          >
-            {profile?.avatar_url
-              ? <img
-                  src={profile.avatar_url}
-                  alt="Avatar"
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                  onError={e => { e.currentTarget.style.display = 'none'; }}
-                />
-              : avatarInitial
-            }
-          </button>
-
-          {/* Desktop Dropdown */}
-          {avatarMenuOpen && (
-            <div style={{
-              position: 'absolute', top: 'calc(100% + 8px)', right: 0,
-              background: 'var(--bg-card)', border: '1px solid var(--border-md)',
-              borderRadius: '12px', overflow: 'hidden', minWidth: '190px',
-              boxShadow: '0 16px 40px rgba(0,0,0,0.5)',
-              animation: 'tv-slide-up 0.15s ease',
-              zIndex: 200,
-            }}>
-              <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
-                <p style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text)', margin: 0 }}>
-                  {firstName ?? 'Player'}
-                </p>
-                <p style={{
-                  fontSize: '11px', color: 'var(--text-faint)', margin: '2px 0 0',
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                }}>
-                  {user?.email}
-                </p>
-              </div>
-
-              <button
-                onClick={() => { setAvatarMenuOpen(false); setProfileOpen(true); }}
-                style={{
-                  width: '100%', textAlign: 'left', padding: '12px 16px',
-                  background: 'none', border: 'none', color: 'var(--text)',
-                  fontFamily: 'var(--font-body)', fontSize: '14px', cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', gap: '10px',
-                  transition: 'background 0.1s',
-                }}
-                onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-glass)'}
-                onMouseLeave={e => e.currentTarget.style.background = 'none'}
-              >
-                <span style={{ fontSize: '16px' }}>👤</span>
-                My Profile
-              </button>
-
-              <button
-                onClick={handleLogout}
-                style={{
-                  width: '100%', textAlign: 'left', padding: '12px 16px',
-                  background: 'none', border: 'none', borderTop: '1px solid var(--border)',
-                  color: 'var(--clay)', fontFamily: 'var(--font-body)',
-                  fontSize: '14px', cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', gap: '10px',
-                  transition: 'background 0.1s',
-                }}
-                onMouseEnter={e => e.currentTarget.style.background = 'rgba(251,146,60,0.08)'}
-                onMouseLeave={e => e.currentTarget.style.background = 'none'}
-              >
-                <span style={{ fontSize: '16px' }}>🚪</span>
-                Sign Out
-              </button>
-            </div>
-          )}
+          <AvatarButton size="34px" />
+          {avatarMenuOpen && <AvatarDropdown />}
         </div>
 
-        {/* Mobile: avatar with dropdown */}
+        {/* Mobile avatar */}
         <div className="show-md" style={{ position: 'relative', flexShrink: 0 }} ref={avatarMenuRefMobile}>
-          <button
-            onClick={() => setAvatarMenuOpen(prev => !prev)}
-            style={{
-              width: '36px', height: '36px', borderRadius: '50%', padding: 0,
-              background: profile?.avatar_url
-                ? 'transparent'
-                : 'linear-gradient(135deg, var(--lime), var(--clay))',
-              border: avatarMenuOpen ? '2px solid var(--lime)' : '2px solid transparent',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: '14px', fontWeight: 800, color: '#070B14',
-              cursor: 'pointer', flexShrink: 0, transition: 'border-color 0.15s',
-              overflow: 'hidden',
-            }}
-            aria-label="Account menu"
-            aria-expanded={avatarMenuOpen}
-          >
-            {profile?.avatar_url
-              ? <img
-                  src={profile.avatar_url}
-                  alt="Avatar"
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                  onError={e => { e.currentTarget.style.display = 'none'; }}
-                />
-              : avatarInitial
-            }
-          </button>
-
-          {avatarMenuOpen && (
-            <div style={{
-              position: 'absolute', top: 'calc(100% + 8px)', right: 0,
-              background: 'var(--bg-card)', border: '1px solid var(--border-md)',
-              borderRadius: '12px', overflow: 'hidden', minWidth: '180px',
-              boxShadow: '0 16px 40px rgba(0,0,0,0.5)',
-              animation: 'tv-slide-up 0.15s ease',
-              zIndex: 200,
-            }}>
-              <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
-                <p style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text)', margin: 0 }}>
-                  {firstName ?? 'Player'}
-                </p>
-                <p style={{
-                  fontSize: '11px', color: 'var(--text-faint)', margin: '2px 0 0',
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                }}>
-                  {user?.email}
-                </p>
-              </div>
-
-              <button
-                onClick={() => { setAvatarMenuOpen(false); setProfileOpen(true); }}
-                style={{
-                  width: '100%', textAlign: 'left',
-                  padding: '12px 16px', background: 'none', border: 'none',
-                  color: 'var(--text)', fontFamily: 'var(--font-body)',
-                  fontSize: '14px', cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', gap: '10px',
-                  transition: 'background 0.1s',
-                }}
-                onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-glass)'}
-                onMouseLeave={e => e.currentTarget.style.background = 'none'}
-              >
-                <span style={{ fontSize: '16px' }}>👤</span>
-                My Profile
-              </button>
-
-              <button
-                onClick={handleLogout}
-                style={{
-                  width: '100%', textAlign: 'left',
-                  padding: '12px 16px', background: 'none', border: 'none',
-                  borderTop: '1px solid var(--border)',
-                  color: 'var(--clay)', fontFamily: 'var(--font-body)',
-                  fontSize: '14px', cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', gap: '10px',
-                  transition: 'background 0.1s',
-                }}
-                onMouseEnter={e => e.currentTarget.style.background = 'rgba(251,146,60,0.08)'}
-                onMouseLeave={e => e.currentTarget.style.background = 'none'}
-              >
-                <span style={{ fontSize: '16px' }}>🚪</span>
-                Sign Out
-              </button>
-            </div>
-          )}
+          <AvatarButton size="36px" />
+          {avatarMenuOpen && <AvatarDropdown />}
         </div>
       </nav>
 
@@ -415,8 +328,8 @@ export default function Dashboard({ showToast }) {
       }}>
         {activeTab === 'matches' && (
           <MatchesTab
-            live={live}
-            upcoming={upcoming}
+            live={reclassifiedLive}
+            upcoming={reclassifiedUpcoming}
             loading={matchesLoading}
             error={matchesError}
             refresh={refresh}
@@ -426,7 +339,7 @@ export default function Dashboard({ showToast }) {
         )}
         {activeTab === 'predictions' && (
           <PredictionsTab
-            allMatches={allMatches}
+            allMatches={allMatchesReclassified}
             matchesLoading={matchesLoading}
             selectedMatch={selectedMatch}
             onSelectMatch={setSelectedMatch}
@@ -471,14 +384,11 @@ export default function Dashboard({ showToast }) {
         />
       )}
 
-      {/* Profile page overlay */}
       {profileOpen && (
         <div style={{
           position: 'fixed', inset: 0, zIndex: 300,
-          background: 'var(--bg)',
-          overflowY: 'auto',
-          overscrollBehavior: 'contain',
-          WebkitOverflowScrolling: 'touch',
+          background: 'var(--bg)', overflowY: 'auto',
+          overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch',
         }}>
           <ProfilePage onBack={() => setProfileOpen(false)} showToast={showToast} />
         </div>
@@ -552,36 +462,28 @@ function FilterPills({ activeFilter, onSelect, size = 'normal', counts = {} }) {
     }}>
       {MATCH_FILTERS.map(f => {
         const active = activeFilter === f.id;
-        const count = counts[f.id] ?? 0;
+        const count  = counts[f.id] ?? 0;
         return (
-          <button
-            key={f.id}
-            onClick={() => onSelect(f.id)}
-            style={{
-              padding: size === 'small' ? '4px 10px' : '6px 14px',
-              borderRadius: '999px',
-              border: active ? 'none' : '1px solid var(--border)',
-              background: active ? f.color : 'var(--bg-glass-md)',
-              color: active ? '#070B14' : count > 0 ? 'var(--text-muted)' : 'var(--text-faint)',
-              fontFamily: 'var(--font-body)', fontWeight: 700,
-              fontSize: size === 'small' ? '11px' : '12px',
-              cursor: 'pointer', transition: 'var(--t)', whiteSpace: 'nowrap',
-              display: 'inline-flex', alignItems: 'center', gap: '5px',
-              // Fade out pills with 0 matches once we know the counts
-              opacity: hasCounts && count === 0 && !active ? 0.38 : 1,
-            }}
-          >
+          <button key={f.id} onClick={() => onSelect(f.id)} style={{
+            padding: size === 'small' ? '4px 10px' : '6px 14px',
+            borderRadius: '999px',
+            border: active ? 'none' : '1px solid var(--border)',
+            background: active ? f.color : 'var(--bg-glass-md)',
+            color: active ? '#070B14' : count > 0 ? 'var(--text-muted)' : 'var(--text-faint)',
+            fontFamily: 'var(--font-body)', fontWeight: 700,
+            fontSize: size === 'small' ? '11px' : '12px',
+            cursor: 'pointer', transition: 'var(--t)', whiteSpace: 'nowrap',
+            display: 'inline-flex', alignItems: 'center', gap: '5px',
+            opacity: hasCounts && count === 0 && !active ? 0.38 : 1,
+          }}>
             {size === 'small' ? f.shortLabel : f.label}
             {count > 0 && (
               <span style={{
                 background: active ? 'rgba(0,0,0,0.22)' : `${f.color}28`,
                 color: active ? '#070B14' : f.color,
                 fontSize: size === 'small' ? '9px' : '10px',
-                fontWeight: 800,
-                padding: '1px 5px',
-                borderRadius: '99px',
-                fontFamily: 'var(--font-mono)',
-                lineHeight: 1.6,
+                fontWeight: 800, padding: '1px 5px', borderRadius: '99px',
+                fontFamily: 'var(--font-mono)', lineHeight: 1.6,
               }}>
                 {count}
               </span>
@@ -597,23 +499,18 @@ function FilterPills({ activeFilter, onSelect, size = 'normal', counts = {} }) {
 // MATCHES TAB
 // ─────────────────────────────────────────────────────────────────────────────
 function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wtaPlayerIds }) {
-  const [activeFilter, setActiveFilter] = useState('atp_singles');
-  const [calendarDate, setCalendarDate] = useState(null);
+  const [activeFilter,    setActiveFilter]    = useState('atp_singles');
+  const [calendarDate,    setCalendarDate]    = useState(null);
   const [calendarDateStr, setCalendarDateStr] = useState(null);
-  const [dateMatches, setDateMatches] = useState([]);
-  const [dateLoading, setDateLoading] = useState(false);
+  const [dateMatches,     setDateMatches]     = useState([]);
+  const [dateLoading,     setDateLoading]     = useState(false);
 
   const todayStr = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Europe/Paris',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
+    timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit',
   }).format(new Date());
 
-  const selectedDay = calendarDate;
   const isToday = !calendarDateStr || calendarDateStr === todayStr;
 
-  // Load matches for a past/future calendar date
   useEffect(() => {
     if (!calendarDateStr || calendarDateStr === todayStr) {
       setDateMatches([]);
@@ -630,25 +527,22 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
   }, [calendarDateStr, wtaPlayerIds, todayStr]);
 
   if (loading) return <LoadingGrid />;
-  if (error) return <ErrorMessage msg={error} onRetry={refresh} />;
+  if (error)   return <ErrorMessage msg={error} onRetry={refresh} />;
 
   // ── Build today's unified match list ──────────────────────────────────────
-  // Status comes directly from matches_live_status view — no reclassify needed
+  // live + upcoming are already reclassified from parent — just merge them
   const todayMatches = (() => {
     const map = new Map();
-    upcoming.forEach(m => { map.set(m.id, m); });
-    // Live rows always overwrite upcoming so DB live status wins
+    upcoming.forEach(m => map.set(m.id, m));
     live.forEach(m => map.set(m.id, m));
     return [...map.values()].sort(
       (a, b) => new Date(a.date ?? 0).getTime() - new Date(b.date ?? 0).getTime()
     );
   })();
 
-  // ── Active pool: today's merged list OR calendar-date results ─────────────
   const pool = isToday ? todayMatches : dateMatches;
 
-  // ── Filter by the selected type pill ──────────────────────────────────────
-  const byType = (arr) => arr.filter(m => deriveMatchType(m, wtaPlayerIds) === activeFilter);
+  const byType          = (arr) => arr.filter(m => deriveMatchType(m, wtaPlayerIds) === activeFilter);
   const activeFilterDef = MATCH_FILTERS.find(f => f.id === activeFilter);
 
   const filteredPool     = byType(pool);
@@ -656,8 +550,7 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
   const filteredUpcoming = filteredPool.filter(m => m.status === 'upcoming');
   const filteredFinished = filteredPool.filter(m => m.status === 'finished');
 
-  // Badge counts: only live + upcoming (active matches)
-  // This keeps matchCounts consistent with what PredictTab shows
+  // Badge counts: live + upcoming only
   const matchCounts = (() => {
     const counts = {};
     pool.forEach(m => {
@@ -670,9 +563,9 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
 
   const dayLabel = isToday
     ? ''
-    : ` — ${selectedDay?.toLocaleDateString('en-GB', {
-      weekday: 'long', day: 'numeric', month: 'short',
-    }) ?? ''}`;
+    : ` — ${calendarDate?.toLocaleDateString('en-GB', {
+        weekday: 'long', day: 'numeric', month: 'short',
+      }) ?? ''}`;
 
   return (
     <div className="tv-fade-up">
@@ -689,47 +582,32 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
         <LoadingGrid />
       ) : (
         <>
-          {/* ── 1. Live Now ─────────────────────────────────────────────────── */}
+          {/* ── 1. Live Now ──────────────────────────────────────────────── */}
           {filteredLive.length > 0 && (
             <section style={{ marginBottom: '40px' }}>
               <SectionHeading label="Live Now" dot />
               <div style={gridStyle}>
                 {filteredLive.map(m => (
-                  <MatchCard
-                    key={m.id} match={m}
-                    onPredict={() => onSelectMatch(m)}
-                    wtaPlayerIds={wtaPlayerIds}
-                  />
+                  <MatchCard key={m.id} match={m} onPredict={() => onSelectMatch(m)} wtaPlayerIds={wtaPlayerIds} />
                 ))}
               </div>
             </section>
           )}
 
-          {/* ── 2. Upcoming / Scheduled ──────────────────────────────────────── */}
+          {/* ── 2. Upcoming ──────────────────────────────────────────────── */}
           <section style={{ marginBottom: filteredFinished.length > 0 ? '40px' : '0' }}>
-            <SectionHeading
-              label={`${activeFilterDef?.label}${dayLabel} — Upcoming`}
-            />
+            <SectionHeading label={`${activeFilterDef?.label}${dayLabel} — Upcoming`} />
             {filteredUpcoming.length === 0 ? (
               filteredLive.length === 0 && filteredFinished.length === 0 ? (
-                // Nothing at all for this filter
                 <EmptyState
                   icon={isToday ? '🎾' : '📅'}
                   title={`No ${activeFilterDef?.label} matches`}
-                  desc={
-                    isToday
-                      ? 'No matches found for this filter today.'
-                      : 'No matches found for this filter on this day.'
-                  }
+                  desc={isToday ? 'No matches found for this filter today.' : 'No matches found for this filter on this day.'}
                 />
               ) : (
-                // There are live or finished matches — just no upcoming ones
                 <div style={{
-                  padding: '16px 20px',
-                  background: 'var(--bg-glass)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 'var(--radius)',
-                  textAlign: 'center',
+                  padding: '16px 20px', background: 'var(--bg-glass)',
+                  border: '1px solid var(--border)', borderRadius: 'var(--radius)', textAlign: 'center',
                 }}>
                   <p style={{ fontSize: '13px', color: 'var(--text-faint)' }}>
                     No more upcoming {activeFilterDef?.label} matches today
@@ -740,31 +618,21 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
               <div style={gridStyle}>
                 {filteredUpcoming.map((m, i) => (
                   <div key={m.id} className={`tv-fade-up d${Math.min(i + 1, 5)}`}>
-                    <MatchCard
-                      match={m}
-                      onPredict={() => onSelectMatch(m)}
-                      wtaPlayerIds={wtaPlayerIds}
-                    />
+                    <MatchCard match={m} onPredict={() => onSelectMatch(m)} wtaPlayerIds={wtaPlayerIds} />
                   </div>
                 ))}
               </div>
             )}
           </section>
 
-          {/* ── 3. Earlier Today (finished) ──────────────────────────────────── */}
+          {/* ── 3. Finished / Earlier Today ──────────────────────────────── */}
           {filteredFinished.length > 0 && (
             <section>
-              <SectionHeading
-                label={`${activeFilterDef?.label}${dayLabel} — Earlier Today`}
-              />
+              <SectionHeading label={`${activeFilterDef?.label}${dayLabel} — Earlier Today`} />
               <div style={gridStyle}>
                 {filteredFinished.map((m, i) => (
                   <div key={m.id} className={`tv-fade-up d${Math.min(i + 1, 5)}`}>
-                    <MatchCard
-                      match={m}
-                      onPredict={() => onSelectMatch(m)}
-                      wtaPlayerIds={wtaPlayerIds}
-                    />
+                    <MatchCard match={m} onPredict={() => onSelectMatch(m)} wtaPlayerIds={wtaPlayerIds} />
                   </div>
                 ))}
               </div>
@@ -780,19 +648,14 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
 // MATCH CARD
 // ─────────────────────────────────────────────────────────────────────────────
 const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = new Set() }) {
-  const surfaceColors = { Clay: '#f97316', Hard: '#60a5fa', Grass: '#4ade80' };
-  const surfaceColor = surfaceColors[m.surface] ?? '#94a3b8';
-
-  const effectiveType = deriveMatchType(m, wtaPlayerIds);
-  const matchTypeDef = MATCH_FILTERS.find(f => f.id === effectiveType) ?? null;
-
-  // Trust status directly from matches_live_status view — no date math needed
-  const isFinished = m.status === 'finished';
-  const isLive     = m.status === 'live';
-
-  // Resolve flags on-the-fly for any missing ones
-  const p1Flag = m.player1?.flag && m.player1.flag !== '🏳️' ? m.player1.flag : resolveFlag(m.player1?.country ?? '');
-  const p2Flag = m.player2?.flag && m.player2.flag !== '🏳️' ? m.player2.flag : resolveFlag(m.player2?.country ?? '');
+  const surfaceColors  = { Clay: '#f97316', Hard: '#60a5fa', Grass: '#4ade80' };
+  const surfaceColor   = surfaceColors[m.surface] ?? '#94a3b8';
+  const effectiveType  = deriveMatchType(m, wtaPlayerIds);
+  const matchTypeDef   = MATCH_FILTERS.find(f => f.id === effectiveType) ?? null;
+  const isFinished     = m.status === 'finished';
+  const isLive         = m.status === 'live';
+  const p1Flag         = m.player1?.flag && m.player1.flag !== '🏳️' ? m.player1.flag : resolveFlag(m.player1?.country ?? '');
+  const p2Flag         = m.player2?.flag && m.player2.flag !== '🏳️' ? m.player2.flag : resolveFlag(m.player2?.country ?? '');
 
   return (
     <Card style={{ padding: '16px', transition: 'var(--t)' }}>
@@ -806,9 +669,7 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = 
           }}>
             {m.tournament}
           </p>
-          <p style={{ fontSize: '11px', color: 'var(--text-faint)', marginTop: '2px' }}>
-            {m.round}
-          </p>
+          <p style={{ fontSize: '11px', color: 'var(--text-faint)', marginTop: '2px' }}>{m.round}</p>
         </div>
         <div style={{ display: 'flex', gap: '4px', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           {isLive && (
@@ -818,15 +679,12 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = 
               color: 'var(--lime)', fontSize: '10px', fontWeight: 700,
               padding: '2px 7px', borderRadius: '999px', textTransform: 'uppercase',
             }}>
-              <span className="live-dot" style={{ width: '5px', height: '5px' }} />
-              Live
+              <span className="live-dot" style={{ width: '5px', height: '5px' }} />Live
             </span>
           )}
           <span style={{
-            fontSize: '10px', fontWeight: 700, padding: '2px 7px',
-            borderRadius: '999px',
-            background: `${surfaceColor}20`, color: surfaceColor,
-            border: `1px solid ${surfaceColor}40`,
+            fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '999px',
+            background: `${surfaceColor}20`, color: surfaceColor, border: `1px solid ${surfaceColor}40`,
           }}>
             {m.surface ?? 'Hard'}
           </span>
@@ -848,24 +706,22 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = 
         { player: m.player2, flag: p2Flag, isWinner: m.winner_id === m.player2?.id },
       ].map(({ player: p, flag, isWinner }, idx) => (
         <div key={idx} style={{
-          display: 'flex', alignItems: 'center', gap: '10px',
-          padding: '6px 0',
+          display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 0',
           borderTop: idx === 1 ? '1px dashed var(--border)' : 'none',
           opacity: isFinished && m.winner_id && !isWinner ? 0.55 : 1,
         }}>
           <span style={{ fontSize: '20px', flexShrink: 0 }}>{flag}</span>
           <div style={{ flex: 1, minWidth: 0 }}>
             <p style={{
-              fontWeight: isWinner ? 700 : 500,
-              fontSize: '14px', color: isWinner ? 'var(--text)' : 'var(--text-muted)',
+              fontWeight: isWinner ? 700 : 500, fontSize: '14px',
+              color: isWinner ? 'var(--text)' : 'var(--text-muted)',
               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
             }}>
               {p?.name ?? 'TBD'}
               {isWinner && <span style={{ color: 'var(--lime)', marginLeft: '6px', fontSize: '12px' }}>✓</span>}
             </p>
             <p style={{ fontSize: '11px', color: 'var(--text-faint)', marginTop: '1px' }}>
-              {p?.rank ? `#${p.rank}` : ''}
-              {p?.country ? ` · ${p.country}` : ''}
+              {p?.rank ? `#${p.rank}` : ''}{p?.country ? ` · ${p.country}` : ''}
             </p>
           </div>
         </div>
@@ -876,8 +732,7 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = 
         {isFinished ? (
           <div style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '6px 10px', background: 'var(--bg-glass)',
-            borderRadius: '6px',
+            padding: '6px 10px', background: 'var(--bg-glass)', borderRadius: '6px',
           }}>
             {m.score ? (
               <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--text-muted)', fontSize: '13px' }}>
@@ -904,14 +759,13 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = 
         ) : null}
       </div>
 
-      {/* Predict button — uses button_text from DB view */}
+      {/* Predict button */}
       {!isFinished && (
         <button
           onClick={onPredict}
           style={{
-            marginTop: '12px', width: '100%', padding: '9px 16px',
-            borderRadius: '8px', background: 'transparent',
-            border: '1px solid var(--lime)', color: 'var(--lime)',
+            marginTop: '12px', width: '100%', padding: '9px 16px', borderRadius: '8px',
+            background: 'transparent', border: '1px solid var(--lime)', color: 'var(--lime)',
             fontFamily: 'var(--font-body)', fontWeight: 600, fontSize: '13px',
             cursor: 'pointer', transition: 'background 0.15s, color 0.15s',
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
@@ -934,7 +788,6 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
     selectedMatch ? (deriveMatchType(selectedMatch, wtaPlayerIds) ?? 'atp_singles') : 'atp_singles'
   );
 
-  // Auto-switch filter when a match is selected from another tab
   useEffect(() => {
     if (!selectedMatch) return;
     const matchType = deriveMatchType(selectedMatch, wtaPlayerIds);
@@ -942,25 +795,20 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
   }, [selectedMatch?.id]);
 
   const { prediction, loading: predLoading, error: predError } = usePrediction(selectedMatch);
-  const [h2h, setH2h] = useState(null);
+  const [h2h,       setH2h]       = useState(null);
   const [h2hLoading, setH2hLoading] = useState(false);
 
   const todayStr = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Europe/Paris',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
+    timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit',
   }).format(new Date());
 
-  // Status comes from view — no reclassify needed
+  // allMatches is already reclassified — just filter out finished
   const predictableMatches = allMatches.filter(m => {
     if (m.status === 'finished') return false;
     if (m.status === 'live')     return true;
-    // upcoming: must be today
     const d = m.local_date ?? (m.date
       ? new Intl.DateTimeFormat('en-CA', {
-          timeZone: 'Europe/Paris',
-          year: 'numeric', month: '2-digit', day: '2-digit',
+          timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit',
         }).format(new Date(m.date))
       : null);
     return d === todayStr;
@@ -981,11 +829,19 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
     return () => { cancelled = true; };
   }, [selectedMatch?.player1?.id, selectedMatch?.player2?.id]);
 
+  // Badge counts for filter pills
+  const predCounts = (() => {
+    const counts = {};
+    predictableMatches.forEach(m => {
+      const type = deriveMatchType(m, wtaPlayerIds);
+      counts[type] = (counts[type] ?? 0) + 1;
+    });
+    return counts;
+  })();
+
   return (
     <div className="tv-fade-up tv-predictions-layout" style={{
-      display: 'grid',
-      gridTemplateColumns: '280px 1fr',
-      gap: '20px', alignItems: 'start',
+      display: 'grid', gridTemplateColumns: '280px 1fr', gap: '20px', alignItems: 'start',
     }}>
       {/* Sidebar */}
       <div className="tv-predictions-sidebar" style={{
@@ -996,19 +852,7 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
           <p style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '8px' }}>
             Filter
           </p>
-          <FilterPills
-            activeFilter={predFilter}
-            onSelect={setPredFilter}
-            size="small"
-            counts={(() => {
-              const counts = {};
-              predictableMatches.forEach(m => {
-                const type = deriveMatchType(m, wtaPlayerIds);
-                counts[type] = (counts[type] ?? 0) + 1;
-              });
-              return counts;
-            })()}
-          />
+          <FilterPills activeFilter={predFilter} onSelect={setPredFilter} size="small" counts={predCounts} />
         </div>
 
         <div style={{ maxHeight: '60dvh', overflowY: 'auto', padding: '8px' }}>
@@ -1020,8 +864,7 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
               {filteredMatches.map(m => (
                 <MatchPickerRow
-                  key={m.id}
-                  match={m}
+                  key={m.id} match={m}
                   selected={selectedMatch?.id === m.id}
                   onSelect={onSelectMatch}
                   wtaPlayerIds={wtaPlayerIds}
@@ -1039,9 +882,7 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
             <div style={{ padding: '40px 20px', textAlign: 'center' }}>
               <p style={{ fontSize: '32px', marginBottom: '12px' }}>🔮</p>
               <p style={{ fontWeight: 600, color: 'var(--text)', marginBottom: '8px' }}>Select a match to predict</p>
-              <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-                AI-powered win probability with key factor breakdowns.
-              </p>
+              <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>AI-powered win probability with key factor breakdowns.</p>
             </div>
           </Card>
         ) : predLoading ? (
@@ -1082,19 +923,16 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
 // ─────────────────────────────────────────────────────────────────────────────
 function MatchPickerRow({ match: m, selected, onSelect, wtaPlayerIds = new Set() }) {
   const effectiveType = deriveMatchType(m, wtaPlayerIds);
-  const matchTypeDef = MATCH_FILTERS.find(f => f.id === effectiveType) ?? null;
-  const isLive = m.status === 'live';
+  const matchTypeDef  = MATCH_FILTERS.find(f => f.id === effectiveType) ?? null;
+  const isLive        = m.status === 'live';
 
   return (
-    <button
-      onClick={() => onSelect(m)}
-      style={{
-        width: '100%', textAlign: 'left', padding: '10px 12px',
-        background: selected ? 'var(--bg-glass-md)' : 'var(--bg-glass)',
-        border: selected ? '1px solid var(--lime)' : '1px solid var(--border)',
-        borderRadius: '10px', cursor: 'pointer', transition: 'var(--t)',
-      }}
-    >
+    <button onClick={() => onSelect(m)} style={{
+      width: '100%', textAlign: 'left', padding: '10px 12px',
+      background: selected ? 'var(--bg-glass-md)' : 'var(--bg-glass)',
+      border: selected ? '1px solid var(--lime)' : '1px solid var(--border)',
+      borderRadius: '10px', cursor: 'pointer', transition: 'var(--t)',
+    }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px', gap: '6px' }}>
         <span style={{
           fontSize: '10px', color: 'var(--text-faint)', fontWeight: 600,
@@ -1106,8 +944,7 @@ function MatchPickerRow({ match: m, selected, onSelect, wtaPlayerIds = new Set()
         <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
           {isLive && (
             <span style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '9px', fontWeight: 700, color: 'var(--lime)', textTransform: 'uppercase' }}>
-              <span className="live-dot" style={{ width: '5px', height: '5px' }} />
-              Live
+              <span className="live-dot" style={{ width: '5px', height: '5px' }} />Live
             </span>
           )}
           {matchTypeDef && (
@@ -1133,20 +970,18 @@ function MatchPickerRow({ match: m, selected, onSelect, wtaPlayerIds = new Set()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PREDICTION CARD — shows AI analysis + source badge
+// PREDICTION CARD
 // ─────────────────────────────────────────────────────────────────────────────
 function PredictionCard({ match: m, prediction: pred }) {
-  const p1 = m.player1;
-  const p2 = m.player2;
+  const p1        = m.player1;
+  const p2        = m.player2;
   const confColor = pred.confidence === 'High' ? 'var(--lime)'
     : pred.confidence === 'Medium' ? 'var(--yellow)' : 'var(--clay)';
-
-  const p1WinPct = pred.player1_win_pct ?? 50;
-  const p2WinPct = pred.player2_win_pct ?? (100 - p1WinPct);
-  const isAi = pred.source === 'ai';
-
-  const p1Flag = p1?.flag && p1.flag !== '🏳️' ? p1.flag : resolveFlag(p1?.country ?? '');
-  const p2Flag = p2?.flag && p2.flag !== '🏳️' ? p2.flag : resolveFlag(p2?.country ?? '');
+  const p1WinPct  = pred.player1_win_pct ?? 50;
+  const p2WinPct  = pred.player2_win_pct ?? (100 - p1WinPct);
+  const isAi      = pred.source === 'ai';
+  const p1Flag    = p1?.flag && p1.flag !== '🏳️' ? p1.flag : resolveFlag(p1?.country ?? '');
+  const p2Flag    = p2?.flag && p2.flag !== '🏳️' ? p2.flag : resolveFlag(p2?.country ?? '');
 
   return (
     <Card>
@@ -1173,8 +1008,7 @@ function PredictionCard({ match: m, prediction: pred }) {
           )}
           <span style={{
             fontSize: '11px', fontWeight: 700, padding: '3px 10px', borderRadius: '999px',
-            background: `${confColor}20`, color: confColor,
-            border: `1px solid ${confColor}40`,
+            background: `${confColor}20`, color: confColor, border: `1px solid ${confColor}40`,
           }}>
             {pred.confidence} Confidence
           </span>
@@ -1185,8 +1019,7 @@ function PredictionCard({ match: m, prediction: pred }) {
       <div style={{
         padding: '12px 16px', borderRadius: '10px',
         background: 'linear-gradient(135deg, rgba(159,239,102,0.1), rgba(159,239,102,0.05))',
-        border: '1px solid rgba(159,239,102,0.2)',
-        marginBottom: '20px',
+        border: '1px solid rgba(159,239,102,0.2)', marginBottom: '20px',
         display: 'flex', alignItems: 'center', gap: '10px',
       }}>
         <span style={{ fontSize: '20px' }}>🏆</span>
@@ -1202,41 +1035,27 @@ function PredictionCard({ match: m, prediction: pred }) {
 
       {/* Win probability bars */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '20px' }}>
-        {/* P1 */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-              <span style={{ fontSize: '18px', flexShrink: 0 }}>{p1Flag}</span>
-              <span style={{ fontSize: '14px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {p1?.name ?? 'Player 1'}
+        {[
+          { player: p1, flag: p1Flag, pct: p1WinPct, color: 'linear-gradient(90deg, #9fef66, #6bc940)' },
+          { player: p2, flag: p2Flag, pct: p2WinPct, color: 'var(--clay)' },
+        ].map(({ player, flag, pct, color }, idx) => (
+          <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                <span style={{ fontSize: '18px', flexShrink: 0 }}>{flag}</span>
+                <span style={{ fontSize: '14px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {player?.name ?? `Player ${idx + 1}`}
+                </span>
+              </div>
+              <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '16px', color: idx === 0 ? 'var(--lime)' : 'var(--clay)', flexShrink: 0 }}>
+                {pct}%
               </span>
             </div>
-            <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '16px', color: 'var(--lime)', flexShrink: 0 }}>
-              {p1WinPct}%
-            </span>
-          </div>
-          <div style={{ height: '8px', borderRadius: '99px', background: 'var(--bg-glass-md)', overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: `${p1WinPct}%`, background: 'linear-gradient(90deg, #9fef66, #6bc940)', borderRadius: '99px', transition: 'width 0.8s ease' }} />
-          </div>
-        </div>
-
-        {/* P2 */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-              <span style={{ fontSize: '18px', flexShrink: 0 }}>{p2Flag}</span>
-              <span style={{ fontSize: '14px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {p2?.name ?? 'Player 2'}
-              </span>
+            <div style={{ height: '8px', borderRadius: '99px', background: 'var(--bg-glass-md)', overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: '99px', transition: 'width 0.8s ease' }} />
             </div>
-            <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '16px', color: 'var(--clay)', flexShrink: 0 }}>
-              {p2WinPct}%
-            </span>
           </div>
-          <div style={{ height: '8px', borderRadius: '99px', background: 'var(--bg-glass-md)', overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: `${p2WinPct}%`, background: 'var(--clay)', borderRadius: '99px', transition: 'width 0.8s ease' }} />
-          </div>
-        </div>
+        ))}
       </div>
 
       {/* AI Analysis block */}
@@ -1258,24 +1077,20 @@ function PredictionCard({ match: m, prediction: pred }) {
       {/* Key factors */}
       {pred.key_factors?.length > 0 && (
         <div>
-          <p style={{
-            fontSize: '11px', fontWeight: 700, color: 'var(--text-faint)',
-            textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '10px',
-          }}>
+          <p style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '10px' }}>
             Key Factors ({pred.key_factors.length})
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
             {pred.key_factors.map((f, i) => {
-              // Auto-assign an icon based on what the factor is likely about
-              const fl = f.toLowerCase();
+              const fl   = f.toLowerCase();
               const icon = fl.includes('rank') || fl.includes('seed') ? '📊'
                 : fl.includes('surface') || fl.includes('clay') || fl.includes('grass') || fl.includes('hard') ? '🎾'
-                  : fl.includes('form') || fl.includes('w/l') || fl.includes('won') || fl.includes('lost') ? '📈'
-                    : fl.includes('h2h') || fl.includes('head') || fl.includes('meeting') || fl.includes('record') ? '⚔️'
-                      : fl.includes('serve') || fl.includes('ace') || fl.includes('style') || fl.includes('game') ? '💥'
-                        : fl.includes('round') || fl.includes('tournament') || fl.includes('draw') || fl.includes('seeded') ? '🏆'
-                          : fl.includes('fatigue') || fl.includes('fitness') || fl.includes('injur') || fl.includes('schedule') ? '💪'
-                            : '→';
+                : fl.includes('form') || fl.includes('w/l') || fl.includes('won') || fl.includes('lost') ? '📈'
+                : fl.includes('h2h') || fl.includes('head') || fl.includes('meeting') || fl.includes('record') ? '⚔️'
+                : fl.includes('serve') || fl.includes('ace') || fl.includes('style') || fl.includes('game') ? '💥'
+                : fl.includes('round') || fl.includes('tournament') || fl.includes('draw') || fl.includes('seeded') ? '🏆'
+                : fl.includes('fatigue') || fl.includes('fitness') || fl.includes('injur') || fl.includes('schedule') ? '💪'
+                : '→';
               return (
                 <div key={i} style={{
                   display: 'flex', alignItems: 'flex-start', gap: '10px',
@@ -1292,12 +1107,11 @@ function PredictionCard({ match: m, prediction: pred }) {
         </div>
       )}
 
-      {/* Recent form strip — shown when no H2H and we have DB recent matches */}
-      {pred.source === 'ai' && !pred.key_factors?.some(f => f.toLowerCase().includes('h2h') || f.toLowerCase().includes('head-to-head') || f.toLowerCase().includes('meeting')) && (
-        <div style={{
-          marginTop: '12px', padding: '12px 14px', borderRadius: '10px',
-          background: 'var(--bg-glass)', border: '1px solid var(--border)',
-        }}>
+      {/* Recent form strip */}
+      {pred.source === 'ai' && !pred.key_factors?.some(f =>
+        f.toLowerCase().includes('h2h') || f.toLowerCase().includes('head-to-head') || f.toLowerCase().includes('meeting')
+      ) && (
+        <div style={{ marginTop: '12px', padding: '12px 14px', borderRadius: '10px', background: 'var(--bg-glass)', border: '1px solid var(--border)' }}>
           <p style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '10px' }}>
             Recent Form
           </p>
@@ -1348,7 +1162,6 @@ function H2HPanel({ h2h, match: m }) {
       <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '18px', marginBottom: '16px' }}>
         Head to Head
       </h3>
-
       <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: '12px', alignItems: 'center', marginBottom: '16px' }}>
         <div style={{ textAlign: 'center' }}>
           <p style={{ fontSize: '11px', color: 'var(--text-faint)', marginBottom: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p1?.name}</p>
@@ -1371,10 +1184,8 @@ function H2HPanel({ h2h, match: m }) {
           </p>
           {h2h.meetings.slice(0, 5).map((meet, i) => (
             <div key={i} style={{
-              display: 'flex', alignItems: 'center', gap: '10px',
-              padding: '8px 0',
-              borderTop: i > 0 ? '1px solid var(--border)' : 'none',
-              fontSize: '13px',
+              display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 0',
+              borderTop: i > 0 ? '1px solid var(--border)' : 'none', fontSize: '13px',
             }}>
               <span style={{ color: 'var(--text-faint)', fontFamily: 'var(--font-mono)', fontSize: '11px', flexShrink: 0 }}>
                 {meet.year ?? '—'}
@@ -1382,13 +1193,8 @@ function H2HPanel({ h2h, match: m }) {
               <span style={{ flex: 1, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {meet.tournament ?? 'Unknown'}
               </span>
-              <span style={{ fontSize: '12px', color: 'var(--text-muted)', flexShrink: 0 }}>
-                {meet.score ?? '—'}
-              </span>
-              <span style={{
-                fontSize: '11px', fontWeight: 700, flexShrink: 0,
-                color: meet.winner === 'p1' ? 'var(--lime)' : 'var(--clay)',
-              }}>
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)', flexShrink: 0 }}>{meet.score ?? '—'}</span>
+              <span style={{ fontSize: '11px', fontWeight: 700, flexShrink: 0, color: meet.winner === 'p1' ? 'var(--lime)' : 'var(--clay)' }}>
                 {meet.winner === 'p1' ? p1?.name?.split(' ').pop() : p2?.name?.split(' ').pop()}
               </span>
             </div>
@@ -1403,43 +1209,35 @@ function H2HPanel({ h2h, match: m }) {
 // RANKINGS TAB
 // ─────────────────────────────────────────────────────────────────────────────
 const RANKING_TOURS = [
-  { id: 'ATP',       label: 'ATP',       color: '#60a5fa', pointsLabel: 'Points', interactive: true  },
-  { id: 'WTA',       label: 'WTA',       color: '#f472b6', pointsLabel: 'Points', interactive: true  },
-  { id: 'ITF_MEN',   label: 'ITF Men',   color: '#fb923c', pointsLabel: 'Wins',   interactive: false },
-  { id: 'ITF_WOMEN', label: 'ITF Women', color: '#f59e0b', pointsLabel: 'Wins',   interactive: false },
-  { id: 'UTR_MEN',   label: 'UTR Men',   color: '#a78bfa', pointsLabel: 'Wins',   interactive: false },
-  { id: 'UTR_WOMEN', label: 'UTR Women', color: '#e879f9', pointsLabel: 'Wins',   interactive: false },
+  { id: 'ATP',       label: 'ATP',        color: '#60a5fa', pointsLabel: 'Points', interactive: true  },
+  { id: 'WTA',       label: 'WTA',        color: '#f472b6', pointsLabel: 'Points', interactive: true  },
+  { id: 'ITF_MEN',   label: 'ITF Men',    color: '#fb923c', pointsLabel: 'Wins',   interactive: false },
+  { id: 'ITF_WOMEN', label: 'ITF Women',  color: '#f59e0b', pointsLabel: 'Wins',   interactive: false },
+  { id: 'UTR_MEN',   label: 'UTR Men',    color: '#a78bfa', pointsLabel: 'Wins',   interactive: false },
+  { id: 'UTR_WOMEN', label: 'UTR Women',  color: '#e879f9', pointsLabel: 'Wins',   interactive: false },
 ];
 
 function RankingsTab({ onSelectPlayer }) {
-  const [tour, setTour] = useState('ATP');
+  const [tour,   setTour]   = useState('ATP');
   const [hovRow, setHovRow] = useState(null);
   const { rankings, loading, error } = useRankings(tour);
-
-  const tourDef = RANKING_TOURS.find(t => t.id === tour) ?? RANKING_TOURS[0];
+  const tourDef    = RANKING_TOURS.find(t => t.id === tour) ?? RANKING_TOURS[0];
   const isClickable = tourDef.interactive;
-  const isAltTour = !isClickable;
+  const isAltTour   = !isClickable;
 
   return (
     <div className="tv-fade-up">
-
       {/* Tour selector pills */}
-      <div className="tv-rankings-filters" style={{
-        display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap',
-      }}>
+      <div className="tv-rankings-filters" style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
         {RANKING_TOURS.map(t => (
-          <button
-            key={t.id}
-            onClick={() => { setTour(t.id); setHovRow(null); }}
-            style={{
-              padding: '6px 16px', borderRadius: '999px',
-              border: tour === t.id ? 'none' : '1px solid var(--border)',
-              background: tour === t.id ? t.color : 'var(--bg-glass-md)',
-              color: tour === t.id ? '#070B14' : 'var(--text-muted)',
-              fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: '12px',
-              cursor: 'pointer', transition: 'var(--t)', whiteSpace: 'nowrap',
-            }}
-          >
+          <button key={t.id} onClick={() => { setTour(t.id); setHovRow(null); }} style={{
+            padding: '6px 16px', borderRadius: '999px',
+            border: tour === t.id ? 'none' : '1px solid var(--border)',
+            background: tour === t.id ? t.color : 'var(--bg-glass-md)',
+            color: tour === t.id ? '#070B14' : 'var(--text-muted)',
+            fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: '12px',
+            cursor: 'pointer', transition: 'var(--t)', whiteSpace: 'nowrap',
+          }}>
             {t.label}
           </button>
         ))}
@@ -1448,139 +1246,87 @@ function RankingsTab({ onSelectPlayer }) {
       {/* Info banner */}
       <div style={{
         padding: '10px 14px', borderRadius: '8px', marginBottom: '16px',
-        background: `${tourDef.color}10`,
-        border: `1px solid ${tourDef.color}30`,
+        background: `${tourDef.color}10`, border: `1px solid ${tourDef.color}30`,
         display: 'flex', alignItems: 'center', gap: '8px',
       }}>
         <span style={{ fontSize: '14px' }}>{isAltTour ? 'ℹ️' : '👆'}</span>
         <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
           {isAltTour ? (
-            <>
-              <span style={{ color: tourDef.color, fontWeight: 700 }}>{tourDef.label}</span>
-              {' '}rankings are derived from match wins. Player profiles are not available for this tour.
-            </>
+            <><span style={{ color: tourDef.color, fontWeight: 700 }}>{tourDef.label}</span>{' '}rankings are derived from match wins. Player profiles are not available for this tour.</>
           ) : (
-            <>
-              Showing <span style={{ color: tourDef.color, fontWeight: 700 }}>Top 50</span>
-              {' '}— click any player to view their full profile and stats.
-            </>
+            <>Showing <span style={{ color: tourDef.color, fontWeight: 700 }}>Top 50</span>{' '}— click any player to view their full profile and stats.</>
           )}
         </p>
       </div>
 
-      {/* States */}
-      {loading ? (
-        <LoadingGrid />
-      ) : error ? (
-        <ErrorMessage msg={error} />
-      ) : rankings.length === 0 ? (
+      {loading ? <LoadingGrid />
+      : error   ? <ErrorMessage msg={error} />
+      : rankings.length === 0 ? (
         <EmptyState
           icon="📊"
           title={`No ${tourDef.label} rankings yet`}
-          desc={isAltTour
-            ? 'Rankings appear once matches of this type are synced.'
-            : 'Rankings will appear after the next sync.'}
+          desc={isAltTour ? 'Rankings appear once matches of this type are synced.' : 'Rankings will appear after the next sync.'}
         />
       ) : (
         <Card style={{ overflow: 'hidden' }}>
-
           {/* Header row */}
           <div className="tv-ranking-header" style={{
-            display: 'grid',
-            gridTemplateColumns: '36px minmax(0,1fr) 70px',
-            gap: '8px', padding: '10px 16px',
-            borderBottom: '1px solid var(--border)',
-            fontSize: '11px', fontWeight: 700,
-            color: 'var(--text-faint)',
+            display: 'grid', gridTemplateColumns: '36px minmax(0,1fr) 70px',
+            gap: '8px', padding: '10px 16px', borderBottom: '1px solid var(--border)',
+            fontSize: '11px', fontWeight: 700, color: 'var(--text-faint)',
             textTransform: 'uppercase', letterSpacing: '0.07em',
           }}>
-            <span>#</span>
-            <span>Player</span>
+            <span>#</span><span>Player</span>
             <span style={{ textAlign: 'right' }}>{tourDef.pointsLabel}</span>
           </div>
 
-          {/* Player rows */}
           {rankings.map((p, i) => {
-            const rank = p.rank ?? (i + 1);
-            const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : null;
-            const flag = p.flag && p.flag !== '🏳️' ? p.flag : resolveFlag(p.country ?? '');
+            const rank    = p.rank ?? (i + 1);
+            const medal   = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : null;
+            const flag    = p.flag && p.flag !== '🏳️' ? p.flag : resolveFlag(p.country ?? '');
             const rankDir = p.prev_rank == null ? null
-              : p.prev_rank > rank ? 'up'
-                : p.prev_rank < rank ? 'down'
-                  : 'same';
+              : p.prev_rank > rank ? 'up' : p.prev_rank < rank ? 'down' : 'same';
 
             return (
               <div
-                className="tv-ranking-row"
-                key={p.id ?? i}
+                className="tv-ranking-row" key={p.id ?? i}
                 onClick={() => isClickable && onSelectPlayer?.(p)}
                 onMouseEnter={() => isClickable && setHovRow(i)}
                 onMouseLeave={() => isClickable && setHovRow(null)}
                 style={{
-                  display: 'grid',
-                  gridTemplateColumns: '36px minmax(0,1fr) 70px',
-                  gap: '8px', padding: '12px 16px',
-                  borderTop: '1px solid var(--border)',
+                  display: 'grid', gridTemplateColumns: '36px minmax(0,1fr) 70px',
+                  gap: '8px', padding: '12px 16px', borderTop: '1px solid var(--border)',
                   background: isClickable && hovRow === i ? 'var(--bg-glass)' : 'transparent',
                   cursor: isClickable ? 'pointer' : 'default',
-                  transition: 'background 0.12s',
-                  alignItems: 'center',
+                  transition: 'background 0.12s', alignItems: 'center',
                   opacity: isAltTour ? 0.78 : 1,
                 }}
               >
-                {/* Rank */}
-                <span style={{
-                  fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '14px',
-                  color: rank <= 3 ? tourDef.color : 'var(--text-muted)',
-                }}>
+                <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '14px', color: rank <= 3 ? tourDef.color : 'var(--text-muted)' }}>
                   {medal ?? rank}
                 </span>
-
-                {/* Name + flag + movement */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
                   <span style={{ fontSize: '16px', flexShrink: 0 }}>{flag}</span>
-                  <span style={{
-                    fontWeight: 600, fontSize: '13px', color: 'var(--text)',
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  }}>
+                  <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {p.name}
                   </span>
                   {rankDir && rankDir !== 'same' && (
-                    <span style={{
-                      fontSize: '10px', fontWeight: 700, flexShrink: 0,
-                      color: rankDir === 'up' ? 'var(--lime)' : 'var(--clay)',
-                    }}>
+                    <span style={{ fontSize: '10px', fontWeight: 700, flexShrink: 0, color: rankDir === 'up' ? 'var(--lime)' : 'var(--clay)' }}>
                       {rankDir === 'up' ? '▲' : '▼'}
                     </span>
                   )}
                 </div>
-
-                {/* Points */}
-                <span style={{
-                  fontFamily: 'var(--font-mono)', fontWeight: 600,
-                  fontSize: '13px', color: 'var(--text-muted)', textAlign: 'right',
-                }}>
+                <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: '13px', color: 'var(--text-muted)', textAlign: 'right' }}>
                   {p.points != null ? p.points.toLocaleString() : '—'}
                 </span>
               </div>
             );
           })}
 
-          {/* Footer */}
-          <div style={{
-            padding: '10px 16px', borderTop: '1px solid var(--border)',
-            fontSize: '11px', color: 'var(--text-faint)', textAlign: 'center',
-          }}>
-            Showing Top {rankings.length}
-            {' · '}
-            {isAltTour ? 'Derived from match wins' : 'Official rankings'}
-            {isClickable && (
-              <span style={{ color: tourDef.color }}>
-                {' · '}Click a player for full profile
-              </span>
-            )}
+          <div style={{ padding: '10px 16px', borderTop: '1px solid var(--border)', fontSize: '11px', color: 'var(--text-faint)', textAlign: 'center' }}>
+            Showing Top {rankings.length} · {isAltTour ? 'Derived from match wins' : 'Official rankings'}
+            {isClickable && <span style={{ color: tourDef.color }}> · Click a player for full profile</span>}
           </div>
-
         </Card>
       )}
     </div>
@@ -1600,9 +1346,7 @@ function AiChatTab({ contextMatch }) {
     if (!input.trim() || typing) return;
     sendMessage(input);
     setInput('');
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-    }
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
   }
 
   function handleInputChange(e) {
@@ -1625,48 +1369,35 @@ function AiChatTab({ contextMatch }) {
 
   return (
     <div className="tv-fade-up tv-chat-layout" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '20px' }}>
-
       <div className="tv-chat-shell">
 
         {/* Header */}
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '12px 16px',
-          background: 'var(--bg-card)',
+          padding: '12px 16px', background: 'var(--bg-card)',
           border: '1px solid var(--border)', borderBottom: 'none',
-          borderRadius: 'var(--radius) var(--radius) 0 0',
-          flexShrink: 0,
+          borderRadius: 'var(--radius) var(--radius) 0 0', flexShrink: 0,
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <span style={{ fontSize: '20px' }}>🤖</span>
             <div>
-              <p style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text)', margin: 0 }}>
-                Tennis AI Analyst
-              </p>
-              <p style={{ fontSize: '11px', color: 'var(--text-faint)', marginTop: '1px' }}>
-                Powered by Gemini · Tennis expert
-              </p>
+              <p style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text)', margin: 0 }}>Tennis AI Analyst</p>
+              <p style={{ fontSize: '11px', color: 'var(--text-faint)', marginTop: '1px' }}>Powered by Gemini · Tennis expert</p>
             </div>
           </div>
-          <button
-            onClick={reset}
-            style={{
-              padding: '5px 10px', borderRadius: '6px',
-              background: 'var(--bg-glass)', border: '1px solid var(--border)',
-              color: 'var(--text-faint)', fontSize: '11px', fontWeight: 600,
-              cursor: 'pointer', fontFamily: 'var(--font-body)', transition: 'var(--t)',
-            }}
-          >
+          <button onClick={reset} style={{
+            padding: '5px 10px', borderRadius: '6px',
+            background: 'var(--bg-glass)', border: '1px solid var(--border)',
+            color: 'var(--text-faint)', fontSize: '11px', fontWeight: 600,
+            cursor: 'pointer', fontFamily: 'var(--font-body)', transition: 'var(--t)',
+          }}>
             New Chat
           </button>
         </div>
 
         {/* Messages */}
         <div style={{
-          flex: 1,
-          overflowY: 'auto',
-          padding: '16px',
-          background: 'var(--bg-card)',
+          flex: 1, overflowY: 'auto', padding: '16px', background: 'var(--bg-card)',
           border: '1px solid var(--border)', borderTop: 'none', borderBottom: 'none',
           display: 'flex', flexDirection: 'column', gap: '16px',
           WebkitOverflowScrolling: 'touch',
@@ -1683,11 +1414,7 @@ function AiChatTab({ contextMatch }) {
           )}
 
           {messages.length === 0 && (
-            <div style={{
-              flex: 1, display: 'flex', flexDirection: 'column',
-              alignItems: 'center', justifyContent: 'center',
-              gap: '12px', padding: '20px 0',
-            }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', padding: '20px 0' }}>
               <span style={{ fontSize: '40px' }}>🎾</span>
               <p style={{ color: 'var(--text-faint)', fontSize: '14px', textAlign: 'center', maxWidth: '280px', lineHeight: 1.6 }}>
                 Ask me anything about ATP/WTA matches, players, stats, or predictions.
@@ -1696,27 +1423,16 @@ function AiChatTab({ contextMatch }) {
           )}
 
           {messages.map((msg, i) => (
-            <div
-              key={i}
-              style={{
-                display: 'flex',
-                justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
-                flexShrink: 0,
-              }}
-            >
+            <div key={i} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start', flexShrink: 0 }}>
               <div style={{
-                maxWidth: 'min(80%, 520px)',
-                padding: '10px 14px',
+                maxWidth: 'min(80%, 520px)', padding: '10px 14px',
                 borderRadius: msg.role === 'user' ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
                 background: msg.role === 'user'
                   ? 'linear-gradient(135deg, rgba(159,239,102,0.18), rgba(159,239,102,0.1))'
                   : 'var(--bg-glass-md)',
                 border: `1px solid ${msg.role === 'user' ? 'rgba(159,239,102,0.25)' : 'var(--border)'}`,
-                fontSize: '14px',
-                lineHeight: 1.65,
-                color: 'var(--text)',
-                wordBreak: 'break-word',
-                whiteSpace: 'pre-wrap',
+                fontSize: '14px', lineHeight: 1.65, color: 'var(--text)',
+                wordBreak: 'break-word', whiteSpace: 'pre-wrap',
               }}>
                 {msg.content}
               </div>
@@ -1751,18 +1467,13 @@ function AiChatTab({ contextMatch }) {
             style={{ background: 'var(--bg-card)', borderLeft: '1px solid var(--border)', borderRight: '1px solid var(--border)', flexShrink: 0 }}
           >
             {suggestions.map((s, i) => (
-              <button
-                key={i}
-                onClick={() => { sendMessage(s); }}
-                style={{
-                  padding: '7px 13px', whiteSpace: 'nowrap',
-                  borderRadius: '999px', border: '1px solid var(--border)',
-                  background: 'var(--bg-glass)', color: 'var(--text-muted)',
-                  fontSize: '12px', cursor: 'pointer', fontFamily: 'var(--font-body)',
-                  transition: 'var(--t)', flexShrink: 0,
-                  minHeight: '36px',
-                  WebkitTapHighlightColor: 'transparent',
-                }}
+              <button key={i} onClick={() => sendMessage(s)} style={{
+                padding: '7px 13px', whiteSpace: 'nowrap', borderRadius: '999px',
+                border: '1px solid var(--border)', background: 'var(--bg-glass)',
+                color: 'var(--text-muted)', fontSize: '12px', cursor: 'pointer',
+                fontFamily: 'var(--font-body)', transition: 'var(--t)', flexShrink: 0,
+                minHeight: '36px', WebkitTapHighlightColor: 'transparent',
+              }}
                 onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--lime)'; e.currentTarget.style.color = 'var(--lime)'; }}
                 onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-muted)'; }}
               >
@@ -1781,36 +1492,25 @@ function AiChatTab({ contextMatch }) {
               onChange={handleInputChange}
               onKeyDown={e => {
                 if (e.key === 'Enter' && !e.shiftKey && !('ontouchstart' in window)) {
-                  e.preventDefault();
-                  submit();
+                  e.preventDefault(); submit();
                 }
               }}
               placeholder="Ask about any match, player, or prediction…"
               rows={1}
               style={{
-                width: '100%',
-                resize: 'none',
-                background: 'var(--bg-glass)',
-                border: '1px solid var(--border)',
-                borderRadius: '10px',
-                padding: '11px 44px 11px 14px',
-                color: 'var(--text)',
-                fontFamily: 'var(--font-body)',
-                fontSize: '14px',
-                lineHeight: 1.5,
-                outline: 'none',
-                overflowY: 'hidden',
-                transition: 'border-color 0.15s',
-                boxSizing: 'border-box',
-                WebkitTextSizeAdjust: '100%',
+                width: '100%', resize: 'none', background: 'var(--bg-glass)',
+                border: '1px solid var(--border)', borderRadius: '10px',
+                padding: '11px 44px 11px 14px', color: 'var(--text)',
+                fontFamily: 'var(--font-body)', fontSize: '14px', lineHeight: 1.5,
+                outline: 'none', overflowY: 'hidden', transition: 'border-color 0.15s',
+                boxSizing: 'border-box', WebkitTextSizeAdjust: '100%',
               }}
               onFocus={e => e.target.style.borderColor = 'rgba(159,239,102,0.4)'}
               onBlur={e => e.target.style.borderColor = 'var(--border)'}
             />
             <span style={{
               position: 'absolute', right: '10px', bottom: '10px',
-              fontSize: '10px', color: charColor,
-              fontFamily: 'var(--font-mono)', pointerEvents: 'none',
+              fontSize: '10px', color: charColor, fontFamily: 'var(--font-mono)', pointerEvents: 'none',
             }}>
               {charsLeft < 200 ? charsLeft : ''}
             </span>
@@ -1820,17 +1520,14 @@ function AiChatTab({ contextMatch }) {
             className="tv-chat-send-btn"
             onClick={submit}
             disabled={!input.trim() || typing}
-            style={{
-              background: !input.trim() || typing ? 'var(--bg-glass-md)' : 'var(--lime)',
-            }}
+            style={{ background: !input.trim() || typing ? 'var(--bg-glass-md)' : 'var(--lime)' }}
           >
             {typing ? (
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" strokeWidth="2.5">
                 <rect x="6" y="6" width="12" height="12" rx="2" />
               </svg>
             ) : (
-              <svg
-                width="18" height="18" viewBox="0 0 24 24" fill="none"
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
                 stroke={!input.trim() ? 'var(--text-faint)' : '#070B14'}
                 strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
               >
