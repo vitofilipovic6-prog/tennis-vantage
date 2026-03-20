@@ -232,33 +232,33 @@ export async function getLiveMatches(wtaPlayerIds = new Set()) {
   try {
     const [atpWta, itf, utr, doubles] = await Promise.all([
       supabase
-        .from('matches')
+        .from('matches_live_status') 
         .select(MATCH_SELECT)
-        .eq('status', 'live')
+        .eq('computed_status', 'live')
         .in('match_type', ['atp_singles', 'wta_singles'])
         .order('match_date', { ascending: true })
         .limit(200),
 
       supabase
-        .from('matches')
+        .from('matches_live_status') 
         .select(MATCH_SELECT)
-        .eq('status', 'live')
+        .eq('computed_status', 'live')
         .in('match_type', ['itf_men_singles', 'itf_women_singles', 'itf_men_doubles', 'itf_women_doubles'])
         .order('match_date', { ascending: true })
         .limit(150),
 
       supabase
-        .from('matches')
+        .from('matches_live_status') 
         .select(MATCH_SELECT)
-        .eq('status', 'live')
+        .eq('computed_status', 'live')
         .in('match_type', ['utr_men_singles', 'utr_women_singles'])
         .order('match_date', { ascending: true })
         .limit(50),
 
       supabase
-        .from('matches')
+        .from('matches_live_status') 
         .select(MATCH_SELECT)
-        .eq('status', 'live')
+        .eq('computed_status', 'live')
         .in('match_type', ['atp_doubles', 'wta_doubles', 'mixed_doubles'])
         .order('match_date', { ascending: true })
         .limit(100),
@@ -295,36 +295,36 @@ export async function getUpcomingMatches(wtaPlayerIds = new Set()) {
     // an upcoming-only query, causing them to silently disappear.
     const [atpWta, itf, utr, doubles] = await Promise.all([
       supabase
-        .from('matches')
+        .from('matches_live_status')
         .select(MATCH_SELECT)
-        .in('status', ['upcoming', 'live'])   // ← KEY FIX: include live
+        .in('computed_status', ['upcoming', 'live'])   // ← KEY FIX: include live
         .eq('local_date', todayLocalDate)
         .in('match_type', ['atp_singles', 'wta_singles'])
         .order('match_date', { ascending: true })
         .limit(500),
 
       supabase
-        .from('matches')
+        .from('matches_live_status')
         .select(MATCH_SELECT)
-        .in('status', ['upcoming', 'live'])   // ← KEY FIX
+        .in('computed_status', ['upcoming', 'live'])   // ← KEY FIX
         .eq('local_date', todayLocalDate)
         .in('match_type', ['itf_men_singles', 'itf_women_singles', 'itf_men_doubles', 'itf_women_doubles'])
         .order('match_date', { ascending: true })
         .limit(300),
 
       supabase
-        .from('matches')
+        .from('matches_live_status')
         .select(MATCH_SELECT)
-        .in('status', ['upcoming', 'live'])   // ← KEY FIX
+        .in('computed_status', ['upcoming', 'live'])   // ← KEY FIX
         .eq('local_date', todayLocalDate)
         .in('match_type', ['utr_men_singles', 'utr_women_singles'])
         .order('match_date', { ascending: true })
         .limit(100),
 
       supabase
-        .from('matches')
+        .from('matches_live_status')
         .select(MATCH_SELECT)
-        .in('status', ['upcoming', 'live'])   // ← KEY FIX
+        .in('computed_status', ['upcoming', 'live'])   // ← KEY FIX
         .eq('local_date', todayLocalDate)
         .in('match_type', ['atp_doubles', 'wta_doubles', 'mixed_doubles'])
         .order('match_date', { ascending: true })
