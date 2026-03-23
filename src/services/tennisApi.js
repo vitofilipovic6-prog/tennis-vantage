@@ -67,7 +67,7 @@ export const FLAG_MAP = {
   'Uruguay': '🇺🇾', 'Uzbekistan': '🇺🇿', 'Venezuela': '🇻🇪', 'Vietnam': '🇻🇳',
   'Yemen': '🇾🇪', 'Zambia': '🇿🇲', 'Zimbabwe': '🇿🇼',
 
-  // ── 3-letter ISO (ATP/WTA API format) ──
+  // ── 3-letter ISO + ATP/WTA variant codes ──
   'AFG': '🇦🇫', 'ALB': '🇦🇱', 'ALG': '🇩🇿', 'DZA': '🇩🇿', 'AND': '🇦🇩',
   'ANG': '🇦🇴', 'AGO': '🇦🇴', 'ARG': '🇦🇷', 'ARM': '🇦🇲', 'AUS': '🇦🇺',
   'AUT': '🇦🇹', 'AZE': '🇦🇿', 'BAH': '🇧🇸', 'BHS': '🇧🇸', 'BRN': '🇧🇭',
@@ -154,6 +154,90 @@ export const FLAG_MAP = {
   'VN': '🇻🇳', 'YE': '🇾🇪', 'ZM': '🇿🇲', 'ZW': '🇿🇼',
 };
 
+// ── Country → 2-letter ISO code lookup ───────────────────────────────────────
+// Exported so Flag.jsx can import it directly
+export const TO_ISO2 = {
+  // 3-letter ATP/WTA → 2-letter ISO
+  'ARG':'ar', 'AUS':'au', 'AUT':'at', 'BEL':'be', 'BRA':'br', 'BUL':'bg',
+  'CAN':'ca', 'CHI':'cl', 'CHL':'cl', 'CHN':'cn', 'COL':'co', 'CRO':'hr',
+  'HRV':'hr', 'CZE':'cz', 'DEN':'dk', 'DNK':'dk', 'ESP':'es', 'FRA':'fr',
+  'GBR':'gb', 'GER':'de', 'DEU':'de', 'GRE':'gr', 'GRC':'gr', 'HUN':'hu',
+  'IND':'in', 'ITA':'it', 'JPN':'jp', 'KAZ':'kz', 'KOR':'kr', 'MDA':'md',
+  'MEX':'mx', 'NED':'nl', 'NLD':'nl', 'NOR':'no', 'POL':'pl', 'POR':'pt',
+  'PRT':'pt', 'ROU':'ro', 'RUS':'ru', 'SRB':'rs', 'SUI':'ch', 'CHE':'ch',
+  'SWE':'se', 'TPE':'tw', 'TWN':'tw', 'TUN':'tn', 'UKR':'ua', 'USA':'us',
+  'UZB':'uz', 'RSA':'za', 'ZAF':'za', 'SLO':'si', 'SVN':'si', 'SVK':'sk',
+  'BLR':'by', 'AZE':'az', 'ARM':'am', 'GEO':'ge', 'LAT':'lv', 'LVA':'lv',
+  'LTU':'lt', 'EST':'ee', 'BIH':'ba', 'MNE':'me', 'MKD':'mk', 'ALG':'dz',
+  'DZA':'dz', 'EGY':'eg', 'MAR':'ma', 'NZL':'nz', 'PHI':'ph', 'PHL':'ph',
+  'THA':'th', 'IRI':'ir', 'IRN':'ir', 'PAK':'pk', 'BAH':'bs', 'BHS':'bs',
+  'KSA':'sa', 'SAU':'sa', 'QAT':'qa', 'UAE':'ae', 'IRL':'ie', 'ISR':'il',
+  'FIN':'fi', 'ISL':'is', 'CYP':'cy', 'LUX':'lu', 'LIE':'li', 'MCO':'mc',
+  'AND':'ad', 'MLT':'mt', 'KOS':'xk', 'XKX':'xk', 'INA':'id', 'IDN':'id',
+  'SGP':'sg', 'MAS':'my', 'MYS':'my', 'HKG':'hk', 'MGL':'mn', 'MNG':'mn',
+  'VIE':'vn', 'VNM':'vn', 'SRI':'lk', 'LKA':'lk', 'BAN':'bd', 'BGD':'bd',
+  'NEP':'np', 'MDV':'mv', 'PER':'pe', 'CHN':'cn', 'TPE':'tw', 'PRK':'kp',
+  'ECU':'ec', 'URU':'uy', 'URY':'uy', 'PAR':'py', 'PRY':'py', 'BOL':'bo',
+  'VEN':'ve', 'PAN':'pa', 'CRC':'cr', 'DOM':'do', 'JAM':'jm', 'TTO':'tt',
+  'CUB':'cu', 'PUR':'pr', 'HAI':'ht', 'HTI':'ht', 'BRB':'bb', 'GUI':'gn',
+  'SEN':'sn', 'GHA':'gh', 'NGR':'ng', 'NGA':'ng', 'CMR':'cm', 'CIV':'ci',
+  'KEN':'ke', 'ETH':'et', 'TAN':'tz', 'TZA':'tz', 'ZIM':'zw', 'ZWE':'zw',
+  'ZAM':'zm', 'ZMB':'zm', 'MOZ':'mz', 'NAM':'na', 'BOT':'bw', 'BWA':'bw',
+  'ANG':'ao', 'AGO':'ao', 'SUD':'sd', 'SDN':'sd', 'MAD':'mg', 'MDG':'mg',
+  'MAW':'mw', 'MWI':'mw', 'MRI':'mu', 'MUS':'mu', 'LES':'ls', 'LSO':'ls',
+  'SWZ':'sz', 'TOG':'tg', 'BEN':'bj', 'BFA':'bf', 'MLI':'ml', 'MTN':'mr',
+  'MRT':'mr', 'GAB':'ga', 'CGO':'cg', 'COG':'cg', 'CAF':'cf', 'TCD':'td',
+  'ERI':'er', 'DJI':'dj', 'SOM':'so', 'SLE':'sl', 'LBR':'lr', 'GNB':'gw',
+  'GMB':'gm', 'CPV':'cv', 'SSD':'ss', 'BDI':'bi', 'RWA':'rw', 'UGA':'ug',
+  'OMA':'om', 'OMN':'om', 'KUW':'kw', 'KWT':'kw', 'BRN':'bh', 'JOR':'jo',
+  'LEB':'lb', 'LBN':'lb', 'SYR':'sy', 'IRQ':'iq', 'YEM':'ye', 'LBA':'ly',
+  'LBY':'ly', 'PLE':'ps', 'PSE':'ps', 'TUR':'tr', 'KGZ':'kg', 'TJK':'tj',
+  'TKM':'tm', 'AFG':'af', 'AZE':'az', 'UZB':'uz', 'KAZ':'kz',
+  'PNG':'pg', 'FJI':'fj', 'FIJ':'fj', 'SOL':'sb', 'VAN':'vu',
+  // Full country names → 2-letter ISO
+  'Argentina':'ar', 'Australia':'au', 'Austria':'at', 'Belgium':'be',
+  'Brazil':'br', 'Bulgaria':'bg', 'Canada':'ca', 'Chile':'cl', 'China':'cn',
+  'Colombia':'co', 'Croatia':'hr', 'Czech Republic':'cz', 'Czechia':'cz',
+  'Denmark':'dk', 'Spain':'es', 'France':'fr', 'Great Britain':'gb',
+  'United Kingdom':'gb', 'England':'gb', 'Germany':'de', 'Greece':'gr',
+  'Hungary':'hu', 'India':'in', 'Italy':'it', 'Japan':'jp', 'Kazakhstan':'kz',
+  'South Korea':'kr', 'Korea':'kr', 'Moldova':'md', 'Mexico':'mx',
+  'Netherlands':'nl', 'Norway':'no', 'Poland':'pl', 'Portugal':'pt',
+  'Romania':'ro', 'Russia':'ru', 'Serbia':'rs', 'Switzerland':'ch',
+  'Sweden':'se', 'Taiwan':'tw', 'Tunisia':'tn', 'Ukraine':'ua',
+  'United States':'us', 'USA':'us', 'Uzbekistan':'uz', 'South Africa':'za',
+  'Slovenia':'si', 'Slovakia':'sk', 'Belarus':'by', 'Azerbaijan':'az',
+  'Armenia':'am', 'Georgia':'ge', 'Latvia':'lv', 'Lithuania':'lt',
+  'Estonia':'ee', 'Bosnia and Herzegovina':'ba', 'Bosnia':'ba',
+  'Montenegro':'me', 'North Macedonia':'mk', 'Algeria':'dz', 'Egypt':'eg',
+  'Morocco':'ma', 'New Zealand':'nz', 'Philippines':'ph', 'Thailand':'th',
+  'Iran':'ir', 'Pakistan':'pk', 'Bahamas':'bs', 'Saudi Arabia':'sa',
+  'Qatar':'qa', 'United Arab Emirates':'ae', 'UAE':'ae', 'Ireland':'ie',
+  'Israel':'il', 'Finland':'fi', 'Iceland':'is', 'Cyprus':'cy',
+  'Luxembourg':'lu', 'Liechtenstein':'li', 'Monaco':'mc', 'Andorra':'ad',
+  'Malta':'mt', 'Kosovo':'xk', 'Indonesia':'id', 'Singapore':'sg',
+  'Malaysia':'my', 'Mongolia':'mn', 'Vietnam':'vn', 'Sri Lanka':'lk',
+  'Bangladesh':'bd', 'Nepal':'np', 'Maldives':'mv', 'Peru':'pe',
+  'Ecuador':'ec', 'Uruguay':'uy', 'Paraguay':'py', 'Bolivia':'bo',
+  'Venezuela':'ve', 'Panama':'pa', 'Costa Rica':'cr', 'Dominican Republic':'do',
+  'Jamaica':'jm', 'Trinidad and Tobago':'tt', 'Cuba':'cu', 'Puerto Rico':'pr',
+  'Haiti':'ht', 'Barbados':'bb', 'Guinea':'gn', 'Senegal':'sn', 'Ghana':'gh',
+  'Nigeria':'ng', 'Cameroon':'cm', 'Ivory Coast':'ci', 'Kenya':'ke',
+  'Ethiopia':'et', 'Tanzania':'tz', 'Zimbabwe':'zw', 'Zambia':'zm',
+  'Mozambique':'mz', 'Namibia':'na', 'Botswana':'bw', 'Angola':'ao',
+  'Sudan':'sd', 'Madagascar':'mg', 'Malawi':'mw', 'Mauritius':'mu',
+  'Lesotho':'ls', 'Eswatini':'sz', 'Togo':'tg', 'Benin':'bj',
+  'Burkina Faso':'bf', 'Mali':'ml', 'Mauritania':'mr', 'Gabon':'ga',
+  'Congo':'cg', 'Central African Republic':'cf', 'Chad':'td', 'Eritrea':'er',
+  'Djibouti':'dj', 'Somalia':'so', 'Sierra Leone':'sl', 'Liberia':'lr',
+  'South Sudan':'ss', 'Burundi':'bi', 'Rwanda':'rw', 'Uganda':'ug',
+  'Oman':'om', 'Kuwait':'kw', 'Bahrain':'bh', 'Jordan':'jo', 'Lebanon':'lb',
+  'Syria':'sy', 'Iraq':'iq', 'Yemen':'ye', 'Libya':'ly', 'Palestine':'ps',
+  'Turkey':'tr', 'Kyrgyzstan':'kg', 'Tajikistan':'tj', 'Turkmenistan':'tm',
+  'Afghanistan':'af', 'Papua New Guinea':'pg', 'Fiji':'fj',
+  'Cambodia':'kh', 'Laos':'la', 'Myanmar':'mm',
+};
+
 export function resolveFlag(raw) {
   if (!raw) return '🏳️';
   const trimmed = raw.trim();
@@ -163,63 +247,30 @@ export function resolveFlag(raw) {
     ?? '🏳️';
 }
 
-// Converts any country code/name to a 2-letter ISO code for flag images
-const TO_ISO2 = {
-  // 3-letter ATP/WTA → 2-letter ISO
-  'ARG':'ar','AUS':'au','AUT':'at','BEL':'be','BRA':'br','BUL':'bg','CAN':'ca',
-  'CHI':'cl','CHN':'cn','COL':'co','CRO':'hr','CZE':'cz','DEN':'dk','ESP':'es',
-  'FRA':'fr','GBR':'gb','GER':'de','GRE':'gr','HUN':'hu','IND':'in','ITA':'it',
-  'JPN':'jp','KAZ':'kz','KOR':'kr','MDA':'md','MEX':'mx','NED':'nl','NOR':'no',
-  'POL':'pl','POR':'pt','ROU':'ro','RUS':'ru','SRB':'rs','SUI':'ch','SWE':'se',
-  'TPE':'tw','TUN':'tn','UKR':'ua','USA':'us','UZB':'uz','RSA':'za','GBR':'gb',
-  'SLO':'si','SVK':'sk','BLR':'by','AZE':'az','ARM':'am','GEO':'ge','LAT':'lv',
-  'LTU':'lt','EST':'ee','BIH':'ba','MNE':'me','MKD':'mk','ALG':'dz','EGY':'eg',
-  'MAR':'ma','NZL':'nz','PHI':'ph','THA':'th','IRI':'ir','PAK':'pk','BAH':'bs',
-  // Full names → 2-letter ISO
-  'Argentina':'ar','Australia':'au','Austria':'at','Belgium':'be','Brazil':'br',
-  'Bulgaria':'bg','Canada':'ca','Chile':'cl','China':'cn','Colombia':'co',
-  'Croatia':'hr','Czech Republic':'cz','Czechia':'cz','Denmark':'dk','Spain':'es',
-  'France':'fr','Great Britain':'gb','United Kingdom':'gb','Germany':'de',
-  'Greece':'gr','Hungary':'hu','India':'in','Italy':'it','Japan':'jp',
-  'Kazakhstan':'kz','South Korea':'kr','Moldova':'md','Mexico':'mx',
-  'Netherlands':'nl','Norway':'no','Poland':'pl','Portugal':'pt','Romania':'ro',
-  'Russia':'ru','Serbia':'rs','Switzerland':'ch','Sweden':'se','Taiwan':'tw',
-  'Tunisia':'tn','Ukraine':'ua','United States':'us','USA':'us','Uzbekistan':'uz',
-  'South Africa':'za','Slovenia':'si','Slovakia':'sk','Belarus':'by',
-  'Azerbaijan':'az','Armenia':'am','Georgia':'ge','Latvia':'lv','Lithuania':'lt',
-  'Estonia':'ee','Bosnia and Herzegovina':'ba','Montenegro':'me',
-  'North Macedonia':'mk','Algeria':'dz','Egypt':'eg','Morocco':'ma',
-  'New Zealand':'nz','Philippines':'ph','Thailand':'th','Iran':'ir','Pakistan':'pk',
-  'Belgium':'be','Finland':'fi','Iceland':'is','Ireland':'ie','Israel':'il',
-  'Portugal':'pt','Turkey':'tr','Venezuela':'ve','Peru':'pe','Ecuador':'ec',
-  'Paraguay':'py','Uruguay':'uy','Bolivia':'bo','Panama':'pa','Costa Rica':'cr',
-  'Dominican Republic':'do','Guatemala':'gt','Honduras':'hn',
-};
-
-/**
- * Returns a flag image URL from flagcdn.com
- * Falls back to emoji if country not found
- * @param {string} raw - country name or code
- * @returns {{ type: 'img', src: string, alt: string } | { type: 'emoji', char: string }}
- */
+// ── getFlagDisplay — kept for backward compatibility ──────────────────────────
+// The <Flag /> component is now the preferred way to render flags.
+// This function is still used in a few places so we keep it working.
 export function getFlagDisplay(raw) {
   if (!raw) return { type: 'emoji', char: '🏳️' };
-  
+
   const trimmed = raw.trim();
-  
-  // Check 2-letter ISO directly
-  if (trimmed.length === 2) {
-    return { type: 'img', src: `https://flagcdn.com/24x18/${trimmed.toLowerCase()}.png`, alt: trimmed };
-  }
 
-  // Look up in map
-  const iso2 = TO_ISO2[trimmed] ?? TO_ISO2[trimmed.toUpperCase()] ?? null;
-  
+  // Resolve to 2-letter ISO
+  const iso2 =
+    TO_ISO2[trimmed] ??
+    TO_ISO2[trimmed.toUpperCase()] ??
+    TO_ISO2[trimmed.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())] ??
+    (trimmed.length === 2 ? trimmed.toLowerCase() : null);
+
   if (iso2) {
-    return { type: 'img', src: `https://flagcdn.com/24x18/${iso2}.png`, alt: trimmed };
+    return {
+      type: 'img',
+      src: `https://flagcdn.com/24x18/${iso2.toLowerCase()}.png`,
+      alt: trimmed,
+    };
   }
 
-  // Fallback to emoji (works on Mac/iOS/Android)
+  // Fallback to emoji
   return { type: 'emoji', char: resolveFlag(raw) };
 }
 
@@ -230,19 +281,16 @@ export function deriveMatchType(m, wtaPlayerIds = new Set()) {
   const stored     = m.match_type ?? 'atp_singles';
   const isDoubles  = p1Name.includes('/') || p2Name.includes('/');
 
-  // Trust stored value first — set correctly at sync time
   if (stored.startsWith('itf_'))  return stored;
   if (stored.startsWith('utr_'))  return stored;
   if (stored === 'mixed_doubles') return stored;
   if (stored === 'wta_singles')   return stored;
   if (stored === 'wta_doubles')   return stored;
 
-  // UTR fallback by tournament name
   if (tournament.includes('utr')) {
     return tournament.includes('women') ? 'utr_women_singles' : 'utr_men_singles';
   }
 
-  // ITF fallback by tournament name
   const isItf = tournament.includes('itf') ||
     /\bw\d{2}\b/.test(tournament) || /\bm\d{2}\b/.test(tournament);
   if (isItf) {
@@ -251,7 +299,6 @@ export function deriveMatchType(m, wtaPlayerIds = new Set()) {
     return isWomen ? 'itf_women_singles' : 'itf_men_singles';
   }
 
-  // WTA detection — only runs if stored value wasn't wta_singles/wta_doubles
   const isWtaByRankings   = wtaPlayerIds.size > 0 &&
     (wtaPlayerIds.has(m.player1?.id) || wtaPlayerIds.has(m.player2?.id));
   const isWtaByTournament = tournament.includes('wta') ||
@@ -264,7 +311,6 @@ export function deriveMatchType(m, wtaPlayerIds = new Set()) {
 }
 
 function normaliseMatch(m, wtaPlayerIds = new Set()) {
-  // Patch missing flags on the fly
   const patchFlag = (p) => {
     if (!p) return p;
     const flag = p.flag && p.flag !== '🏳️' ? p.flag : resolveFlag(p.country ?? '');
@@ -273,7 +319,6 @@ function normaliseMatch(m, wtaPlayerIds = new Set()) {
 
   return {
     id:          m.id,
-    // Use computed_status from view — falls back to raw status if not available
     status:      m.computed_status ?? m.status,
     button_text: m.button_text ?? null,
     tournament:  m.tournament,
@@ -290,7 +335,6 @@ function normaliseMatch(m, wtaPlayerIds = new Set()) {
 }
 
 // ── Live matches ──────────────────────────────────────────────────────────────
-// Queries matches_live_status view so computed_status is always accurate
 export async function getLiveMatches(wtaPlayerIds = new Set()) {
   try {
     const [atpWta, itf, utr, doubles] = await Promise.all([
@@ -342,8 +386,7 @@ export async function getLiveMatches(wtaPlayerIds = new Set()) {
   }
 }
 
-// ── Upcoming matches (today only — both upcoming AND live status) ──────────────
-// Queries matches_live_status view so computed_status is always accurate
+// ── Upcoming matches ──────────────────────────────────────────────────────────
 export async function getUpcomingMatches(wtaPlayerIds = new Set()) {
   try {
     const todayLocalDate = new Intl.DateTimeFormat('en-CA', {
@@ -407,10 +450,8 @@ export async function getUpcomingMatches(wtaPlayerIds = new Set()) {
 }
 
 // ── Matches by date ───────────────────────────────────────────────────────────
-// Past dates use raw matches table (no live status needed for finished matches)
 export async function getMatchesByDate(dateString, wtaPlayerIds = new Set()) {
   try {
-    // Primary: use matches_live_status view with local_date
     const { data: byLocalDate, error: e1 } = await supabase
       .from('matches_live_status')
       .select(MATCH_SELECT)
@@ -421,7 +462,6 @@ export async function getMatchesByDate(dateString, wtaPlayerIds = new Set()) {
       return byLocalDate.map(m => normaliseMatch(m, wtaPlayerIds));
     }
 
-    // Fallback: ±1 day UTC window + client-side filter
     const d    = new Date(`${dateString}T12:00:00.000Z`);
     const prev = new Date(d); prev.setUTCDate(d.getUTCDate() - 1);
     const next = new Date(d); next.setUTCDate(d.getUTCDate() + 1);
@@ -447,7 +487,7 @@ export async function getMatchesByDate(dateString, wtaPlayerIds = new Set()) {
   }
 }
 
-// ── Rankings (ATP/WTA from rankings table) ────────────────────────────────────
+// ── Rankings ──────────────────────────────────────────────────────────────────
 export async function getRankings(tour = 'ATP') {
   try {
     const { data, error } = await supabase
@@ -534,7 +574,7 @@ export async function getHeadToHead(p1Id, p2Id) {
   }
 }
 
-// ── Recent matches for a single player ───────────────────────────────────────
+// ── Recent matches ────────────────────────────────────────────────────────────
 export async function getRecentMatches(playerId, limit = 5) {
   try {
     if (!playerId || playerId === 'p1' || playerId === 'p2') return [];
@@ -565,7 +605,6 @@ export async function getPrediction(match) {
   const p1 = match.player1;
   const p2 = match.player2;
 
-  // ── 1. Classify scenario ──────────────────────────────────────────────────
   const p1HasRank    = p1.rank && p1.rank < 900;
   const p2HasRank    = p2.rank && p2.rank < 900;
   const p1HasForm    = p1.recent_form && !p1.recent_form.includes('-');
@@ -581,7 +620,6 @@ export async function getPrediction(match) {
 
   const dataQuality = [p1HasRank, p2HasRank, p1HasForm, p2HasForm].filter(Boolean).length;
 
-  // ── 2. Algorithmic baseline ───────────────────────────────────────────────
   let rankEdge = 0;
   if (p1HasRank && p2HasRank) {
     const diff = p2.rank - p1.rank;
@@ -607,7 +645,6 @@ export async function getPrediction(match) {
   const rawPct  = 50 + (rankEdge + surfaceEdge + formEdge + serveEdge + aceEdge + fatigueEdge) * roundMultiplier;
   const basePct = Math.min(90, Math.max(10, Math.round(rawPct)));
 
-  // ── 3. Parallel data fetch: H2H + recent matches for both players ─────────
   const [h2hData, p1Recent, p2Recent] = await Promise.allSettled([
     (p1?.id && p2?.id && p1.id !== 'p1' && p2.id !== 'p2')
       ? getHeadToHead(p1.id, p2.id) : Promise.resolve(null),
@@ -619,7 +656,6 @@ export async function getPrediction(match) {
   const p1Matches = p1Recent.status === 'fulfilled' ? p1Recent.value : [];
   const p2Matches = p2Recent.status === 'fulfilled' ? p2Recent.value : [];
 
-  // ── 4. Format recent matches as a readable strip ──────────────────────────
   const formatRecent = (matches, playerName) => {
     if (!matches?.length) return `  ${playerName} recent matches: not available in DB`;
     const strip = matches.map(m =>
@@ -628,7 +664,6 @@ export async function getPrediction(match) {
     return `  ${playerName} last ${matches.length} matches:\n    ${strip}`;
   };
 
-  // ── 5. H2H or recent form section for prompt ─────────────────────────────
   let h2hSection;
   if (h2h && (h2h.p1_wins + h2h.p2_wins) >= 2) {
     const total = h2h.p1_wins + h2h.p2_wins;
@@ -645,7 +680,6 @@ export async function getPrediction(match) {
     h2hSection = `HEAD-TO-HEAD: No meetings in our DB. Use your own knowledge of their rivalry.\n\nRECENT FORM (from DB):\n${formatRecent(p1Matches, p1.name)}\n${formatRecent(p2Matches, p2.name)}`;
   }
 
-  // ── 6. Data lines ─────────────────────────────────────────────────────────
   const p1DataLines = [
     p1HasRank    && `Rank: #${p1.rank}`,
     p1.country   && `Country: ${p1.country}`,
@@ -676,7 +710,6 @@ export async function getPrediction(match) {
     ? p2DataLines.map(l => `  ${l}`).join('\n')
     : `  No DB stats — use your training knowledge about ${p2.name}`;
 
-  // ── 7. Fallback result ────────────────────────────────────────────────────
   const p1RecentStr = p1Matches.length ? p1Matches.map(m => m.result).join(' ') : null;
   const p2RecentStr = p2Matches.length ? p2Matches.map(m => m.result).join(' ') : null;
 
@@ -712,10 +745,9 @@ export async function getPrediction(match) {
     scenario,
   };
 
-  // ── 8. AI prediction ──────────────────────────────────────────────────────
   try {
     const dataNote = scenario === 'unranked_vs_unranked'
-      ? `⚠️ CRITICAL: Neither player is ranked in our DB. Use your training knowledge entirely. If you genuinely don't recognise either player, return Low confidence 50/50 and be honest in ai_analysis.`
+      ? `⚠️ CRITICAL: Neither player is ranked in our DB. Use your training knowledge entirely.`
       : scenario === 'ranked_vs_unranked'
         ? `NOTE: One player is ranked, one is not. Use rank data + your knowledge of the unranked player.`
         : dataQuality <= 2
@@ -759,32 +791,17 @@ STEP 2 — WRITE YOUR PREDICTION using that recalled knowledge plus the DB data 
 RULES:
 - Be specific: 63%, 71%, 38% — NOT round numbers unless genuinely a coin-flip
 - Confidence: "High" = clear favourite with strong evidence; "Medium" = slight edge; "Low" = genuinely close
-- key_factors: EXACTLY 5 to 7. Each must be a specific factual sentence. Cover ALL these categories:
-  1. Ranking/seeding comparison
-  2. Surface win rate or preference — cite a real percentage or tournament if you know it
-  3. Recent form — name the actual last 3–5 matches from your memory (e.g. "Won vs Medvedev in Miami R16, lost to Alcaraz in Madrid SF")
-  4. Head-to-head — cite record and last meeting, or state it is a first meeting
-  5. Serve or playing style matchup
-  6. Tournament context, draw difficulty, or round pressure
-  7. Fitness, fatigue, scheduling load, or injury if relevant — skip this one if nothing meaningful
+- key_factors: EXACTLY 5 to 7. Each must be a specific factual sentence.
 - NEVER write generic filler like "Player A is a strong competitor" or "Both players are capable"
-- ai_analysis: 2–3 sentences. Cite at least one real stat or match result from your memory. Name both players. Give a direct verdict.
+- ai_analysis: 2–3 sentences. Cite at least one real stat or match result from your memory. Give a direct verdict.
 
 Respond ONLY with valid JSON, no markdown:
 {
   "player1_win_pct": <integer 8-92>,
   "confidence": "<High|Medium|Low>",
   "predicted_winner": "<exact player name>",
-  "key_factors": [
-    "<ranking/seeding: e.g. '${p1.name} is ranked #X vs ${p2.name} #Y — a gap of Z places'>",
-    "<surface: e.g. '${p1.name} has won 78% of matches on ${match.surface ?? 'Hard'} this season'>",
-    "<recent form: e.g. '${p1.name} arrives on a 4-match win streak including wins over [name] and [name]; ${p2.name} lost in R1 at [tournament] last week'>",
-    "<H2H: e.g. '${p1.name} leads the H2H 4-2, winning their last meeting at [tournament] in [year] [score]' or 'First career meeting between these two players'>",
-    "<serve/style: specific edge one player has over the other on this surface>",
-    "<tournament context: seeding, draw, conditions, pressure>",
-    "<fitness/wildcard: only if genuinely relevant, otherwise omit this item>"
-  ],
-  "ai_analysis": "<2-3 sentences with a real stat or match result from your memory, both players named, direct verdict>"
+  "key_factors": ["<factor 1>", "<factor 2>", "<factor 3>", "<factor 4>", "<factor 5>"],
+  "ai_analysis": "<2-3 sentences with a real stat or match result, both players named, direct verdict>"
 }`;
 
     const predRes = await fetch('/api/predict', {
@@ -815,7 +832,7 @@ Respond ONLY with valid JSON, no markdown:
 
       const isLazy50    = aiPct === 50 && Math.abs(basePct - 50) > 10;
       let blendedPct;
-      if (isLazy50)                              blendedPct = Math.round(aiPct * 0.5 + basePct * 0.5);
+      if (isLazy50)                                 blendedPct = Math.round(aiPct * 0.5 + basePct * 0.5);
       else if (scenario === 'unranked_vs_unranked') blendedPct = aiPct;
       else if (scenario === 'ranked_vs_unranked')   blendedPct = Math.round(aiPct * 0.7 + basePct * 0.3);
       else                                           blendedPct = Math.round(aiPct * 0.8 + basePct * 0.2);
@@ -855,7 +872,6 @@ export async function sendChatMessage(messages, systemContext = '') {
   return res.json();
 }
 
-// ── Mock data fallback ────────────────────────────────────────────────────────
 export const MOCK_DATA = {
   matches:  [],
   players:  [],
