@@ -163,6 +163,66 @@ export function resolveFlag(raw) {
     ?? '🏳️';
 }
 
+// Converts any country code/name to a 2-letter ISO code for flag images
+const TO_ISO2 = {
+  // 3-letter ATP/WTA → 2-letter ISO
+  'ARG':'ar','AUS':'au','AUT':'at','BEL':'be','BRA':'br','BUL':'bg','CAN':'ca',
+  'CHI':'cl','CHN':'cn','COL':'co','CRO':'hr','CZE':'cz','DEN':'dk','ESP':'es',
+  'FRA':'fr','GBR':'gb','GER':'de','GRE':'gr','HUN':'hu','IND':'in','ITA':'it',
+  'JPN':'jp','KAZ':'kz','KOR':'kr','MDA':'md','MEX':'mx','NED':'nl','NOR':'no',
+  'POL':'pl','POR':'pt','ROU':'ro','RUS':'ru','SRB':'rs','SUI':'ch','SWE':'se',
+  'TPE':'tw','TUN':'tn','UKR':'ua','USA':'us','UZB':'uz','RSA':'za','GBR':'gb',
+  'SLO':'si','SVK':'sk','BLR':'by','AZE':'az','ARM':'am','GEO':'ge','LAT':'lv',
+  'LTU':'lt','EST':'ee','BIH':'ba','MNE':'me','MKD':'mk','ALG':'dz','EGY':'eg',
+  'MAR':'ma','NZL':'nz','PHI':'ph','THA':'th','IRI':'ir','PAK':'pk','BAH':'bs',
+  // Full names → 2-letter ISO
+  'Argentina':'ar','Australia':'au','Austria':'at','Belgium':'be','Brazil':'br',
+  'Bulgaria':'bg','Canada':'ca','Chile':'cl','China':'cn','Colombia':'co',
+  'Croatia':'hr','Czech Republic':'cz','Czechia':'cz','Denmark':'dk','Spain':'es',
+  'France':'fr','Great Britain':'gb','United Kingdom':'gb','Germany':'de',
+  'Greece':'gr','Hungary':'hu','India':'in','Italy':'it','Japan':'jp',
+  'Kazakhstan':'kz','South Korea':'kr','Moldova':'md','Mexico':'mx',
+  'Netherlands':'nl','Norway':'no','Poland':'pl','Portugal':'pt','Romania':'ro',
+  'Russia':'ru','Serbia':'rs','Switzerland':'ch','Sweden':'se','Taiwan':'tw',
+  'Tunisia':'tn','Ukraine':'ua','United States':'us','USA':'us','Uzbekistan':'uz',
+  'South Africa':'za','Slovenia':'si','Slovakia':'sk','Belarus':'by',
+  'Azerbaijan':'az','Armenia':'am','Georgia':'ge','Latvia':'lv','Lithuania':'lt',
+  'Estonia':'ee','Bosnia and Herzegovina':'ba','Montenegro':'me',
+  'North Macedonia':'mk','Algeria':'dz','Egypt':'eg','Morocco':'ma',
+  'New Zealand':'nz','Philippines':'ph','Thailand':'th','Iran':'ir','Pakistan':'pk',
+  'Belgium':'be','Finland':'fi','Iceland':'is','Ireland':'ie','Israel':'il',
+  'Portugal':'pt','Turkey':'tr','Venezuela':'ve','Peru':'pe','Ecuador':'ec',
+  'Paraguay':'py','Uruguay':'uy','Bolivia':'bo','Panama':'pa','Costa Rica':'cr',
+  'Dominican Republic':'do','Guatemala':'gt','Honduras':'hn',
+};
+
+/**
+ * Returns a flag image URL from flagcdn.com
+ * Falls back to emoji if country not found
+ * @param {string} raw - country name or code
+ * @returns {{ type: 'img', src: string, alt: string } | { type: 'emoji', char: string }}
+ */
+export function getFlagDisplay(raw) {
+  if (!raw) return { type: 'emoji', char: '🏳️' };
+  
+  const trimmed = raw.trim();
+  
+  // Check 2-letter ISO directly
+  if (trimmed.length === 2) {
+    return { type: 'img', src: `https://flagcdn.com/24x18/${trimmed.toLowerCase()}.png`, alt: trimmed };
+  }
+
+  // Look up in map
+  const iso2 = TO_ISO2[trimmed] ?? TO_ISO2[trimmed.toUpperCase()] ?? null;
+  
+  if (iso2) {
+    return { type: 'img', src: `https://flagcdn.com/24x18/${iso2}.png`, alt: trimmed };
+  }
+
+  // Fallback to emoji (works on Mac/iOS/Android)
+  return { type: 'emoji', char: resolveFlag(raw) };
+}
+
 export function deriveMatchType(m, wtaPlayerIds = new Set()) {
   const p1Name     = m.player1?.name ?? '';
   const p2Name     = m.player2?.name ?? '';
