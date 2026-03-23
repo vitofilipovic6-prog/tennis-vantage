@@ -194,6 +194,56 @@ export const TO_ISO2 = {
   'LBY':'ly', 'PLE':'ps', 'PSE':'ps', 'TUR':'tr', 'KGZ':'kg', 'TJK':'tj',
   'TKM':'tm', 'AFG':'af', 'AZE':'az', 'UZB':'uz', 'KAZ':'kz',
   'PNG':'pg', 'FJI':'fj', 'FIJ':'fj', 'SOL':'sb', 'VAN':'vu',
+  // Additional ATP/WTA codes that appear in live data
+  'SCO':'gb', 'WAL':'gb', 'NIR':'gb', // British Isles variants
+  'SKN':'kn', 'LCA':'lc', 'VIN':'vc', 'GRN':'gd', 'ANT':'ag',
+  'DMA':'dm', 'ATG':'ag', 'KNA':'kn', 'VCT':'vc',
+  'BER':'bm', 'CAY':'ky', 'TCA':'tc', 'VIR':'vi', 'GUM':'gu',
+  'ASA':'as', 'COK':'ck', 'SAM':'ws', 'WSM':'ws', 'TON':'to',
+  'TUV':'tv', 'KIR':'ki', 'NRU':'nr', 'PLW':'pw', 'MHL':'mh',
+  'FSM':'fm', 'NOR':'no', // Norway duplicate safety
+  'MKD':'mk', 'ALB':'al', 'MNE':'me', // Balkans
+  'CYP':'cy', 'MLT':'mt', // Islands
+  'GLP':'gp', 'MTQ':'mq', 'REU':'re', 'MYT':'yt', // French territories
+  'NCL':'nc', 'PYF':'pf', 'WLF':'wf',
+  'SUR':'sr', 'GUY':'gy', 'GUF':'gf',
+  'BLZ':'bz', 'GTM':'gt', 'HND':'hn', 'NIC':'ni', 'SLV':'sv',
+  'MEX':'mx', // duplicate safety
+  'CAM':'kh', // Cambodia ATP variant
+  'MYA':'mm', // Myanmar ATP variant
+  'LAO':'la', // Laos ATP variant
+  'BRU':'bn', // Brunei ATP variant
+  'TLS':'tl', // Timor-Leste ATP variant
+  'KHM':'kh', // Cambodia ISO
+  'MMR':'mm', // Myanmar ISO
+  'PRY':'py', // Paraguay duplicate
+  // 2-letter codes passed directly (identity mapping)
+  'af':'af','al':'al','dz':'dz','ad':'ad','ao':'ao','ag':'ag','ar':'ar',
+  'am':'am','au':'au','at':'at','az':'az','bs':'bs','bh':'bh','bd':'bd',
+  'bb':'bb','by':'by','be':'be','bz':'bz','bj':'bj','bt':'bt','bo':'bo',
+  'ba':'ba','bw':'bw','br':'br','bn':'bn','bg':'bg','bf':'bf','bi':'bi',
+  'cv':'cv','kh':'kh','cm':'cm','ca':'ca','cf':'cf','td':'td','cl':'cl',
+  'cn':'cn','co':'co','km':'km','cg':'cg','cd':'cd','cr':'cr','ci':'ci',
+  'hr':'hr','cu':'cu','cy':'cy','cz':'cz','dk':'dk','dj':'dj','dm':'dm',
+  'do':'do','ec':'ec','eg':'eg','sv':'sv','gq':'gq','er':'er','ee':'ee',
+  'sz':'sz','et':'et','fj':'fj','fi':'fi','fr':'fr','ga':'ga','gm':'gm',
+  'ge':'ge','de':'de','gh':'gh','gr':'gr','gd':'gd','gt':'gt','gn':'gn',
+  'gw':'gw','gy':'gy','ht':'ht','hn':'hn','hu':'hu','is':'is','in':'in',
+  'id':'id','ir':'ir','iq':'iq','ie':'ie','il':'il','it':'it','jm':'jm',
+  'jp':'jp','jo':'jo','kz':'kz','ke':'ke','xk':'xk','kw':'kw','kg':'kg',
+  'la':'la','lv':'lv','lb':'lb','ls':'ls','lr':'lr','ly':'ly','li':'li',
+  'lt':'lt','lu':'lu','mg':'mg','mw':'mw','my':'my','mv':'mv','ml':'ml',
+  'mt':'mt','mr':'mr','mu':'mu','mx':'mx','md':'md','mc':'mc','mn':'mn',
+  'me':'me','ma':'ma','mz':'mz','mm':'mm','na':'na','np':'np','nl':'nl',
+  'nz':'nz','ni':'ni','ne':'ne','ng':'ng','kp':'kp','mk':'mk','no':'no',
+  'om':'om','pk':'pk','ps':'ps','pa':'pa','pg':'pg','py':'py','pe':'pe',
+  'ph':'ph','pl':'pl','pt':'pt','pr':'pr','qa':'qa','ro':'ro','ru':'ru',
+  'rw':'rw','sa':'sa','sn':'sn','rs':'rs','sl':'sl','sg':'sg','sk':'sk',
+  'si':'si','so':'so','za':'za','kr':'kr','ss':'ss','es':'es','lk':'lk',
+  'sd':'sd','sr':'sr','se':'se','ch':'ch','sy':'sy','tw':'tw','tj':'tj',
+  'tz':'tz','th':'th','tl':'tl','tg':'tg','tt':'tt','tn':'tn','tr':'tr',
+  'tm':'tm','ug':'ug','ua':'ua','ae':'ae','gb':'gb','us':'us','uy':'uy',
+  'uz':'uz','ve':'ve','vn':'vn','ye':'ye','zm':'zm','zw':'zw','hk':'hk',
   // Full country names → 2-letter ISO
   'Argentina':'ar', 'Australia':'au', 'Austria':'at', 'Belgium':'be',
   'Brazil':'br', 'Bulgaria':'bg', 'Canada':'ca', 'Chile':'cl', 'China':'cn',
@@ -247,30 +297,11 @@ export function resolveFlag(raw) {
     ?? '🏳️';
 }
 
-// ── getFlagDisplay — kept for backward compatibility ──────────────────────────
-// The <Flag /> component is now the preferred way to render flags.
-// This function is still used in a few places so we keep it working.
+// ── getFlagDisplay ────────────────────────────────────────────────────────────
+// Always returns emoji — reliable on all platforms, no CDN dependency,
+// no broken onError handlers. Emoji flags render natively on every modern OS.
 export function getFlagDisplay(raw) {
   if (!raw) return { type: 'emoji', char: '🏳️' };
-
-  const trimmed = raw.trim();
-
-  // Resolve to 2-letter ISO
-  const iso2 =
-    TO_ISO2[trimmed] ??
-    TO_ISO2[trimmed.toUpperCase()] ??
-    TO_ISO2[trimmed.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())] ??
-    (trimmed.length === 2 ? trimmed.toLowerCase() : null);
-
-  if (iso2) {
-    return {
-      type: 'img',
-      src: `https://flagcdn.com/24x18/${iso2.toLowerCase()}.png`,
-      alt: trimmed,
-    };
-  }
-
-  // Fallback to emoji
   return { type: 'emoji', char: resolveFlag(raw) };
 }
 
