@@ -1,27 +1,36 @@
 // src/components/Flag.jsx
-// ─────────────────────────────────────────────────────────────────────────────
-// Simple, reliable flag component using emoji only.
-// Emoji flags work natively on every modern browser, OS, and mobile device.
-// No CDN dependency, no broken onError handlers, no missing images.
-// ─────────────────────────────────────────────────────────────────────────────
-import { resolveFlag } from '../services/tennisApi';
+import { getFlagDisplay } from '../services/tennisApi';
 
 export default function Flag({ country, size = 24, style = {} }) {
-  const emoji = resolveFlag(country ?? '');
+  const flag = getFlagDisplay(country);
 
+  if (flag.type === 'img') {
+    return (
+      <img
+        src={flag.src}
+        alt={flag.alt}
+        width={size}
+        height={Math.round(size * 0.75)}
+        style={{
+          display: 'inline-block',
+          verticalAlign: 'middle',
+          borderRadius: '2px',
+          objectFit: 'cover',
+          flexShrink: 0,
+          ...style,
+        }}
+        onError={e => {
+          e.currentTarget.style.display = 'none';
+          e.currentTarget.insertAdjacentText('afterend', country ?? '');
+        }}
+      />
+    );
+  }
+
+  // Emoji fallback (Mac/iOS/Android)
   return (
-    <span
-      title={country ?? ''}
-      style={{
-        fontSize: size * 0.85,
-        lineHeight: 1,
-        flexShrink: 0,
-        display: 'inline-block',
-        verticalAlign: 'middle',
-        ...style,
-      }}
-    >
-      {emoji}
+    <span style={{ fontSize: size * 0.85, lineHeight: 1, flexShrink: 0, ...style }}>
+      {flag.char}
     </span>
   );
 }
