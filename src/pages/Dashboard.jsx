@@ -21,6 +21,7 @@ import MatchCalendar from '../components/MatchCalendar';
 import PlayerBioModal from '../components/PlayerBioModal';
 import PlayerSearchModal from '../components/PlayerSearchModal';
 import ProfilePage from './ProfilePage';
+import Flag from '../components/Flag';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MATCH TYPE FILTER DEFINITIONS
@@ -710,7 +711,7 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = 
           borderTop: idx === 1 ? '1px dashed var(--border)' : 'none',
           opacity: isFinished && m.winner_id && !isWinner ? 0.55 : 1,
         }}>
-          <span style={{ fontSize: '20px', flexShrink: 0 }}>{flag}</span>
+         <Flag country={p?.country} size={22} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <p style={{
               fontWeight: isWinner ? 700 : 500, fontSize: '14px',
@@ -1042,7 +1043,7 @@ function PredictionCard({ match: m, prediction: pred }) {
           <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                <span style={{ fontSize: '18px', flexShrink: 0 }}>{flag}</span>
+                <Flag country={player?.country} size={22} />
                 <span style={{ fontSize: '14px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {player?.name ?? `Player ${idx + 1}`}
                 </span>
@@ -1306,7 +1307,7 @@ function RankingsTab({ onSelectPlayer }) {
                   {medal ?? rank}
                 </span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                  <span style={{ fontSize: '16px', flexShrink: 0 }}>{flag}</span>
+                  <Flag country={p.country} size={20} />
                   <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {p.name}
                   </span>
