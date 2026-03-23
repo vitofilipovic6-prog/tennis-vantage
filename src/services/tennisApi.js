@@ -298,10 +298,25 @@ export function resolveFlag(raw) {
 }
 
 // ── getFlagDisplay ────────────────────────────────────────────────────────────
-// Always returns emoji — reliable on all platforms, no CDN dependency,
-// no broken onError handlers. Emoji flags render natively on every modern OS.
 export function getFlagDisplay(raw) {
   if (!raw) return { type: 'emoji', char: '🏳️' };
+
+  const trimmed = raw.trim();
+
+  const iso2 =
+    TO_ISO2[trimmed] ??
+    TO_ISO2[trimmed.toUpperCase()] ??
+    TO_ISO2[trimmed.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())] ??
+    (trimmed.length === 2 ? trimmed.toLowerCase() : null);
+
+  if (iso2) {
+    return {
+      type: 'img',
+      src: `https://flagcdn.com/24x18/${iso2.toLowerCase()}.png`,
+      alt: trimmed,
+    };
+  }
+
   return { type: 'emoji', char: resolveFlag(raw) };
 }
 
