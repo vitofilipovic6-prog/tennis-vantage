@@ -579,7 +579,7 @@ function HeroMatchCard() {
       <div className="lp-mc__hdr"><span className="lp-mc__ev">Roland Garros · QF</span><span className="lp-mc__live"><span className="lp-dot"/>LIVE</span></div>
       {[{name:'N. Djokovic',flag:'🇷🇸',score:'6-4, 3',rank:'ATP #2',s:true},{name:'C. Alcaraz',flag:'🇪🇸',score:'2-6, 2',rank:'ATP #3',s:false}].map((p,i)=>(
         <div key={i} className={`lp-mc__p${p.s?' lp-mc__p--s':''}`}>
-          <div className="lp-mc__pl"><span className="lp-mc__fl">{p.flag}</span><div><span className="lp-mc__nm">{p.name}</span><span className="lp-mc__rk">{p.rank}</span></div>{p.s&&<span className="lp-serve"/>}</div>
+          <div className="lp-mc__pl"><Flag className="lp-mc__fl">{p.flag}</Flag><div><span className="lp-mc__nm">{p.name}</span><span className="lp-mc__rk">{p.rank}</span></div>{p.s&&<span className="lp-serve"/>}</div>
           <span className={`lp-mc__sc${p.s?' lp-mc__sc--g':''}`}>{p.score}</span>
         </div>
       ))}
