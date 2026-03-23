@@ -711,7 +711,7 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = 
           borderTop: idx === 1 ? '1px dashed var(--border)' : 'none',
           opacity: isFinished && m.winner_id && !isWinner ? 0.55 : 1,
         }}>
-         <Flag country={player?.country} name={player?.name} size={22} />
+         <Flag country={p?.country} name={p?.name} size={22} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <p style={{
               fontWeight: isWinner ? 700 : 500, fontSize: '14px',
@@ -1043,7 +1043,7 @@ function PredictionCard({ match: m, prediction: pred }) {
           <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                <Flag country={p?.country} name={p?.name} size={22} />
+                <Flag country={player?.country} name={player?.name} size={22} />
                 <span style={{ fontSize: '14px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {player?.name ?? `Player ${idx + 1}`}
                 </span>
