@@ -8,6 +8,7 @@
 import { useState, useEffect, useRef } from 'react';
 import PlayerBioModal from './PlayerBioModal';
 import { useScrollLock } from '../hooks/useScrollLock';
+import Flag from './Flag';
 
 const surfaceColors = { Clay: '#f97316', Hard: '#60a5fa', Grass: '#4ade80' };
 
@@ -163,8 +164,7 @@ export default function PlayerSearchModal({ onClose, allPlayers = [], onChatAbou
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
                   {/* Flag */}
-                  <span style={{ fontSize: '22px', flexShrink: 0 }}>{p.flag ?? '🎾'}</span>
-
+                  <Flag country={p.country} name={p.name} size={22} style={{ flexShrink: 0 }} />
                   {/* Name + country */}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p style={{
