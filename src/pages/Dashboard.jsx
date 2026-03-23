@@ -711,7 +711,7 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = 
           borderTop: idx === 1 ? '1px dashed var(--border)' : 'none',
           opacity: isFinished && m.winner_id && !isWinner ? 0.55 : 1,
         }}>
-         <Flag country={p?.country} name={p?.name} size={22} />
+         <Flag country={player?.country} name={player?.name} size={22} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <p style={{
               fontWeight: isWinner ? 700 : 500, fontSize: '14px',
