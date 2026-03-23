@@ -302,6 +302,7 @@ export function getFlagDisplay(raw) {
   if (!raw) return { type: 'emoji', char: '🏳️' };
 
   const trimmed = raw.trim();
+  const emoji   = resolveFlag(trimmed);
 
   const iso2 =
     TO_ISO2[trimmed] ??
@@ -314,10 +315,11 @@ export function getFlagDisplay(raw) {
       type: 'img',
       src: `https://flagcdn.com/24x18/${iso2.toLowerCase()}.png`,
       alt: trimmed,
+      fallbackEmoji: emoji, // used by onError in Flag.jsx
     };
   }
 
-  return { type: 'emoji', char: resolveFlag(raw) };
+  return { type: 'emoji', char: emoji };
 }
 
 export function deriveMatchType(m, wtaPlayerIds = new Set()) {
