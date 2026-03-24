@@ -5,6 +5,11 @@
 // Singles: renders one flag image (flagcdn.com) with emoji fallback.
 // Doubles: name/country come as "Player A/Player B" and "ESP/ARG".
 //          We split on "/" and render two flags side by side.
+//
+// FIX: Doubles detection now triggers when EITHER country OR name has "/"
+//      Previously it only triggered when country had "/" OR name had "/" AND
+//      country was empty — this missed the common case of "ITA" country +
+//      "Errani S / Paolini J" name.
 // ─────────────────────────────────────────────────────────────────────────────
 import { getFlagDisplay } from '../services/tennisApi';
 
@@ -47,21 +52,28 @@ function SingleFlag({ country, size, style }) {
 }
 
 export default function Flag({ country, name, size = 24, style = {} }) {
-  // Detect doubles pair — country like "ESP/ARG" or name like "Granollers/Zeballos"
   const countrySrc = country ?? '';
   const nameSrc    = name ?? '';
 
-  const isDoubles =
-    countrySrc.includes('/') ||
-    (nameSrc.includes('/') && !countrySrc); // name-only fallback
+  // FIX: Detect doubles if EITHER country OR name contains "/"
+  // Previously: (nameSrc.includes('/') && !countrySrc) — missed "ITA" + "Errani S / Paolini J"
+  const isDoubles = countrySrc.includes('/') || nameSrc.includes('/');
 
   if (isDoubles) {
     // Split country codes — e.g. "ESP/ARG" → ["ESP", "ARG"]
-    const countries = countrySrc.includes('/')
-      ? countrySrc.split('/')
-      : ['', '']; // no country data, show two blank flags
-
-    const [c1, c2] = countries;
+    // If country has slash, use both codes.
+    // If country is a single code (e.g. "ITA"), use it for both players
+    // (same-nationality pair) — better than showing two blank flags.
+    let c1, c2;
+    if (countrySrc.includes('/')) {
+      const parts = countrySrc.split('/');
+      c1 = parts[0]?.trim() ?? '';
+      c2 = parts[1]?.trim() ?? '';
+    } else {
+      // Single country — both players from same nation, or one country unknown
+      c1 = countrySrc.trim();
+      c2 = ''; // second player country unknown — will show blank flag
+    }
 
     return (
       <span
@@ -74,8 +86,8 @@ export default function Flag({ country, name, size = 24, style = {} }) {
           ...style,
         }}
       >
-        <SingleFlag country={c1.trim()} size={size} />
-        <SingleFlag country={c2.trim()} size={size} />
+        <SingleFlag country={c1} size={size} />
+        <SingleFlag country={c2} size={size} />
       </span>
     );
   }

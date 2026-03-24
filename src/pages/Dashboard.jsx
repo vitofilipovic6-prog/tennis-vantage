@@ -648,15 +648,28 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
 // ─────────────────────────────────────────────────────────────────────────────
 // MATCH CARD
 // ─────────────────────────────────────────────────────────────────────────────
+// REPLACEMENT for the MatchCard component in src/pages/Dashboard.jsx
+// Find the existing MatchCard component and replace it entirely with this.
+// ─────────────────────────────────────────────────────────────────────────────
+// FIX: A match with winner_id set IS finished — even if status is still "live"
+// in the DB (sync lag). Previously checkmarks appeared on "Live" cards because
+// winner_id was set but status hadn't been updated yet by sync-live.
+// Now: isFinished = status==='finished' OR winner_id is set
+//      isLive     = status==='live' AND no winner yet
+// ─────────────────────────────────────────────────────────────────────────────
+
 const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = new Set() }) {
   const surfaceColors  = { Clay: '#f97316', Hard: '#60a5fa', Grass: '#4ade80' };
   const surfaceColor   = surfaceColors[m.surface] ?? '#94a3b8';
   const effectiveType  = deriveMatchType(m, wtaPlayerIds);
   const matchTypeDef   = MATCH_FILTERS.find(f => f.id === effectiveType) ?? null;
-  const isFinished     = m.status === 'finished';
-  const isLive         = m.status === 'live';
-  const p1Flag         = m.player1?.flag && m.player1.flag !== '🏳️' ? m.player1.flag : resolveFlag(m.player1?.country ?? '');
-  const p2Flag         = m.player2?.flag && m.player2.flag !== '🏳️' ? m.player2.flag : resolveFlag(m.player2?.country ?? '');
+
+  // FIX: treat as finished if winner_id is already set, even if status hasn't caught up
+  const isFinished = m.status === 'finished' || !!m.winner_id;
+  const isLive     = m.status === 'live' && !m.winner_id;
+
+  const p1Flag = m.player1?.flag && m.player1.flag !== '🏳️' ? m.player1.flag : resolveFlag(m.player1?.country ?? '');
+  const p2Flag = m.player2?.flag && m.player2.flag !== '🏳️' ? m.player2.flag : resolveFlag(m.player2?.country ?? '');
 
   return (
     <Card style={{ padding: '16px', transition: 'var(--t)' }}>
@@ -681,6 +694,16 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = 
               padding: '2px 7px', borderRadius: '999px', textTransform: 'uppercase',
             }}>
               <span className="live-dot" style={{ width: '5px', height: '5px' }} />Live
+            </span>
+          )}
+          {isFinished && !isLive && (
+            <span style={{
+              display: 'flex', alignItems: 'center', gap: '4px',
+              background: 'rgba(148,163,184,0.10)', border: '1px solid rgba(148,163,184,0.2)',
+              color: 'var(--text-faint)', fontSize: '10px', fontWeight: 700,
+              padding: '2px 7px', borderRadius: '999px', textTransform: 'uppercase',
+            }}>
+              Final
             </span>
           )}
           <span style={{
@@ -711,7 +734,7 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = 
           borderTop: idx === 1 ? '1px dashed var(--border)' : 'none',
           opacity: isFinished && m.winner_id && !isWinner ? 0.55 : 1,
         }}>
-         <Flag country={player?.country} name={player?.name} size={22} />
+          <Flag country={p?.country} name={p?.name} size={22} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <p style={{
               fontWeight: isWinner ? 700 : 500, fontSize: '14px',
@@ -760,7 +783,7 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = 
         ) : null}
       </div>
 
-      {/* Predict button */}
+      {/* Predict button — hidden when finished */}
       {!isFinished && (
         <button
           onClick={onPredict}

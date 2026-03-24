@@ -573,29 +573,73 @@ function TestimCard({ t }) {
   );
 }
 
+// REPLACEMENT for the HeroMatchCard function in src/pages/LandingPage.jsx
+// The Flag component requires `country` and `name` props — it never reads children.
+// Previously: <Flag className="lp-mc__fl">{p.flag}</Flag>  ← wrong, ignored
+// Now:        <Flag country={p.country} size={20} />        ← correct
+
 function HeroMatchCard() {
+  const players = [
+    { name: 'N. Djokovic', country: 'SRB', score: '6-4, 3', rank: 'ATP #2', serving: true  },
+    { name: 'C. Alcaraz',  country: 'ESP', score: '2-6, 2', rank: 'ATP #3', serving: false },
+  ];
+
   return (
     <div className="lp-mc">
-      <div className="lp-mc__hdr"><span className="lp-mc__ev">Roland Garros · QF</span><span className="lp-mc__live"><span className="lp-dot"/>LIVE</span></div>
-      {[{name:'N. Djokovic',flag:'🇷🇸',score:'6-4, 3',rank:'ATP #2',s:true},{name:'C. Alcaraz',flag:'🇪🇸',score:'2-6, 2',rank:'ATP #3',s:false}].map((p,i)=>(
-        <div key={i} className={`lp-mc__p${p.s?' lp-mc__p--s':''}`}>
-          <div className="lp-mc__pl"><span className="lp-mc__fl">{p.flag}</span><div><span className="lp-mc__nm">{p.name}</span><span className="lp-mc__rk">{p.rank}</span></div>{p.s&&<span className="lp-serve"/>}</div>
-          <span className={`lp-mc__sc${p.s?' lp-mc__sc--g':''}`}>{p.score}</span>
+      <div className="lp-mc__hdr">
+        <span className="lp-mc__ev">Roland Garros · QF</span>
+        <span className="lp-mc__live"><span className="lp-dot"/>LIVE</span>
+      </div>
+
+      {players.map((p, i) => (
+        <div key={i} className={`lp-mc__p${p.serving ? ' lp-mc__p--s' : ''}`}>
+          <div className="lp-mc__pl">
+            {/* FIX: use Flag with country prop, not emoji as children */}
+            <Flag country={p.country} size={20} style={{ flexShrink: 0, marginRight: '2px' }} />
+            <div>
+              <span className="lp-mc__nm">{p.name}</span>
+              <span className="lp-mc__rk">{p.rank}</span>
+            </div>
+            {p.serving && <span className="lp-serve" />}
+          </div>
+          <span className={`lp-mc__sc${p.serving ? ' lp-mc__sc--g' : ''}`}>{p.score}</span>
         </div>
       ))}
+
       <div className="lp-mc__prob">
-        <div className="lp-mc__prob-hdr"><span className="lp-mc__prob-lbl">Win Probability</span><span className="lp-mc__prob-ai">AI · High confidence</span></div>
-        <div className="lp-mc__bar-row"><span className="lp-mc__pct lp-mc__pct--g">63%</span><div className="lp-mc__bar"><div className="lp-mc__fill" style={{width:'63%'}}/></div><span className="lp-mc__pct lp-mc__pct--m">37%</span></div>
+        <div className="lp-mc__prob-hdr">
+          <span className="lp-mc__prob-lbl">Win Probability</span>
+          <span className="lp-mc__prob-ai">AI · High confidence</span>
+        </div>
+        <div className="lp-mc__bar-row">
+          <span className="lp-mc__pct lp-mc__pct--g">63%</span>
+          <div className="lp-mc__bar"><div className="lp-mc__fill" style={{ width: '63%' }} /></div>
+          <span className="lp-mc__pct lp-mc__pct--m">37%</span>
+        </div>
       </div>
+
       <div className="lp-mc__factors">
         <p className="lp-mc__fl-lbl">Key Factors</p>
-        {['Clay surface advantage','H2H: 7–5 Djokovic','Serve %: 65 vs 62'].map(f=>(
-          <div key={f} className="lp-mc__factor"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--lime)" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg><span>{f}</span></div>
+        {['Clay surface advantage', 'H2H: 7–5 Djokovic', 'Serve %: 65 vs 62'].map(f => (
+          <div key={f} className="lp-mc__factor">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--lime)" strokeWidth="2.5">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            <span>{f}</span>
+          </div>
         ))}
       </div>
+
       <div className="lp-mc__chips">
-        {[{l:'Surface',v:'Clay',a:'#f97316'},{l:'Set',v:'2nd',a:'#9fef66'},{l:'Court',v:'Ph. Chatrier',a:'#60a5fa'}].map(c=>(
-          <div key={c.l} className="lp-chip" style={{'--ca':c.a}}><span className="lp-chip__v">{c.v}</span><span className="lp-chip__l">{c.l}</span></div>
+        {[
+          { l: 'Surface', v: 'Clay',         a: '#f97316' },
+          { l: 'Set',     v: '2nd',           a: '#9fef66' },
+          { l: 'Court',   v: 'Ph. Chatrier',  a: '#60a5fa' },
+        ].map(c => (
+          <div key={c.l} className="lp-chip" style={{ '--ca': c.a }}>
+            <span className="lp-chip__v">{c.v}</span>
+            <span className="lp-chip__l">{c.l}</span>
+          </div>
         ))}
       </div>
     </div>
