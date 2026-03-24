@@ -587,23 +587,11 @@ function HeroMatchCard() {
 
   return (
     <div className="lp-mc">
-      <div className="lp-mc__hdr">
-        <span className="lp-mc__ev">Roland Garros · QF</span>
-        <span className="lp-mc__live"><span className="lp-dot"/>LIVE</span>
-      </div>
-
-      {players.map((p, i) => (
-        <div key={i} className={`lp-mc__p${p.serving ? ' lp-mc__p--s' : ''}`}>
-          <div className="lp-mc__pl">
-            {/* FIX: use Flag with country prop, not emoji as children */}
-            <Flag country={p.country} size={20} style={{ flexShrink: 0, marginRight: '2px' }} />
-            <div>
-              <span className="lp-mc__nm">{p.name}</span>
-              <span className="lp-mc__rk">{p.rank}</span>
-            </div>
-            {p.serving && <span className="lp-serve" />}
-          </div>
-          <span className={`lp-mc__sc${p.serving ? ' lp-mc__sc--g' : ''}`}>{p.score}</span>
+      <div className="lp-mc__hdr"><span className="lp-mc__ev">Roland Garros · QF</span><span className="lp-mc__live"><span className="lp-dot"/>LIVE</span></div>
+      {[{name:'N. Djokovic',flag:'🇷🇸',score:'6-4, 3',rank:'ATP #2',s:true},{name:'C. Alcaraz',flag:'🇪🇸',score:'2-6, 2',rank:'ATP #3',s:false}].map((p,i)=>(
+        <div key={i} className={`lp-mc__p${p.s?' lp-mc__p--s':''}`}>
+          <div className="lp-mc__pl"><span className="lp-mc__fl">{p.flag}</span><div><span className="lp-mc__nm">{p.name}</span><span className="lp-mc__rk">{p.rank}</span></div>{p.s&&<span className="lp-serve"/>}</div>
+          <span className={`lp-mc__sc${p.s?' lp-mc__sc--g':''}`}>{p.score}</span>
         </div>
       ))}
 
