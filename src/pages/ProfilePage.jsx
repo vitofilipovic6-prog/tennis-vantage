@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { useProfile } from '../hooks/useProfile';
 import { supabase } from '../services/supabase';
 import { resolveFlag } from '../services/tennisApi';
+import Flag from '../components/Flag';
 
 
 const SURFACE_COLOR = { Clay: '#f97316', Hard: '#60a5fa', Grass: '#4ade80' };
@@ -323,7 +324,7 @@ function FavouritePlayersCard({ profile, saving, onToggle }) {
                       onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-glass-md)'}
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                     >
-                      <span style={{ fontSize: 18, flexShrink: 0 }}>{p.flag || '🏳️'}</span>
+                      <Flag country={p.country} name={p.name} size={18} style={{ flexShrink: 0 }} />
                       <span style={{ flex: 1, fontWeight: 600, fontSize: 14, color: 'var(--text)' }}>
                         {p.name}
                       </span>

@@ -16,6 +16,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState, useEffect, useRef } from 'react';
 import { Logo, Btn, CourtSVG, Badge } from '../components/ui';
+import Flag from '../components/Flag';
 
 const STATS = [
   { val: '94%',    label: 'Prediction Accuracy' },

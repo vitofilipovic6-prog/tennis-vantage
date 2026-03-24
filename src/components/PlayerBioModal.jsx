@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../services/supabase';
 import { useScrollLock } from '../hooks/useScrollLock';
+import Flag from './Flag';
 
 const surfaceColors = { Clay: '#f97316', Hard: '#60a5fa', Grass: '#4ade80' };
 const CACHE_TTL_DAYS = 7;
@@ -215,7 +216,7 @@ export default function PlayerBioModal({ player: p, onClose, onChat }) {
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               {/* Flag + name */}
-              <span style={{ fontSize: 28 }}>{p.flag ?? '🏳️'}</span>
+             <Flag country={p.country} name={p.name} size={28} />
               <div>
                 <h2 style={{
                   fontFamily: 'var(--font-display)', fontWeight: 800,

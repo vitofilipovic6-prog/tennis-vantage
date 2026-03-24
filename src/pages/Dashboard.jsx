@@ -1066,7 +1066,7 @@ function PredictionCard({ match: m, prediction: pred }) {
           <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                <Flag country={p?.country} name={p?.name} size={22} />
+                <Flag country={player?.country} name={player?.name} size={22} />
                 <span style={{ fontSize: '14px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {player?.name ?? `Player ${idx + 1}`}
                 </span>
