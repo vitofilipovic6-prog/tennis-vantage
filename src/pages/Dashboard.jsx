@@ -557,7 +557,9 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
   const matchCounts = (() => {
     const counts = {};
     pool.forEach(m => {
-      if (m.status !== 'live' && m.status !== 'upcoming') return;
+      // Treat as finished if winner_id is set, even if status hasn't caught up
+      const isEffectivelyFinished = m.status === 'finished' || !!m.winner_id;
+      if (isEffectivelyFinished) return;
       const type = deriveMatchType(m, wtaPlayerIds);
       counts[type] = (counts[type] ?? 0) + 1;
     });
@@ -870,6 +872,8 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
   const predCounts = (() => {
     const counts = {};
     predictableMatches.forEach(m => {
+      const isEffectivelyFinished = m.status === 'finished' || !!m.winner_id;
+      if (isEffectivelyFinished) return;
       const type = deriveMatchType(m, wtaPlayerIds);
       counts[type] = (counts[type] ?? 0) + 1;
     });

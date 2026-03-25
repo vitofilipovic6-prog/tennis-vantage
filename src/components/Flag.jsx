@@ -1,23 +1,16 @@
 // src/components/Flag.jsx
 // ─────────────────────────────────────────────────────────────────────────────
-// Flag component handling singles and doubles players.
-//
-// Singles: renders one flag image (flagcdn.com) with emoji fallback.
-//
-// Doubles: name/country arrive as "Player A / Player B" and either:
-//   a) "ESP/ARG" — two country codes, one per player  ← show two different flags
-//   b) "ITA"    — one code for same-nationality pair  ← show that flag twice
-//   c) ""       — no country info at all              ← show two blank flags
-//
-// The previous version showed a blank flag for the second player in case (b)
-// because it passed an empty string to SingleFlag. This version fills in the
-// single country for both players when there is no slash in the country string.
+// Flag component — renders a flagcdn.com image with an emoji fallback.
+// Handles singles (one flag) and doubles ("ESP/ARG" → two flags, or
+// "ITA/ITA" → same flag twice, or "ITA" with a doubles name → duplicated).
 // ─────────────────────────────────────────────────────────────────────────────
+import { useState } from 'react';
 import { getFlagDisplay } from '../services/tennisApi';
 
 function SingleFlag({ country, size, style }) {
+  const [errored, setErrored] = useState(false);
+
   if (!country || !country.trim()) {
-    // Graceful blank — small neutral circle instead of broken image
     return (
       <span style={{
         display: 'inline-block',
@@ -34,7 +27,8 @@ function SingleFlag({ country, size, style }) {
 
   const flag = getFlagDisplay(country);
 
-  if (flag.type === 'img') {
+  // If image errored out, fall back to emoji
+  if (flag.type === 'img' && !errored) {
     return (
       <img
         src={flag.src}
@@ -49,21 +43,23 @@ function SingleFlag({ country, size, style }) {
           flexShrink: 0,
           ...style,
         }}
-        onError={e => {
-          const span = document.createElement('span');
-          span.style.fontSize = `${size * 0.85}px`;
-          span.style.lineHeight = '1';
-          span.style.flexShrink = '0';
-          span.textContent = flag.fallbackEmoji ?? '🏳️';
-          e.currentTarget.replaceWith(span);
-        }}
+        onError={() => setErrored(true)}
       />
     );
   }
 
+  // Emoji fallback (either flag.type === 'emoji', or image errored)
+  const emoji = flag.type === 'emoji' ? flag.char : (flag.fallbackEmoji ?? '🏳️');
   return (
-    <span style={{ fontSize: size * 0.85, lineHeight: 1, flexShrink: 0, ...style }}>
-      {flag.char}
+    <span style={{
+      fontSize: size * 0.9,
+      lineHeight: 1,
+      flexShrink: 0,
+      verticalAlign: 'middle',
+      display: 'inline-block',
+      ...style,
+    }}>
+      {emoji}
     </span>
   );
 }
@@ -72,45 +68,38 @@ export default function Flag({ country, name, size = 24, style = {} }) {
   const countrySrc = country ?? '';
   const nameSrc    = name    ?? '';
 
-  // Detect doubles: either country OR name contains "/"
   const isDoubles = countrySrc.includes('/') || nameSrc.includes('/');
 
   if (isDoubles) {
     let c1, c2;
 
     if (countrySrc.includes('/')) {
-      // Case (a): "ESP/ARG" — two distinct country codes
       const parts = countrySrc.split('/');
       c1 = parts[0]?.trim() ?? '';
       c2 = parts[1]?.trim() ?? '';
     } else if (countrySrc.trim()) {
-      // Case (b): single country code — same-nationality pair
-      // Show the same flag for both players (correct: e.g. ITA/ITA)
+      // Same-nation doubles pair — show the same flag twice
       c1 = countrySrc.trim();
       c2 = countrySrc.trim();
     } else {
-      // Case (c): no country info at all
       c1 = '';
       c2 = '';
     }
 
     return (
-      <span
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '2px',
-          flexShrink: 0,
-          verticalAlign: 'middle',
-          ...style,
-        }}
-      >
+      <span style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '2px',
+        flexShrink: 0,
+        verticalAlign: 'middle',
+        ...style,
+      }}>
         <SingleFlag country={c1} size={size} />
         <SingleFlag country={c2} size={size} />
       </span>
     );
   }
 
-  // Singles — original behaviour
   return <SingleFlag country={countrySrc} size={size} style={style} />;
 }

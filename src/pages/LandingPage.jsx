@@ -19,32 +19,32 @@ import { Logo, Btn, CourtSVG, Badge } from '../components/ui';
 import Flag from '../components/Flag';
 
 const STATS = [
-  { val: '94%',    label: 'Prediction Accuracy' },
-  { val: '2,400+', label: 'Matches Analysed'    },
-  { val: 'Live',   label: 'Real-Time Scores'    },
-  { val: 'ATP',     label: 'Tour Coverage'       },
+  { val: '94%', label: 'Prediction Accuracy' },
+  { val: '2,400+', label: 'Matches Analysed' },
+  { val: 'Live', label: 'Real-Time Scores' },
+  { val: 'ATP', label: 'Tour Coverage' },
 ];
 
 const FEATURES = [
-  { icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,  title: 'Live Match Data',          desc: 'Real-time scores, set-by-set breakdowns and momentum shifts from every ATP tournament worldwide.',          accent: '#9fef66' },
-  { icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>,                     title: 'AI-Powered Predictions',   desc: 'Our model analyses surface type, H2H records, fatigue index and serve stats to generate accurate win probabilities.', accent: '#f97316' },
-  { icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>, title: 'Player Deep Dives',        desc: 'Career stats, surface win-rates, recent form indexes and head-to-head breakdowns for every ranked player.',          accent: '#60a5fa' },
-  { icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>, title: 'AI Tennis Analyst',      desc: 'Chat with our AI assistant about any match, player or prediction — your personal tennis expert, available 24/7.',   accent: '#a78bfa' },
-  { icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>, title: 'World Rankings',        desc: 'Up-to-date ATP rankings with surface preferences and career trajectory charts for every professional.',        accent: '#fb7185' },
-  { icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>, title: 'Tournament Tracker',   desc: 'Full draw views, bracket predictions and live upsets tracker for every Grand Slam and Masters event.',              accent: '#34d399' },
+  { icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>, title: 'Live Match Data', desc: 'Real-time scores, set-by-set breakdowns and momentum shifts from every ATP tournament worldwide.', accent: '#9fef66' },
+  { icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" /></svg>, title: 'AI-Powered Predictions', desc: 'Our model analyses surface type, H2H records, fatigue index and serve stats to generate accurate win probabilities.', accent: '#f97316' },
+  { icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></svg>, title: 'Player Deep Dives', desc: 'Career stats, surface win-rates, recent form indexes and head-to-head breakdowns for every ranked player.', accent: '#60a5fa' },
+  { icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>, title: 'AI Tennis Analyst', desc: 'Chat with our AI assistant about any match, player or prediction — your personal tennis expert, available 24/7.', accent: '#a78bfa' },
+  { icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" /></svg>, title: 'World Rankings', desc: 'Up-to-date ATP rankings with surface preferences and career trajectory charts for every professional.', accent: '#fb7185' },
+  { icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18M9 21V9" /></svg>, title: 'Tournament Tracker', desc: 'Full draw views, bracket predictions and live upsets tracker for every Grand Slam and Masters event.', accent: '#34d399' },
 ];
 
 const STEPS = [
   { n: '01', title: 'Create your account', desc: 'Sign up free in seconds with email or Google — no credit card required.' },
-  { n: '02', title: 'Browse live matches',  desc: 'Explore ATP fixtures, live scores and upcoming match schedules.'  },
+  { n: '02', title: 'Browse live matches', desc: 'Explore ATP fixtures, live scores and upcoming match schedules.' },
   { n: '03', title: 'Get your prediction', desc: 'Select any match for an AI win-probability card with key factor breakdowns.' },
-  { n: '04', title: 'Ask the analyst',     desc: "Still curious? Our AI chat gives you expert-level context on demand."   },
+  { n: '04', title: 'Ask the analyst', desc: "Still curious? Our AI chat gives you expert-level context on demand." },
 ];
 
 const TESTIMONIALS = [
-  { stars:5, quote:'The surface breakdown is what got me. Seeing exactly why a player is +20% on clay versus hard court finally made sense of results I never understood before.', name:'Marko D.', role:'Amateur player · Zagreb' },
-  { stars:5, quote:"I used TennisVantage to follow Roland Garros this year. The prediction card for every QF match was eerily accurate and the AI chat filled in all the context.", name:'Sarah L.', role:'Tennis coach · London' },
-  { stars:4, quote:'Clean interface, fast data. The win-probability bar updating live mid-set is genuinely addictive to watch. Favourite sports app right now.', name:'Filip R.', role:'Sports analyst · Split' },
+  { stars: 5, quote: 'The surface breakdown is what got me. Seeing exactly why a player is +20% on clay versus hard court finally made sense of results I never understood before.', name: 'Marko D.', role: 'Amateur player · Zagreb' },
+  { stars: 5, quote: "I used TennisVantage to follow Roland Garros this year. The prediction card for every QF match was eerily accurate and the AI chat filled in all the context.", name: 'Sarah L.', role: 'Tennis coach · London' },
+  { stars: 4, quote: 'Clean interface, fast data. The win-probability bar updating live mid-set is genuinely addictive to watch. Favourite sports app right now.', name: 'Filip R.', role: 'Sports analyst · Split' },
 ];
 
 function useInView(ref, threshold = 0.15) {
@@ -85,17 +85,17 @@ export default function LandingPage({ nav }) {
 
         {/* ══ NAVBAR ══════════════════════════════════════════════════════════ */}
         <nav className={`lp-nav${scrolled ? ' lp-nav--scrolled' : ''}`}>
-          <Logo size="sm" onClick={() => window.scrollTo({ top:0, behavior:'smooth' })} />
+          <Logo size="sm" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} />
 
           <div className="lp-nav__links hide-sm">
-            {['Features','How it Works','Community'].map(l => (
-              <a key={l} href={`#${l.toLowerCase().replace(/ /g,'-')}`} className="lp-nav__link">{l}</a>
+            {['Features', 'How it Works', 'Community'].map(l => (
+              <a key={l} href={`#${l.toLowerCase().replace(/ /g, '-')}`} className="lp-nav__link">{l}</a>
             ))}
           </div>
 
           {/* Desktop CTAs — unchanged */}
           <div className="lp-nav__actions hide-sm">
-            <Btn variant="ghost"   size="sm" onClick={() => nav('login')}>Sign In</Btn>
+            <Btn variant="ghost" size="sm" onClick={() => nav('login')}>Sign In</Btn>
             <Btn variant="primary" size="sm" onClick={() => nav('signup')}>Get Started</Btn>
           </div>
 
@@ -114,24 +114,24 @@ export default function LandingPage({ nav }) {
 
         <aside className={`lp-overlay show-sm${menuOpen ? ' lp-overlay--open' : ''}`}>
           {/* decorative */}
-          <div className="lp-overlay__court"  aria-hidden="true"><CourtSVG opacity={0.04} /></div>
-          <div className="lp-overlay__glow"   aria-hidden="true" />
+          <div className="lp-overlay__court" aria-hidden="true"><CourtSVG opacity={0.04} /></div>
+          <div className="lp-overlay__glow" aria-hidden="true" />
 
           {/* top bar */}
           <div className="lp-overlay__top">
             <Logo size="sm" onClick={close} />
             <button className="lp-overlay__x" onClick={close} aria-label="Close">
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
             </button>
           </div>
 
           {/* nav links */}
           <nav className="lp-overlay__nav">
-            {[['Features','#features'],['How it Works','#how-it-works'],['Community','#community']].map(([label,href],i) => (
-              <a key={label} href={href} className="lp-overlay__link" style={{'--i':i}} onClick={close}>
-                <span className="lp-overlay__link-n">0{i+1}</span>
+            {[['Features', '#features'], ['How it Works', '#how-it-works'], ['Community', '#community']].map(([label, href], i) => (
+              <a key={label} href={href} className="lp-overlay__link" style={{ '--i': i }} onClick={close}>
+                <span className="lp-overlay__link-n">0{i + 1}</span>
                 <span className="lp-overlay__link-t">{label}</span>
-                <svg className="lp-overlay__link-arrow" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
+                <svg className="lp-overlay__link-arrow" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6" /></svg>
               </a>
             ))}
           </nav>
@@ -141,7 +141,7 @@ export default function LandingPage({ nav }) {
           {/* ★ CTA buttons — Get Started lives here on mobile */}
           <div className="lp-overlay__ctas">
             <button className="lp-overlay__btn-primary" onClick={() => { close(); nav('signup'); }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="13 17 18 12 13 7" /><polyline points="6 17 11 12 6 7" /></svg>
               Get Started Free
             </button>
             <button className="lp-overlay__btn-ghost" onClick={() => { close(); nav('login'); }}>
@@ -163,7 +163,7 @@ export default function LandingPage({ nav }) {
               <h1 className="lp-hero__h1 lp-f2">Predict Every<br /><span className="lp-hero__grad">Match Winner.</span></h1>
               <p className="lp-hero__sub lp-f3">TennisVantage combines live tour data with AI analysis to deliver win probabilities, surface breakdowns and player deep-dives — before the first serve.</p>
               <div className="lp-hero__cta lp-f4">
-                <Btn variant="primary" size="lg" onClick={() => nav('signup')}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{flexShrink:0}}><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>Start Predicting Free</Btn>
+                <Btn variant="primary" size="lg" onClick={() => nav('signup')}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ flexShrink: 0 }}><polyline points="13 17 18 12 13 7" /><polyline points="6 17 11 12 6 7" /></svg>Start Predicting Free</Btn>
                 <Btn variant="secondary" size="lg" onClick={() => nav('login')}>Sign In</Btn>
               </div>
               <div className="lp-stats lp-f5">
@@ -184,9 +184,9 @@ export default function LandingPage({ nav }) {
 
         {/* ══ FEATURES ════════════════════════════════════════════════════════ */}
         <section id="features" className="lp-sec">
-          <SectionHeader tag="Everything you need" title={<>Built for serious<br className="hide-sm"/> tennis fans.</>} sub="From live scores to AI predictions — every tool you need to watch, understand and predict professional tennis." />
+          <SectionHeader tag="Everything you need" title={<>Built for serious<br className="hide-sm" /> tennis fans.</>} sub="From live scores to AI predictions — every tool you need to watch, understand and predict professional tennis." />
           <div className="lp-feat-grid">
-            {FEATURES.map((f,i) => <FeatureCard key={f.title} feature={f} delay={i} />)}
+            {FEATURES.map((f, i) => <FeatureCard key={f.title} feature={f} delay={i} />)}
           </div>
         </section>
 
@@ -194,7 +194,7 @@ export default function LandingPage({ nav }) {
         <section id="how-it-works" className="lp-sec lp-sec--alt">
           <SectionHeader tag="Simple as a tiebreak" title="Up and running in minutes." sub="No complex setup. Sign up free and get your first AI prediction in under two minutes." centered />
           <div className="lp-steps">
-            {STEPS.map((s,i) => <StepCard key={s.n} step={s} index={i} isLast={i===STEPS.length-1} />)}
+            {STEPS.map((s, i) => <StepCard key={s.n} step={s} index={i} isLast={i === STEPS.length - 1} />)}
           </div>
         </section>
 
@@ -206,8 +206,8 @@ export default function LandingPage({ nav }) {
               <h2 className="lp-title">Probabilities that actually make sense.</h2>
               <p className="lp-sub">Every prediction card shows you the <em>why</em> — surface advantage, head-to-head record, serve %, fatigue index — not just a number.</p>
               <ul className="lp-check">
-                {['Confidence level per prediction','Surface-adjusted win probability','Top 3 decisive factors highlighted','Live in-match re-calculation'].map(c=>(
-                  <li key={c} className="lp-check__item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--lime)" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>{c}</li>
+                {['Confidence level per prediction', 'Surface-adjusted win probability', 'Top 3 decisive factors highlighted', 'Live in-match re-calculation'].map(c => (
+                  <li key={c} className="lp-check__item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--lime)" strokeWidth="2.5"><polyline points="20 6 9 17 4 12" /></svg>{c}</li>
                 ))}
               </ul>
               <Btn variant="primary" size="md" onClick={() => nav('signup')}>Try it free →</Btn>
@@ -228,13 +228,13 @@ export default function LandingPage({ nav }) {
         <section className="lp-sec">
           <div className="lp-cta">
             <div className="lp-cta__court" aria-hidden="true"><CourtSVG opacity={0.04} /></div>
-            <div className="lp-cta__glow"  aria-hidden="true" />
-            <span className="lp-tag" style={{display:'block',marginBottom:'1rem'}}>// Free to start</span>
+            <div className="lp-cta__glow" aria-hidden="true" />
+            <span className="lp-tag" style={{ display: 'block', marginBottom: '1rem' }}>// Free to start</span>
             <h2 className="lp-cta__title">Your edge starts here.</h2>
             <p className="lp-cta__sub">Join thousands of tennis fans using AI-powered predictions to watch smarter, understand the game deeper, and never miss a big upset again.</p>
             <div className="lp-cta__btns">
               <Btn variant="primary" size="xl" onClick={() => nav('signup')}>Create Free Account →</Btn>
-              <Btn variant="ghost"   size="lg" onClick={() => nav('login')}>Already have an account</Btn>
+              <Btn variant="ghost" size="lg" onClick={() => nav('login')}>Already have an account</Btn>
             </div>
           </div>
         </section>
@@ -244,7 +244,7 @@ export default function LandingPage({ nav }) {
           <Logo size="sm" />
           <p className="lp-footer__copy">© {new Date().getFullYear()} TennisVantage · Built for university project</p>
           <div className="lp-footer__links">
-            {['Privacy','Terms','Contact'].map(l => <a key={l} href="#" className="lp-footer__link">{l}</a>)}
+            {['Privacy', 'Terms', 'Contact'].map(l => <a key={l} href="#" className="lp-footer__link">{l}</a>)}
           </div>
         </footer>
 
@@ -264,6 +264,7 @@ const TOURNAMENTS = [
     location: 'Melbourne, Australia',
     month: 'January',
     emoji: '🇦🇺',
+    iso2: 'au',
     prize: 'A$86.5M',
     founded: 1905,
     nickname: 'The Happy Slam',
@@ -284,6 +285,7 @@ const TOURNAMENTS = [
     location: 'Paris, France',
     month: 'May–June',
     emoji: '🇫🇷',
+    iso2: 'fr',
     prize: '€53.5M',
     founded: 1891,
     nickname: 'The French Open',
@@ -304,6 +306,7 @@ const TOURNAMENTS = [
     location: 'London, England',
     month: 'June–July',
     emoji: '🇬🇧',
+    iso2: 'gb',
     prize: '£50M',
     founded: 1877,
     nickname: 'The Championships',
@@ -324,6 +327,7 @@ const TOURNAMENTS = [
     location: 'New York, USA',
     month: 'August–September',
     emoji: '🇺🇸',
+    iso2: 'us',
     prize: '$65M',
     founded: 1881,
     nickname: 'The US Open',
@@ -344,6 +348,7 @@ const TOURNAMENTS = [
     location: 'Global',
     month: 'Year-round',
     emoji: '🏆',
+    iso2: null,
     prize: 'Up to $10M',
     founded: 1990,
     nickname: 'The Masters Series',
@@ -364,6 +369,7 @@ const TOURNAMENTS = [
     location: 'Turin, Italy',
     month: 'November',
     emoji: '🇮🇹',
+    iso2: 'it',
     prize: '$15M',
     founded: 1970,
     nickname: 'The Season Finale',
@@ -384,6 +390,7 @@ const TOURNAMENTS = [
     location: 'Riyadh, Saudi Arabia',
     month: 'November',
     emoji: '🇸🇦',
+    iso2: 'sa',
     prize: '$15.25M',
     founded: 1972,
     nickname: 'The WTA Season Finale',
@@ -404,6 +411,7 @@ const TOURNAMENTS = [
     location: 'Global',
     month: 'Jan, May, Jun, Aug',
     emoji: '👑',
+    iso2: null,
     prize: 'Equal prize money',
     founded: 1968,
     nickname: 'The Four Majors',
@@ -417,6 +425,22 @@ const TOURNAMENTS = [
     ],
   },
 ];
+
+// Add this tiny helper just above the TournamentSection function
+function TourFlag({ emoji, iso2 }) {
+  const [failed, setFailed] = useState(false);
+  if (!iso2 || failed) return <span>{emoji}</span>;
+  return (
+    <img
+      src={`https://flagcdn.com/24x18/${iso2}.png`}
+      alt=""
+      width="20"
+      height="15"
+      style={{ borderRadius: '2px', objectFit: 'cover', verticalAlign: 'middle', flexShrink: 0 }}
+      onError={() => setFailed(true)}
+    />
+  );
+}
 
 // ── TournamentSection component ───────────────────────────────────────────────
 function TournamentSection() {
@@ -450,11 +474,13 @@ function TournamentSection() {
             onClick={() => toggle(t.id)}
             aria-expanded={activeId === t.id}
           >
-            <span className="lp-tpill__emoji">{t.emoji}</span>
+            <span className="lp-tpill__emoji">
+              <TourFlag emoji={t.emoji} iso2={t.iso2} />
+            </span>
             <span className="lp-tpill__name">{t.name}</span>
             <span className="lp-tpill__surface" style={{ color: t.surfaceColor }}>{t.surface}</span>
             <svg className={`lp-tpill__arrow${activeId === t.id ? ' lp-tpill__arrow--open' : ''}`} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <polyline points="6 9 12 15 18 9"/>
+              <polyline points="6 9 12 15 18 9" />
             </svg>
           </button>
         ))}
@@ -467,14 +493,16 @@ function TournamentSection() {
             {/* Left: info */}
             <div className="lp-tdetail__main">
               <div className="lp-tdetail__top">
-                <span className="lp-tdetail__emoji">{active.emoji}</span>
+                <span className="lp-tdetail__emoji">
+                  <TourFlag emoji={active.emoji} iso2={active.iso2} />
+                </span>
                 <div>
                   <h3 className="lp-tdetail__name">{active.name}</h3>
                   <p className="lp-tdetail__nickname">"{active.nickname}"</p>
                 </div>
                 <button className="lp-tdetail__close" onClick={() => setActiveId(null)} aria-label="Close">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
                   </svg>
                 </button>
               </div>
@@ -501,16 +529,16 @@ function TournamentSection() {
             {/* Right: facts */}
             <div className="lp-tdetail__facts">
               <p className="lp-tdetail__facts-title">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--lime)" strokeWidth="2.5" style={{flexShrink:0}}>
-                  <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--lime)" strokeWidth="2.5" style={{ flexShrink: 0 }}>
+                  <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
                 </svg>
                 Key Facts
               </p>
               <ul className="lp-tdetail__list">
                 {active.facts.map((f, i) => (
                   <li key={i} className="lp-tdetail__fact" style={{ '--di': i }}>
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--lime)" strokeWidth="3" style={{flexShrink:0,marginTop:3}}>
-                      <polyline points="20 6 9 17 4 12"/>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--lime)" strokeWidth="3" style={{ flexShrink: 0, marginTop: 3 }}>
+                      <polyline points="20 6 9 17 4 12" />
                     </svg>
                     {f}
                   </li>
@@ -524,10 +552,10 @@ function TournamentSection() {
   );
 }
 
-function SectionHeader({ tag, title, sub, centered=false }) {
+function SectionHeader({ tag, title, sub, centered = false }) {
   const ref = useRef(null); const vis = useInView(ref);
   return (
-    <div ref={ref} className={['lp-sh', centered&&'lp-sh--c', vis&&'lp-in-view'].filter(Boolean).join(' ')}>
+    <div ref={ref} className={['lp-sh', centered && 'lp-sh--c', vis && 'lp-in-view'].filter(Boolean).join(' ')}>
       <span className="lp-tag">{tag}</span>
       <h2 className="lp-title">{title}</h2>
       <p className="lp-sub">{sub}</p>
@@ -535,23 +563,23 @@ function SectionHeader({ tag, title, sub, centered=false }) {
   );
 }
 
-function FeatureCard({ feature:f, delay }) {
-  const [hov,setHov]=useState(false); const ref=useRef(null); const vis=useInView(ref);
+function FeatureCard({ feature: f, delay }) {
+  const [hov, setHov] = useState(false); const ref = useRef(null); const vis = useInView(ref);
   return (
-    <div ref={ref} className={['lp-fc', vis&&'lp-in-view'].filter(Boolean).join(' ')}
-      style={{'--accent':f.accent,'--delay':`${delay*.07}s`,...(hov&&{borderColor:`${f.accent}35`,background:'var(--bg-card-alt,#161e2e)',transform:'translateY(-5px)',boxShadow:`0 24px 60px rgba(0,0,0,.45),0 0 30px ${f.accent}12`})}}
-      onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)}>
-      <div className="lp-fc__icon" style={{background:`${f.accent}15`,border:`1px solid ${f.accent}28`,color:f.accent,boxShadow:hov?`0 0 22px ${f.accent}22`:'none'}}>{f.icon}</div>
-      <h3 className="lp-fc__title" style={hov?{color:f.accent}:{}}>{f.title}</h3>
+    <div ref={ref} className={['lp-fc', vis && 'lp-in-view'].filter(Boolean).join(' ')}
+      style={{ '--accent': f.accent, '--delay': `${delay * .07}s`, ...(hov && { borderColor: `${f.accent}35`, background: 'var(--bg-card-alt,#161e2e)', transform: 'translateY(-5px)', boxShadow: `0 24px 60px rgba(0,0,0,.45),0 0 30px ${f.accent}12` }) }}
+      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}>
+      <div className="lp-fc__icon" style={{ background: `${f.accent}15`, border: `1px solid ${f.accent}28`, color: f.accent, boxShadow: hov ? `0 0 22px ${f.accent}22` : 'none' }}>{f.icon}</div>
+      <h3 className="lp-fc__title" style={hov ? { color: f.accent } : {}}>{f.title}</h3>
       <p className="lp-fc__desc">{f.desc}</p>
     </div>
   );
 }
 
-function StepCard({ step:s, index, isLast }) {
-  const ref=useRef(null); const vis=useInView(ref);
+function StepCard({ step: s, index, isLast }) {
+  const ref = useRef(null); const vis = useInView(ref);
   return (
-    <div ref={ref} className={['lp-step', vis&&'lp-in-view'].filter(Boolean).join(' ')} style={{'--delay':`${index*.12}s`}}>
+    <div ref={ref} className={['lp-step', vis && 'lp-in-view'].filter(Boolean).join(' ')} style={{ '--delay': `${index * .12}s` }}>
       <div className="lp-step__n">{s.n}</div>
       {!isLast && <div className="lp-step__line" aria-hidden="true" />}
       <h3 className="lp-step__title">{s.title}</h3>
@@ -561,37 +589,52 @@ function StepCard({ step:s, index, isLast }) {
 }
 
 function TestimCard({ t }) {
-  const ref=useRef(null); const vis=useInView(ref);
+  const ref = useRef(null); const vis = useInView(ref);
   return (
-    <div ref={ref} className={['lp-tc', vis&&'lp-in-view'].filter(Boolean).join(' ')}>
-      <div className="lp-tc__stars">{Array.from({length:5},(_,i)=>(<svg key={i} width="13" height="13" viewBox="0 0 24 24" fill={i<t.stars?'#9fef66':'#1e293b'} stroke={i<t.stars?'#9fef66':'#334155'} strokeWidth="1.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>))}</div>
+    <div ref={ref} className={['lp-tc', vis && 'lp-in-view'].filter(Boolean).join(' ')}>
+      <div className="lp-tc__stars">{Array.from({ length: 5 }, (_, i) => (<svg key={i} width="13" height="13" viewBox="0 0 24 24" fill={i < t.stars ? '#9fef66' : '#1e293b'} stroke={i < t.stars ? '#9fef66' : '#334155'} strokeWidth="1.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>))}</div>
       <p className="lp-tc__q">"{t.quote}"</p>
       <div className="lp-tc__author">
-        <div className="lp-tc__av">{t.name.split(' ').map(w=>w[0]).join('')}</div>
+        <div className="lp-tc__av">{t.name.split(' ').map(w => w[0]).join('')}</div>
         <div><div className="lp-tc__name">{t.name}</div><div className="lp-tc__role">{t.role}</div></div>
       </div>
     </div>
   );
 }
 
-// REPLACEMENT for the HeroMatchCard function in src/pages/LandingPage.jsx
-// The Flag component requires `country` and `name` props — it never reads children.
-// Previously: <Flag className="lp-mc__fl">{p.flag}</Flag>  ← wrong, ignored
-// Now:        <Flag country={p.country} size={20} />        ← correct
-
+// Replace the existing HeroMatchCard function entirely
 function HeroMatchCard() {
-  const players = [
-    { name: 'N. Djokovic', country: 'SRB', score: '6-4, 3', rank: 'ATP #2', serving: true  },
-    { name: 'C. Alcaraz',  country: 'ESP', score: '2-6, 2', rank: 'ATP #3', serving: false },
-  ];
+  // Use flagcdn img tags for cross-platform consistency (avoids emoji rendering as text on some OS/fonts)
+  const FlagImg = ({ iso2, size = 20 }) => (
+    <img
+      src={`https://flagcdn.com/24x18/${iso2.toLowerCase()}.png`}
+      alt={iso2}
+      width={size}
+      height={Math.round(size * 0.75)}
+      style={{ borderRadius: '2px', objectFit: 'cover', verticalAlign: 'middle', flexShrink: 0 }}
+    />
+  );
 
   return (
     <div className="lp-mc">
-      <div className="lp-mc__hdr"><span className="lp-mc__ev">Roland Garros · QF</span><span className="lp-mc__live"><span className="lp-dot"/>LIVE</span></div>
-      {[{name:'N. Djokovic',flag:'🇷🇸',score:'6-4, 3',rank:'ATP #2',s:true},{name:'C. Alcaraz',flag:'🇪🇸',score:'2-6, 2',rank:'ATP #3',s:false}].map((p,i)=>(
-        <div key={i} className={`lp-mc__p${p.s?' lp-mc__p--s':''}`}>
-          <div className="lp-mc__pl"><span className="lp-mc__fl">{p.flag}</span><div><span className="lp-mc__nm">{p.name}</span><span className="lp-mc__rk">{p.rank}</span></div>{p.s&&<span className="lp-serve"/>}</div>
-          <span className={`lp-mc__sc${p.s?' lp-mc__sc--g':''}`}>{p.score}</span>
+      <div className="lp-mc__hdr">
+        <span className="lp-mc__ev">Roland Garros · QF</span>
+        <span className="lp-mc__live"><span className="lp-dot" />LIVE</span>
+      </div>
+      {[
+        { name: 'N. Djokovic', iso2: 'rs', score: '6-4, 3', rank: 'ATP #2', s: true },
+        { name: 'C. Alcaraz', iso2: 'es', score: '2-6, 2', rank: 'ATP #3', s: false },
+      ].map((p, i) => (
+        <div key={i} className={`lp-mc__p${p.s ? ' lp-mc__p--s' : ''}`}>
+          <div className="lp-mc__pl">
+            <FlagImg iso2={p.iso2} size={20} />
+            <div>
+              <span className="lp-mc__nm">{p.name}</span>
+              <span className="lp-mc__rk">{p.rank}</span>
+            </div>
+            {p.s && <span className="lp-serve" />}
+          </div>
+          <span className={`lp-mc__sc${p.s ? ' lp-mc__sc--g' : ''}`}>{p.score}</span>
         </div>
       ))}
 
@@ -612,7 +655,7 @@ function HeroMatchCard() {
         {['Clay surface advantage', 'H2H: 7–5 Djokovic', 'Serve %: 65 vs 62'].map(f => (
           <div key={f} className="lp-mc__factor">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--lime)" strokeWidth="2.5">
-              <polyline points="20 6 9 17 4 12"/>
+              <polyline points="20 6 9 17 4 12" />
             </svg>
             <span>{f}</span>
           </div>
@@ -621,9 +664,9 @@ function HeroMatchCard() {
 
       <div className="lp-mc__chips">
         {[
-          { l: 'Surface', v: 'Clay',         a: '#f97316' },
-          { l: 'Set',     v: '2nd',           a: '#9fef66' },
-          { l: 'Court',   v: 'Ph. Chatrier',  a: '#60a5fa' },
+          { l: 'Surface', v: 'Clay', a: '#f97316' },
+          { l: 'Set', v: '2nd', a: '#9fef66' },
+          { l: 'Court', v: 'Ph. Chatrier', a: '#60a5fa' },
         ].map(c => (
           <div key={c.l} className="lp-chip" style={{ '--ca': c.a }}>
             <span className="lp-chip__v">{c.v}</span>

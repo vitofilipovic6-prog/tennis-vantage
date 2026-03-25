@@ -434,15 +434,25 @@ export function normalizeEvent(
 
   const match_type = resolveMatchType(raw);
 
+  const isDoubles = p1Name.includes('/') || p2Name.includes('/');
+
   const buildPlayer = (team: any, id: string, name: string): PlayerRow => {
-    const countryRaw = String(
+    let countryRaw = String(
       team?.country?.alpha3 ?? team?.country?.alpha2 ??
       team?.country?.name ?? team?.country?.slug ?? ''
     );
+
+    // For doubles, the API sometimes sends players as "A / B" with one country code.
+    // If the name contains "/" but the country does not, duplicate the country
+    // so Flag.jsx can render both flags correctly (e.g. "ITA" → "ITA/ITA").
+    if (isDoubles && name.includes('/') && countryRaw && !countryRaw.includes('/')) {
+      countryRaw = `${countryRaw}/${countryRaw}`;
+    }
+
     return {
       id, name,
       country: countryRaw,
-      flag: resolveFlag(countryRaw),
+      flag: resolveFlag(countryRaw.split('/')[0] ?? countryRaw),
       rank: Number(team?.ranking ?? team?.currentRanking ?? 999),
       wins: 0, losses: 0, ace_avg: 5.5,
       surface_pref: surface, first_serve_pct: 60,
