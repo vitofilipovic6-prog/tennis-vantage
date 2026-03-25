@@ -499,6 +499,9 @@ function FilterPills({ activeFilter, onSelect, size = 'normal', counts = {} }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // MATCHES TAB
 // ─────────────────────────────────────────────────────────────────────────────
+// src/pages/Dashboard.jsx
+// Replace the ENTIRE MatchesTab function with this:
+
 function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wtaPlayerIds }) {
   const [activeFilter,    setActiveFilter]    = useState('atp_singles');
   const [calendarDate,    setCalendarDate]    = useState(null);
@@ -531,7 +534,6 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
   if (error)   return <ErrorMessage msg={error} onRetry={refresh} />;
 
   // ── Build today's unified match list ──────────────────────────────────────
-  // live + upcoming are already reclassified from parent — just merge them
   const todayMatches = (() => {
     const map = new Map();
     upcoming.forEach(m => map.set(m.id, m));
@@ -541,17 +543,17 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
     );
   })();
 
-  const pool = isToday ? todayMatches : dateMatches;
-
+  const pool            = isToday ? todayMatches : dateMatches;
   const byType          = (arr) => arr.filter(m => deriveMatchType(m, wtaPlayerIds) === activeFilter);
   const activeFilterDef = MATCH_FILTERS.find(f => f.id === activeFilter);
+  const filteredPool    = byType(pool);
 
-  const filteredPool     = byType(pool);
-  const filteredLive     = filteredPool.filter(m => m.status === 'live');
-  const filteredUpcoming = filteredPool.filter(m => m.status === 'upcoming');
-  const filteredFinished = filteredPool.filter(m => m.status === 'finished');
+  // A match is finished if status==='finished' OR winner_id is set (handles sync lag)
+  const filteredLive     = filteredPool.filter(m => m.status === 'live'     && !m.winner_id);
+  const filteredUpcoming = filteredPool.filter(m => m.status === 'upcoming' && !m.winner_id);
+  const filteredFinished = filteredPool.filter(m => m.status === 'finished' || !!m.winner_id);
 
-  // Badge counts: live + upcoming only
+  // Badge counts: live + upcoming only (finished don't count toward pill badges)
   const matchCounts = (() => {
     const counts = {};
     pool.forEach(m => {
@@ -568,6 +570,8 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
         weekday: 'long', day: 'numeric', month: 'short',
       }) ?? ''}`;
 
+  const totalVisible = filteredLive.length + filteredUpcoming.length + filteredFinished.length;
+
   return (
     <div className="tv-fade-up">
       <FilterPills activeFilter={activeFilter} onSelect={setActiveFilter} counts={matchCounts} />
@@ -581,10 +585,19 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
 
       {dateLoading ? (
         <LoadingGrid />
+      ) : totalVisible === 0 ? (
+        // ── Nothing at all for this filter/date ──────────────────────────
+        <EmptyState
+          icon={isToday ? '🎾' : '📅'}
+          title={`No ${activeFilterDef?.label} matches`}
+          desc={isToday
+            ? 'No matches found for this filter today.'
+            : 'No matches found for this filter on this day.'}
+        />
       ) : (
         <>
-          {/* ── 1. Live Now ──────────────────────────────────────────────── */}
-          {filteredLive.length > 0 && (
+          {/* ── 1. Live Now — only shown on today ─────────────────────── */}
+          {isToday && filteredLive.length > 0 && (
             <section style={{ marginBottom: '40px' }}>
               <SectionHeading label="Live Now" dot />
               <div style={gridStyle}>
@@ -595,27 +608,10 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
             </section>
           )}
 
-          {/* ── 2. Upcoming ──────────────────────────────────────────────── */}
-          <section style={{ marginBottom: filteredFinished.length > 0 ? '40px' : '0' }}>
-            <SectionHeading label={`${activeFilterDef?.label}${dayLabel} — Upcoming`} />
-            {filteredUpcoming.length === 0 ? (
-              filteredLive.length === 0 && filteredFinished.length === 0 ? (
-                <EmptyState
-                  icon={isToday ? '🎾' : '📅'}
-                  title={`No ${activeFilterDef?.label} matches`}
-                  desc={isToday ? 'No matches found for this filter today.' : 'No matches found for this filter on this day.'}
-                />
-              ) : (
-                <div style={{
-                  padding: '16px 20px', background: 'var(--bg-glass)',
-                  border: '1px solid var(--border)', borderRadius: 'var(--radius)', textAlign: 'center',
-                }}>
-                  <p style={{ fontSize: '13px', color: 'var(--text-faint)' }}>
-                    No more upcoming {activeFilterDef?.label} matches today
-                  </p>
-                </div>
-              )
-            ) : (
+          {/* ── 2. Upcoming — only shown on today ─────────────────────── */}
+          {isToday && filteredUpcoming.length > 0 && (
+            <section style={{ marginBottom: filteredFinished.length > 0 ? '40px' : '0' }}>
+              <SectionHeading label={`${activeFilterDef?.label} — Upcoming`} />
               <div style={gridStyle}>
                 {filteredUpcoming.map((m, i) => (
                   <div key={m.id} className={`tv-fade-up d${Math.min(i + 1, 5)}`}>
@@ -623,13 +619,17 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
                   </div>
                 ))}
               </div>
-            )}
-          </section>
+            </section>
+          )}
 
-          {/* ── 3. Finished / Earlier Today ──────────────────────────────── */}
+          {/* ── 3. Results — shown on ALL dates (today + past) ────────── */}
           {filteredFinished.length > 0 && (
             <section>
-              <SectionHeading label={`${activeFilterDef?.label}${dayLabel} — Earlier Today`} />
+              <SectionHeading
+                label={isToday
+                  ? `${activeFilterDef?.label} — Results`
+                  : `${activeFilterDef?.label}${dayLabel} — Results`}
+              />
               <div style={gridStyle}>
                 {filteredFinished.map((m, i) => (
                   <div key={m.id} className={`tv-fade-up d${Math.min(i + 1, 5)}`}>
@@ -638,6 +638,19 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
                 ))}
               </div>
             </section>
+          )}
+
+          {/* ── Today: note when everything is done ───────────────────── */}
+          {isToday && filteredUpcoming.length === 0 && filteredLive.length === 0 && filteredFinished.length > 0 && (
+            <div style={{
+              marginTop: '16px', padding: '12px 16px',
+              background: 'var(--bg-glass)', border: '1px solid var(--border)',
+              borderRadius: 'var(--radius)', textAlign: 'center',
+            }}>
+              <p style={{ fontSize: '13px', color: 'var(--text-faint)' }}>
+                No more upcoming {activeFilterDef?.label} matches today
+              </p>
+            </div>
           )}
         </>
       )}

@@ -1,19 +1,37 @@
 // src/components/Flag.jsx
 // ─────────────────────────────────────────────────────────────────────────────
-// Flag component that handles both singles and doubles players.
+// Flag component handling singles and doubles players.
 //
 // Singles: renders one flag image (flagcdn.com) with emoji fallback.
-// Doubles: name/country come as "Player A/Player B" and "ESP/ARG".
-//          We split on "/" and render two flags side by side.
 //
-// FIX: Doubles detection now triggers when EITHER country OR name has "/"
-//      Previously it only triggered when country had "/" OR name had "/" AND
-//      country was empty — this missed the common case of "ITA" country +
-//      "Errani S / Paolini J" name.
+// Doubles: name/country arrive as "Player A / Player B" and either:
+//   a) "ESP/ARG" — two country codes, one per player  ← show two different flags
+//   b) "ITA"    — one code for same-nationality pair  ← show that flag twice
+//   c) ""       — no country info at all              ← show two blank flags
+//
+// The previous version showed a blank flag for the second player in case (b)
+// because it passed an empty string to SingleFlag. This version fills in the
+// single country for both players when there is no slash in the country string.
 // ─────────────────────────────────────────────────────────────────────────────
 import { getFlagDisplay } from '../services/tennisApi';
 
 function SingleFlag({ country, size, style }) {
+  if (!country || !country.trim()) {
+    // Graceful blank — small neutral circle instead of broken image
+    return (
+      <span style={{
+        display: 'inline-block',
+        width: size,
+        height: Math.round(size * 0.75),
+        borderRadius: '2px',
+        background: 'var(--border-md)',
+        flexShrink: 0,
+        verticalAlign: 'middle',
+        ...style,
+      }} />
+    );
+  }
+
   const flag = getFlagDisplay(country);
 
   if (flag.type === 'img') {
@@ -32,12 +50,11 @@ function SingleFlag({ country, size, style }) {
           ...style,
         }}
         onError={e => {
-          // On CDN failure, swap to the emoji span
           const span = document.createElement('span');
           span.style.fontSize = `${size * 0.85}px`;
           span.style.lineHeight = '1';
           span.style.flexShrink = '0';
-          span.textContent = flag.fallbackEmoji ?? country ?? '🏳️';
+          span.textContent = flag.fallbackEmoji ?? '🏳️';
           e.currentTarget.replaceWith(span);
         }}
       />
@@ -53,26 +70,28 @@ function SingleFlag({ country, size, style }) {
 
 export default function Flag({ country, name, size = 24, style = {} }) {
   const countrySrc = country ?? '';
-  const nameSrc    = name ?? '';
+  const nameSrc    = name    ?? '';
 
-  // FIX: Detect doubles if EITHER country OR name contains "/"
-  // Previously: (nameSrc.includes('/') && !countrySrc) — missed "ITA" + "Errani S / Paolini J"
+  // Detect doubles: either country OR name contains "/"
   const isDoubles = countrySrc.includes('/') || nameSrc.includes('/');
 
   if (isDoubles) {
-    // Split country codes — e.g. "ESP/ARG" → ["ESP", "ARG"]
-    // If country has slash, use both codes.
-    // If country is a single code (e.g. "ITA"), use it for both players
-    // (same-nationality pair) — better than showing two blank flags.
     let c1, c2;
+
     if (countrySrc.includes('/')) {
+      // Case (a): "ESP/ARG" — two distinct country codes
       const parts = countrySrc.split('/');
       c1 = parts[0]?.trim() ?? '';
       c2 = parts[1]?.trim() ?? '';
-    } else {
-      // Single country — both players from same nation, or one country unknown
+    } else if (countrySrc.trim()) {
+      // Case (b): single country code — same-nationality pair
+      // Show the same flag for both players (correct: e.g. ITA/ITA)
       c1 = countrySrc.trim();
-      c2 = ''; // second player country unknown — will show blank flag
+      c2 = countrySrc.trim();
+    } else {
+      // Case (c): no country info at all
+      c1 = '';
+      c2 = '';
     }
 
     return (
