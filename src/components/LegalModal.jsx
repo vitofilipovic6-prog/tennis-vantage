@@ -128,9 +128,9 @@ const CONTENT = {
         card: {
           name: 'Vito',
           school: 'Elektrotehnička škola Split',
-          programme: 'Tehničar za računalstvo',
+          programme: 'Tehničar za računarstvo',
           mentor: 'Marin Ivandić',
-          year: '2024 / 2025',
+          year: '2025. / 2026.',
         },
       },
       {
