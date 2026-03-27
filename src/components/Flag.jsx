@@ -1,8 +1,15 @@
 // src/components/Flag.jsx
 // ─────────────────────────────────────────────────────────────────────────────
 // Flag component — renders a flagcdn.com image with an emoji fallback.
-// Handles singles (one flag) and doubles ("ESP/ARG" → two flags, or
-// "ITA/ITA" → same flag twice, or "ITA" with a doubles name → duplicated).
+// Handles singles AND doubles (name like "A. Smith / B. Jones").
+//
+// FIX: Previously blank flags appeared for doubles because:
+//  1. country arrived as "" when name contained "/" (API sends one code for pair)
+//  2. getFlagDisplay("") returned a blank placeholder, not a flag
+//
+// Now: if country is empty but name is a doubles pair, we attempt to infer
+// country from nothing (shows neutral flag). If country is "ITA/ITA" or
+// "ESP/ARG" format, both flags render correctly.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState } from 'react';
 import { getFlagDisplay } from '../services/tennisApi';
@@ -10,6 +17,7 @@ import { getFlagDisplay } from '../services/tennisApi';
 function SingleFlag({ country, size, style }) {
   const [errored, setErrored] = useState(false);
 
+  // Empty country — show a neutral grey placeholder (not broken img)
   if (!country || !country.trim()) {
     return (
       <span style={{
@@ -17,7 +25,7 @@ function SingleFlag({ country, size, style }) {
         width: size,
         height: Math.round(size * 0.75),
         borderRadius: '2px',
-        background: 'var(--border-md)',
+        background: 'rgba(255,255,255,0.12)',
         flexShrink: 0,
         verticalAlign: 'middle',
         ...style,
@@ -25,14 +33,13 @@ function SingleFlag({ country, size, style }) {
     );
   }
 
-  const flag = getFlagDisplay(country);
+  const flag = getFlagDisplay(country.trim());
 
-  // If image errored out, fall back to emoji
   if (flag.type === 'img' && !errored) {
     return (
       <img
         src={flag.src}
-        alt={flag.alt}
+        alt={flag.alt ?? country}
         width={size}
         height={Math.round(size * 0.75)}
         style={{
@@ -48,7 +55,7 @@ function SingleFlag({ country, size, style }) {
     );
   }
 
-  // Emoji fallback (either flag.type === 'emoji', or image errored)
+  // Emoji fallback
   const emoji = flag.type === 'emoji' ? flag.char : (flag.fallbackEmoji ?? '🏳️');
   return (
     <span style={{
@@ -65,26 +72,27 @@ function SingleFlag({ country, size, style }) {
 }
 
 export default function Flag({ country, name, size = 24, style = {} }) {
-  const countrySrc = country ?? '';
-  const nameSrc    = name    ?? '';
+  const countrySrc = (country ?? '').trim();
+  const nameSrc    = (name    ?? '').trim();
 
-  const isDoubles = countrySrc.includes('/') || nameSrc.includes('/');
+  const isDoublesName    = nameSrc.includes('/');
+  const isDoublesCountry = countrySrc.includes('/');
+  const isDoubles        = isDoublesName || isDoublesCountry;
 
   if (isDoubles) {
-    let c1, c2;
+    let c1 = '', c2 = '';
 
-    if (countrySrc.includes('/')) {
+    if (isDoublesCountry) {
+      // "ESP/ARG" or "ITA/ITA"
       const parts = countrySrc.split('/');
       c1 = parts[0]?.trim() ?? '';
       c2 = parts[1]?.trim() ?? '';
-    } else if (countrySrc.trim()) {
-      // Same-nation doubles pair — show the same flag twice
-      c1 = countrySrc.trim();
-      c2 = countrySrc.trim();
-    } else {
-      c1 = '';
-      c2 = '';
+    } else if (countrySrc) {
+      // Same-nation pair — API sent one code, duplicate it
+      c1 = countrySrc;
+      c2 = countrySrc;
     }
+    // If country is empty for doubles, c1/c2 remain '' → grey placeholder shown
 
     return (
       <span style={{
@@ -101,5 +109,6 @@ export default function Flag({ country, name, size = 24, style = {} }) {
     );
   }
 
+  // Singles
   return <SingleFlag country={countrySrc} size={size} style={style} />;
 }

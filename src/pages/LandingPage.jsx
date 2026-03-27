@@ -17,6 +17,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Logo, Btn, CourtSVG, Badge } from '../components/ui';
 import Flag from '../components/Flag';
+import LegalModal from '../components/LegalModal';
 
 const STATS = [
   { val: '94%', label: 'Prediction Accuracy' },
@@ -60,6 +61,7 @@ function useInView(ref, threshold = 0.15) {
 export default function LandingPage({ nav }) {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [legalPage, setLegalPage] = useState(null); // 'privacy' | 'terms' | 'contact'
 
   useEffect(() => {
     const fn = () => { setScrolled(window.scrollY > 48); if (window.scrollY > 80) setMenuOpen(false); };
@@ -244,9 +246,30 @@ export default function LandingPage({ nav }) {
           <Logo size="sm" />
           <p className="lp-footer__copy">© {new Date().getFullYear()} TennisVantage · Built for university project</p>
           <div className="lp-footer__links">
-            {['Privacy', 'Terms', 'Contact'].map(l => <a key={l} href="#" className="lp-footer__link">{l}</a>)}
+            {[
+              { label: 'Privacy', page: 'privacy' },
+              { label: 'Terms', page: 'terms' },
+              { label: 'Contact', page: 'contact' },
+            ].map(({ label, page }) => (
+              <button
+                key={label}
+                onClick={() => setLegalPage(page)}
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  fontFamily: 'var(--font-body)', padding: 0,
+                }}
+                className="lp-footer__link"
+              >
+                {label}
+              </button>
+            ))}
           </div>
         </footer>
+
+        {/* ══ LEGAL MODAL ══════════════════════════════════════════════════════ */}
+        {legalPage && (
+          <LegalModal page={legalPage} onClose={() => setLegalPage(null)} />
+        )}
 
       </div>
     </>
