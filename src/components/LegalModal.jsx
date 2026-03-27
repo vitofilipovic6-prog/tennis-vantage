@@ -217,7 +217,7 @@ export default function LegalModal({ page, onClose }) {
         borderRadius: 'var(--radius-lg)',
         boxShadow: '0 40px 100px rgba(0,0,0,0.7), 0 0 60px rgba(159,239,102,0.04)',
         animation: 'tv-pop 0.3s cubic-bezier(0.34,1.56,0.64,1) both',
-        overflow: 'hidden',
+        overflow: 'hidden'
       }}>
 
         {/* Sticky header */}
