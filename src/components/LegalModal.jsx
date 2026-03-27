@@ -166,11 +166,28 @@ export default function LegalModal({ page, onClose }) {
     return () => window.removeEventListener('keydown', fn);
   }, [onClose]);
 
-  // Lock body scroll logic
+  // Precise Body Scroll Lock (Prevents background scrolling and "jumps")
   useEffect(() => {
-    const originalStyle = window.getComputedStyle(document.body).overflow;
+    const scrollY = window.scrollY;
+    
+    // Lock the body
     document.body.style.overflow = 'hidden';
-    return () => (document.body.style.overflow = originalStyle);
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.left = '0';
+    document.body.style.right = '0';
+
+    return () => {
+      // Restore the body
+      document.body.style.overflow = '';
+      document.body.style.position = '';
+      document.body.style.top = '';
+      document.body.style.left = '';
+      document.body.style.right = '';
+      
+      // Jump back to the original position
+      window.scrollTo(0, scrollY);
+    };
   }, []);
 
   if (!content) return null;
