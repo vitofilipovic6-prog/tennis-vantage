@@ -9,7 +9,7 @@ const CONTENT = {
   privacy: {
     title: 'Privacy Policy',
     icon: '🔒',
-    lastUpdated: 'March 2025',
+    lastUpdated: 'March 2026',
     sections: [
       {
         heading: 'Overview',
@@ -67,7 +67,7 @@ const CONTENT = {
   terms: {
     title: 'Terms of Service',
     icon: '📄',
-    lastUpdated: 'March 2025',
+    lastUpdated: 'March 2026',
     sections: [
       {
         heading: 'About TennisVantage',
@@ -144,7 +144,7 @@ const CONTENT = {
           'Frontend: React 18 + Vite (Vercel)',
           'Backend: Supabase (Auth + DB + Functions)',
           'Data: RapidAPI Tennis API',
-          'AI: Google Gemini 1.5 Flash',
+          'AI: Google Gemini 2.5 Flash',
           'Flags: flagcdn.com',
         ],
       },
