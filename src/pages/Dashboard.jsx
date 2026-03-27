@@ -673,6 +673,9 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
 //      isLive     = status==='live' AND no winner yet
 // ─────────────────────────────────────────────────────────────────────────────
 
+// src/pages/Dashboard.jsx
+// Replace the entire MatchCard component
+
 const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = new Set() }) {
   const surfaceColors  = { Clay: '#f97316', Hard: '#60a5fa', Grass: '#4ade80' };
   const surfaceColor   = surfaceColors[m.surface] ?? '#94a3b8';
@@ -682,9 +685,6 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = 
   // FIX: treat as finished if winner_id is already set, even if status hasn't caught up
   const isFinished = m.status === 'finished' || !!m.winner_id;
   const isLive     = m.status === 'live' && !m.winner_id;
-
-  const p1Flag = m.player1?.flag && m.player1.flag !== '🏳️' ? m.player1.flag : resolveFlag(m.player1?.country ?? '');
-  const p2Flag = m.player2?.flag && m.player2.flag !== '🏳️' ? m.player2.flag : resolveFlag(m.player2?.country ?? '');
 
   return (
     <Card style={{ padding: '16px', transition: 'var(--t)' }}>
@@ -739,17 +739,18 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = 
         </div>
       </div>
 
-      {/* Players */}
+      {/* Players — FIX: pass raw country directly, never pre-resolve to emoji */}
       {[
-        { player: m.player1, flag: p1Flag, isWinner: m.winner_id === m.player1?.id },
-        { player: m.player2, flag: p2Flag, isWinner: m.winner_id === m.player2?.id },
-      ].map(({ player: p, flag, isWinner }, idx) => (
+        { player: m.player1, isWinner: m.winner_id === m.player1?.id },
+        { player: m.player2, isWinner: m.winner_id === m.player2?.id },
+      ].map(({ player: p, isWinner }, idx) => (
         <div key={idx} style={{
           display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 0',
           borderTop: idx === 1 ? '1px dashed var(--border)' : 'none',
           opacity: isFinished && m.winner_id && !isWinner ? 0.55 : 1,
         }}>
-         <Flag country={p?.country} name={p?.name} size={22} />
+          {/* KEY FIX: use p.country (raw code like "ITA" or "ITA/ITA") not pre-resolved emoji */}
+          <Flag country={p?.country} name={p?.name} size={22} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <p style={{
               fontWeight: isWinner ? 700 : 500, fontSize: '14px',
@@ -798,7 +799,7 @@ const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = 
         ) : null}
       </div>
 
-      {/* Predict button — hidden when finished */}
+      {/* Predict button */}
       {!isFinished && (
         <button
           onClick={onPredict}
@@ -1021,8 +1022,6 @@ function PredictionCard({ match: m, prediction: pred }) {
   const p1WinPct  = pred.player1_win_pct ?? 50;
   const p2WinPct  = pred.player2_win_pct ?? (100 - p1WinPct);
   const isAi      = pred.source === 'ai';
-  const p1Flag    = p1?.flag && p1.flag !== '🏳️' ? p1.flag : resolveFlag(p1?.country ?? '');
-  const p2Flag    = p2?.flag && p2.flag !== '🏳️' ? p2.flag : resolveFlag(p2?.country ?? '');
 
   return (
     <Card>
@@ -1074,15 +1073,16 @@ function PredictionCard({ match: m, prediction: pred }) {
         </div>
       </div>
 
-      {/* Win probability bars */}
+      {/* Win probability bars — FIX: pass raw country, not pre-resolved emoji */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '20px' }}>
         {[
-          { player: p1, flag: p1Flag, pct: p1WinPct, color: 'linear-gradient(90deg, #9fef66, #6bc940)' },
-          { player: p2, flag: p2Flag, pct: p2WinPct, color: 'var(--clay)' },
-        ].map(({ player, flag, pct, color }, idx) => (
+          { player: p1, pct: p1WinPct, color: 'linear-gradient(90deg, #9fef66, #6bc940)' },
+          { player: p2, pct: p2WinPct, color: 'var(--clay)' },
+        ].map(({ player, pct, color }, idx) => (
           <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                {/* KEY FIX: use player.country (raw code) not pre-resolved emoji */}
                 <Flag country={player?.country} name={player?.name} size={22} />
                 <span style={{ fontSize: '14px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {player?.name ?? `Player ${idx + 1}`}
