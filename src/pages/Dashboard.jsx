@@ -57,42 +57,44 @@ export default function Dashboard({ showToast }) {
   const avatarMenuRef       = useRef(null);
   const avatarMenuRefMobile = useRef(null);
 
-  const { live, upcoming, loading: matchesLoading, error: matchesError, refresh } = useMatches();
+  const { live, upcoming, loading: matchesLoading, error: matchesError, refresh, singlesLookup, } = useMatches();
 
   // Raw combined list — used for search modal only
   const allMatches = useMemo(() => [...live, ...upcoming], [live, upcoming]);
 
-  // ── Shared reclassify — computed ONCE so both tabs see identical states ───
-  const todayStr = useMemo(() => new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Europe/Paris',
-    year: 'numeric', month: '2-digit', day: '2-digit',
-  }).format(new Date()), []);
+  // src/hooks/hooks.js
+// Replace the useMatches useEffect
 
-  const allMatchesReclassified = useMemo(() => {
-    const now = Date.now();
-    return allMatches
-      .map(m => {
-        if (m.status !== 'upcoming') return m;
-        const matchTime = m.date ? new Date(m.date).getTime() : null;
-        if (!matchTime) return m;
-        const minsElapsed = (now - matchTime) / 60_000;
-        // Promote to live if 5–360 min overdue. Never flip to finished
-        // client-side — let DB/trigger handle that.
-        if (minsElapsed > 5 && minsElapsed < 360) return { ...m, status: 'live' };
-        return m;
-      })
-      .filter(m => {
-        // Remove upcoming matches from other days
-        if (m.status !== 'upcoming') return true;
-        const d = m.local_date ?? (m.date
-          ? new Intl.DateTimeFormat('en-CA', {
-              timeZone: 'Europe/Paris',
-              year: 'numeric', month: '2-digit', day: '2-digit',
-            }).format(new Date(m.date))
-          : null);
-        return d === todayStr;
-      });
-  }, [allMatches, todayStr]);
+  useEffect(() => {
+    const cached = readSessionMatches();
+
+    if (cached) {
+      // Background refresh after 1s — user already sees data
+      const t = setTimeout(() => fetchAll(true), 1000);
+      startPolling();
+    } else {
+      fetchAll(false);
+      startPolling();
+    }
+
+    const handleVisibility = () => {
+      if (document.hidden) {
+        stopPolling();
+      } else {
+        // FIX: Always force-refresh on tab re-focus, regardless of cache
+        // Live scores may have changed while tab was hidden
+        fetchAll(true);
+        startPolling();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      stopPolling();
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [fetchAll, startPolling, stopPolling]);
 
   // Split reclassified list for MatchesTab
   const reclassifiedLive     = useMemo(() => allMatchesReclassified.filter(m => m.status === 'live'),     [allMatchesReclassified]);
@@ -336,6 +338,7 @@ export default function Dashboard({ showToast }) {
             refresh={refresh}
             onSelectMatch={handleSelectMatch}
             wtaPlayerIds={wtaPlayerIds}
+            singlesLookup={singlesLookup}
           />
         )}
         {activeTab === 'predictions' && (
@@ -502,16 +505,17 @@ function FilterPills({ activeFilter, onSelect, size = 'normal', counts = {} }) {
 // src/pages/Dashboard.jsx
 // Replace the ENTIRE MatchesTab function with this:
 
-function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wtaPlayerIds }) {
+function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wtaPlayerIds, singlesLookup }) {
   const [activeFilter,    setActiveFilter]    = useState('atp_singles');
   const [calendarDate,    setCalendarDate]    = useState(null);
   const [calendarDateStr, setCalendarDateStr] = useState(null);
   const [dateMatches,     setDateMatches]     = useState([]);
   const [dateLoading,     setDateLoading]     = useState(false);
 
-  const todayStr = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit',
-  }).format(new Date());
+  const todayStr = useMemo(() => new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Paris',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date()), []); // Empty deps = stable for session lifetime (acceptable)
 
   const isToday = !calendarDateStr || calendarDateStr === todayStr;
 
@@ -523,12 +527,12 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
     }
     let cancelled = false;
     setDateLoading(true);
-    getMatchesByDate(calendarDateStr, wtaPlayerIds)
+    getMatchesByDate(calendarDateStr, wtaPlayerIds, singlesLookup)
       .then(d => { if (!cancelled) setDateMatches(d ?? []); })
       .catch(() => { if (!cancelled) setDateMatches([]); })
       .finally(() => { if (!cancelled) setDateLoading(false); });
     return () => { cancelled = true; };
-  }, [calendarDateStr, wtaPlayerIds, todayStr]);
+  }, [calendarDateStr, wtaPlayerIds, singlesLookup, todayStr]);
 
   if (loading) return <LoadingGrid />;
   if (error)   return <ErrorMessage msg={error} onRetry={refresh} />;

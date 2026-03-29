@@ -30,17 +30,37 @@ const initialState = {
   error:       null,
 };
 
+// src/context/AuthContext.jsx
+// Replace the reducer function
+
 function reducer(state, action) {
   switch (action.type) {
-    case 'AUTH_START':     return { ...state, authLoading: true, error: null };
-    case 'AUTH_END':       return { ...state, authLoading: false };
-    case 'SET_USER':       return { ...state, user: action.user, profile: action.profile, loading: false, authLoading: false, error: null };
-    case 'UPDATE_PROFILE': return { ...state, profile: { ...state.profile, ...action.patch } };
-    case 'CLEAR_USER':     return { ...state, user: null, profile: null, loading: false, authLoading: false };
-    case 'SET_ERROR':      return { ...state, error: action.error, authLoading: false };
-    case 'CLEAR_ERROR':    return { ...state, error: null };
-    case 'LOADING_DONE':   return { ...state, loading: false };
-    default:               return state;
+    case 'AUTH_START':
+      return { ...state, authLoading: true, error: null };
+    case 'AUTH_END':
+      return { ...state, authLoading: false };
+    case 'SET_USER':
+      return {
+        ...state,
+        user: action.user,
+        // FIX: if profile is null (TOKEN_REFRESHED interim), keep existing
+        profile: action.profile ?? state.profile,
+        loading: false,
+        authLoading: false,
+        error: null,
+      };
+    case 'UPDATE_PROFILE':
+      return { ...state, profile: { ...state.profile, ...action.patch } };
+    case 'CLEAR_USER':
+      return { ...state, user: null, profile: null, loading: false, authLoading: false };
+    case 'SET_ERROR':
+      return { ...state, error: action.error, authLoading: false };
+    case 'CLEAR_ERROR':
+      return { ...state, error: null };
+    case 'LOADING_DONE':
+      return { ...state, loading: false };
+    default:
+      return state;
   }
 }
 
@@ -68,12 +88,16 @@ export function AuthProvider({ children }) {
     dispatch({ type: 'UPDATE_PROFILE', patch });
   }, []);
 
-useEffect(() => {
+// src/context/AuthContext.jsx
+// Replace the useEffect block (the auth subscription one)
+
+  useEffect(() => {
     mountedRef.current = true;
 
+    // Increase safety timeout — 4s is too tight on slow connections
     const safetyTimeout = setTimeout(() => {
       if (mountedRef.current) dispatch({ type: 'LOADING_DONE' });
-    }, 4000);
+    }, 8000); // 8s is safer
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
@@ -83,6 +107,7 @@ useEffect(() => {
         if (event === 'INITIAL_SESSION') {
           clearTimeout(safetyTimeout);
           if (session?.user) {
+            // Optimistic render with metadata, then hydrate from DB
             dispatch({
               type: 'SET_USER',
               user: session.user,
@@ -104,9 +129,6 @@ useEffect(() => {
         }
 
         if (event === 'SIGNED_IN' && session?.user) {
-          // On Vercel/production, SIGNED_IN fires instead of INITIAL_SESSION
-          // on refresh. Treat it identically — clear the safety timeout and
-          // unblock the UI immediately.
           clearTimeout(safetyTimeout);
           dispatch({
             type: 'SET_USER',
@@ -122,6 +144,7 @@ useEffect(() => {
               dispatch({ type: 'SET_USER', user: session.user, profile });
             }
           });
+          // Clean up magic link tokens from URL
           if (window.location.hash || window.location.search.includes('token')) {
             window.history.replaceState(null, '', window.location.pathname);
           }
@@ -131,7 +154,15 @@ useEffect(() => {
         if (event === 'TOKEN_REFRESHED' && session?.user) {
           clearTimeout(safetyTimeout);
           if (mountedRef.current) {
-            dispatch({ type: 'SET_USER', user: session.user, profile: state.profile });
+            // FIX: Don't reference stale state.profile — re-read from reducer
+            // Just dispatch a lightweight user update without wiping profile
+            dispatch({ type: 'SET_USER', user: session.user, profile: null });
+            // Then immediately rehydrate profile
+            loadProfile(session.user.id).then(profile => {
+              if (mountedRef.current) {
+                dispatch({ type: 'SET_USER', user: session.user, profile });
+              }
+            });
           }
           return;
         }
@@ -145,6 +176,7 @@ useEffect(() => {
 
     return () => {
       mountedRef.current = false;
+      clearTimeout(safetyTimeout); // FIX: always clear on unmount
       subscription.unsubscribe();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps

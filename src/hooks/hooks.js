@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   getLiveMatches, getUpcomingMatches, getRankings,
-  getMatchesByDate, getPrediction, sendChatMessage,
+  getMatchesByDate, getPrediction, sendChatMessage,buildSinglesLookup
 } from '../services/tennisApi';
 import { supabase } from '../services/supabase';
 
@@ -60,17 +60,15 @@ function deduplicateMatches(liveData, upcomingData) {
   return { liveData, dedupedUpcoming };
 }
 
+// src/hooks/hooks.js
+// Replace the useMatches hook entirely
+
 export function useMatches() {
   const cached = readSessionMatches();
 
-  const [live, setLive] = useState(() => {
-    if (!cached) return [];
-    return cached.live ?? [];
-  });
-
+  const [live, setLive] = useState(() => cached?.live ?? []);
   const [upcoming, setUpcoming] = useState(() => {
     if (!cached) return [];
-    // Apply dedup to cached data on mount too
     const liveIds = new Set((cached.live ?? []).map(m => m.id));
     return (cached.upcoming ?? []).filter(m => !liveIds.has(m.id));
   });
@@ -79,17 +77,38 @@ export function useMatches() {
   const [error,   setError]   = useState(null);
   const pollRef = useRef(null);
 
+  // Build singles lookup from DB players for doubles flag enrichment
+  // This runs once and is stable — no re-fetching
+  const [singlesLookup, setSinglesLookup] = useState(null);
+
+  useEffect(() => {
+    supabase
+      .from('players')
+      .select('id, name, country, flag, rank')
+      .not('name', 'is', null)
+      .not('name', 'like', '%/%')  // singles only — skip doubles rows
+      .order('rank', { ascending: true, nullsLast: true })
+      .limit(1000)
+      .then(({ data }) => {
+        if (data?.length) {
+          const { buildSinglesLookup } = require('../services/tennisApi');
+          // buildSinglesLookup is imported at top of file — just call it
+          setSinglesLookup(buildSinglesLookup(data));
+        }
+      })
+      .catch(e => console.warn('[useMatches] singles lookup failed:', e.message));
+  }, []);
+
   const fetchAll = useCallback(async (background = false) => {
     if (!background) setLoading(true);
     try {
+      // Pass singlesLookup — may be null on first call (before DB fetch completes)
+      // That's fine: enrichDoublesPlayer no-ops when lookup is null
       const [liveData, upcomingData] = await Promise.all([
-        getLiveMatches(),
-        getUpcomingMatches(),
+        getLiveMatches(new Set(), singlesLookup),
+        getUpcomingMatches(new Set(), singlesLookup),
       ]);
 
-      // Deduplicate — a match promoted to 'live' in Supabase appears in
-      // both getLiveMatches() and getUpcomingMatches() (since we now query
-      // ['upcoming','live'] in getUpcomingMatches). Live always wins.
       const { dedupedUpcoming } = deduplicateMatches(liveData, upcomingData);
 
       setLive(liveData);
@@ -101,7 +120,7 @@ export function useMatches() {
     } finally {
       if (!background) setLoading(false);
     }
-  }, []);
+  }, [singlesLookup]); // re-run fetchAll when lookup becomes available
 
   const startPolling = useCallback(() => {
     pollRef.current = setInterval(() => {
@@ -144,7 +163,7 @@ export function useMatches() {
     }
   }, [fetchAll, startPolling, stopPolling]);
 
-  return { live, upcoming, loading, error, syncing: false, refresh: () => fetchAll(false) };
+  return { live, upcoming, loading, error, syncing: false, refresh: () => fetchAll(false), singlesLookup, };
 }
 
 // ── useMatchesByDate ──────────────────────────────────────────────────────────
@@ -169,7 +188,7 @@ export function useMatchesByDate(dateString) {
   const cached = getMatchDateCache(dateString);
   const [matches, setMatches] = useState(cached ?? null);
   const [loading, setLoading] = useState(!cached && !!dateString);
-  const [error,   setError]   = useState(null);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     if (!dateString) return;
@@ -217,9 +236,9 @@ export function useMatchesByDate(dateString) {
 }
 
 // ── useActiveDates ────────────────────────────────────────────────────────────
-let activeDatesCache     = null;
+let activeDatesCache = null;
 let activeDatesCacheTime = 0;
-const ACTIVE_DATES_TTL   = 5 * 60 * 1000;
+const ACTIVE_DATES_TTL = 5 * 60 * 1000;
 
 export function useActiveDates(startDate, endDate) {
   const isStale = Date.now() - activeDatesCacheTime > ACTIVE_DATES_TTL;
@@ -240,13 +259,13 @@ export function useActiveDates(startDate, endDate) {
 
     const toParisDate = (d) => new Intl.DateTimeFormat('en-CA', {
       timeZone: 'Europe/Paris',
-      year:     'numeric',
-      month:    '2-digit',
-      day:      '2-digit',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
     }).format(d);
 
     const start = startDate instanceof Date ? toParisDate(startDate) : startDate;
-    const end   = endDate   instanceof Date ? toParisDate(endDate)   : endDate;
+    const end = endDate instanceof Date ? toParisDate(endDate) : endDate;
 
     supabase
       .from('matches')
@@ -256,7 +275,7 @@ export function useActiveDates(startDate, endDate) {
       .not('local_date', 'is', null)
       .then(({ data }) => {
         const set = new Set((data ?? []).map(r => r.local_date));
-        activeDatesCache     = set;
+        activeDatesCache = set;
         activeDatesCacheTime = Date.now();
         setActiveDates(set);
         setLoading(false);
@@ -272,8 +291,8 @@ const rankingsCache = {};
 
 export function useRankings(tour = 'ATP') {
   const [rankings, setRankings] = useState([]);
-  const [loading,  setLoading]  = useState(true);
-  const [error,    setError]    = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     const cached = rankingsCache[tour];
@@ -289,8 +308,8 @@ export function useRankings(tour = 'ATP') {
     setError(null);
     setRankings([]);
 
-    const isAlt         = ['ITF_MEN', 'ITF_WOMEN', 'UTR_MEN', 'UTR_WOMEN'].includes(tour);
-    const fetchPromise  = isAlt ? fetchAltRankings(tour) : getRankings(tour);
+    const isAlt = ['ITF_MEN', 'ITF_WOMEN', 'UTR_MEN', 'UTR_WOMEN'].includes(tour);
+    const fetchPromise = isAlt ? fetchAltRankings(tour) : getRankings(tour);
 
     fetchPromise
       .then(data => {
@@ -318,7 +337,7 @@ export function useRankings(tour = 'ATP') {
     setError(null);
     setRankings([]);
 
-    const isAlt        = ['ITF_MEN', 'ITF_WOMEN', 'UTR_MEN', 'UTR_WOMEN'].includes(tour);
+    const isAlt = ['ITF_MEN', 'ITF_WOMEN', 'UTR_MEN', 'UTR_WOMEN'].includes(tour);
     const fetchPromise = isAlt ? fetchAltRankings(tour) : getRankings(tour);
 
     fetchPromise
@@ -340,9 +359,9 @@ export function useRankings(tour = 'ATP') {
 // Returns empty array (never throws) so the UI shows EmptyState, not an error.
 async function fetchAltRankings(tour) {
   const typeMap = {
-    ITF_MEN:   ['itf_men_singles',   'itf_men_doubles'],
+    ITF_MEN: ['itf_men_singles', 'itf_men_doubles'],
     ITF_WOMEN: ['itf_women_singles', 'itf_women_doubles'],
-    UTR_MEN:   ['utr_men_singles'],
+    UTR_MEN: ['utr_men_singles'],
     UTR_WOMEN: ['utr_women_singles'],
   };
   const types = typeMap[tour] ?? [];
@@ -368,7 +387,7 @@ async function fetchAltRankings(tour) {
     if (!data || data.length === 0) return [];
 
     const playerMap = new Map();
-    const winCount  = new Map();
+    const winCount = new Map();
 
     for (const m of data) {
       for (const p of [m.player1, m.player2]) {
@@ -389,8 +408,8 @@ async function fetchAltRankings(tour) {
       .sort((a, b) => (winCount.get(b.id) ?? 0) - (winCount.get(a.id) ?? 0))
       .map((p, i) => ({
         ...p,
-        rank:      i + 1,
-        points:    winCount.get(p.id) ?? 0,
+        rank: i + 1,
+        points: winCount.get(p.id) ?? 0,
         prev_rank: null,
       }));
 
@@ -403,9 +422,9 @@ async function fetchAltRankings(tour) {
 // ── useAllPlayers ─────────────────────────────────────────────────────────────
 // Fetches all players from DB for the search modal.
 // Cached for 10 minutes — busted on manual refresh.
-let allPlayersCache     = null;
+let allPlayersCache = null;
 let allPlayersCacheTime = 0;
-const ALL_PLAYERS_TTL   = 10 * 60 * 1000;
+const ALL_PLAYERS_TTL = 10 * 60 * 1000;
 
 export function useAllPlayers() {
   const isStale = Date.now() - allPlayersCacheTime > ALL_PLAYERS_TTL;
@@ -433,7 +452,7 @@ export function useAllPlayers() {
         if (cancelled) return;
         if (error) { setLoading(false); return; }
         const sorted = (data ?? []).filter(p => p.name && !p.name.includes('/'));
-        allPlayersCache     = sorted;
+        allPlayersCache = sorted;
         allPlayersCacheTime = Date.now();
         setPlayers(sorted);
         setLoading(false);
@@ -449,8 +468,8 @@ export function useAllPlayers() {
 // ── usePrediction ─────────────────────────────────────────────────────────────
 export function usePrediction(match) {
   const [prediction, setPrediction] = useState(null);
-  const [loading,    setLoading]    = useState(false);
-  const [error,      setError]      = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
   const matchId = match?.id ?? null;
 
@@ -472,7 +491,7 @@ export function usePrediction(match) {
 
 // ── usePlayerSearch ───────────────────────────────────────────────────────────
 export function usePlayerSearch() {
-  const [query,   setQuery]   = useState('');
+  const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -506,8 +525,8 @@ export function useAiChat(contextMatch = null) {
   const GREETING = "Hi! I'm your AI tennis analyst. Ask me anything about match predictions, player stats, head-to-head records, or surface analysis.";
 
   const [messages, setMessages] = useState([{ role: 'assistant', content: GREETING }]);
-  const [typing,   setTyping]   = useState(false);
-  const bottomRef   = useRef(null);
+  const [typing, setTyping] = useState(false);
+  const bottomRef = useRef(null);
   const messagesRef = useRef(messages);
   const lastSentRef = useRef(0);
 
@@ -540,7 +559,7 @@ export function useAiChat(contextMatch = null) {
         .map(m => ({ role: m.role, content: m.content }));
 
       const response = await sendChatMessage(history, systemContext);
-      const aiText   = response?.content?.[0]?.text ?? response?.reply ?? "Sorry, I couldn't process that.";
+      const aiText = response?.content?.[0]?.text ?? response?.reply ?? "Sorry, I couldn't process that.";
       setMessages(prev => [...prev, { role: 'assistant', content: aiText }]);
     } catch {
       setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ Connection error. Please try again.' }]);
@@ -579,7 +598,7 @@ export function useToast() {
 // Fetches the earliest local_date that has matches in the DB
 export function useEarliestMatchDate() {
   const [earliestDate, setEarliestDate] = useState(null);
-  const [loading,      setLoading]      = useState(true);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     supabase

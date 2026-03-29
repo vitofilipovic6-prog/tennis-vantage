@@ -154,6 +154,112 @@ export const FLAG_MAP = {
   'VN': '🇻🇳', 'YE': '🇾🇪', 'ZM': '🇿🇲', 'ZW': '🇿🇼',
 };
 
+// src/services/tennisApi.js
+// Add this helper near the top, after the FLAG_MAP block
+
+// ── Doubles player name splitter ──────────────────────────────────────────────
+// "A. Smith / B. Jones" → ["A. Smith", "B. Jones"]
+export function splitDoublesNames(name) {
+  if (!name || !name.includes('/')) return [];
+  return name.split('/').map(n => n.trim()).filter(Boolean);
+}
+
+// ── Build a lookup map from singles players for doubles enrichment ────────────
+// Call once with your full player list, reuse the map for all matches
+export function buildSinglesLookup(players = []) {
+  const map = new Map();
+  for (const p of players) {
+    if (!p?.name || p.name.includes('/')) continue; // skip doubles rows
+    // Normalize name: lowercase, remove punctuation for fuzzy match
+    const key = normalizeName(p.name);
+    map.set(key, p);
+  }
+  return map;
+}
+
+function normalizeName(name) {
+  return name
+    .toLowerCase()
+    .replace(/\./g, '')      // "A. Smith" → "a smith"
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// ── Resolve country for one half of a doubles pair ───────────────────────────
+// Tries exact match, then last-name match, then initial+last match
+function resolveDoublesPlayerCountry(halfName, singlesLookup) {
+  if (!halfName || !singlesLookup) return null;
+
+  const normalized = normalizeName(halfName);
+
+  // 1. Exact normalized match — "carlos alcaraz" hits "carlos alcaraz"
+  if (singlesLookup.has(normalized)) {
+    return singlesLookup.get(normalized);
+  }
+
+  // 2. Last name only match — "C. Alcaraz" → look for someone with last name "alcaraz"
+  const parts = normalized.split(' ');
+  const lastName = parts[parts.length - 1];
+  if (lastName && lastName.length > 3) {
+    for (const [key, player] of singlesLookup) {
+      if (key.endsWith(` ${lastName}`) || key === lastName) {
+        return player;
+      }
+    }
+  }
+
+  // 3. Initial + last name — "c alcaraz" → find "carlos alcaraz"
+  if (parts.length >= 2) {
+    const initial = parts[0].replace('.', '');
+    const last    = parts[parts.length - 1];
+    for (const [key, player] of singlesLookup) {
+      const kParts = key.split(' ');
+      if (
+        kParts.length >= 2 &&
+        kParts[0].startsWith(initial) &&
+        kParts[kParts.length - 1] === last
+      ) {
+        return player;
+      }
+    }
+  }
+
+  return null;
+}
+
+// ── Enrich a doubles player object with singles DB data ───────────────────────
+export function enrichDoublesPlayer(player, singlesLookup) {
+  if (!player?.name?.includes('/') || !singlesLookup?.size) return player;
+
+  const halves = splitDoublesNames(player.name);
+  if (halves.length < 2) return player;
+
+  const p1Match = resolveDoublesPlayerCountry(halves[0], singlesLookup);
+  const p2Match = resolveDoublesPlayerCountry(halves[1], singlesLookup);
+
+  // Build enriched country string
+  const c1 = p1Match?.country || (player.country?.split('/')[0] ?? '').trim();
+  const c2 = p2Match?.country || (player.country?.split('/')[1] ?? player.country?.split('/')[0] ?? '').trim();
+
+  // Only update if we found something better than what we have
+  const currentCountry = player.country ?? '';
+  const hasGoodCountry = currentCountry && currentCountry !== '' &&
+    !currentCountry.includes('undefined');
+
+  if (!c1 && !c2 && hasGoodCountry) return player; // nothing to improve
+
+  const newCountry = c1 && c2 ? `${c1}/${c2}`
+    : c1                      ? `${c1}/${c1}`
+    : c2                      ? `${c2}/${c2}`
+    : currentCountry;
+
+  return {
+    ...player,
+    country: newCountry,
+    flag: resolveFlag((newCountry.split('/')[0] ?? '').trim()),
+  };
+}
+
 // ── Country → 2-letter ISO code lookup ───────────────────────────────────────
 // Exported so Flag.jsx can import it directly
 export const TO_ISO2 = {
@@ -358,11 +464,37 @@ export function deriveMatchType(m, wtaPlayerIds = new Set()) {
   return stored;
 }
 
-function normaliseMatch(m, wtaPlayerIds = new Set()) {
+// src/services/tennisApi.js
+// Replace the normaliseMatch function
+
+function normaliseMatch(m, wtaPlayerIds = new Set(), singlesLookup = null) {
   const patchFlag = (p) => {
     if (!p) return p;
-    const flag = p.flag && p.flag !== '🏳️' ? p.flag : resolveFlag(p.country ?? '');
-    return { ...p, flag };
+    const country = p.country ?? '';
+    const name    = p.name ?? '';
+
+    // For doubles: fix country string then enrich from singles DB
+    let patched = p;
+
+    if (name.includes('/') && !country.includes('/') && country) {
+      // Same-nation pair stored with single code — double it for Flag.jsx
+      patched = { ...p, country: `${country}/${country}` };
+    }
+
+    // Enrich from singles lookup if available
+    if (name.includes('/') && singlesLookup?.size) {
+      patched = enrichDoublesPlayer(patched, singlesLookup);
+    }
+
+    // For singles with no/bad flag, resolve from country
+    if (!patched.flag || patched.flag === '🏳️') {
+      const flagCountry = (patched.country ?? '').includes('/')
+        ? ((patched.country ?? '').split('/')[0] ?? '').trim()
+        : (patched.country ?? '');
+      return { ...patched, flag: resolveFlag(flagCountry) };
+    }
+
+    return patched;
   };
 
   return {
@@ -383,7 +515,7 @@ function normaliseMatch(m, wtaPlayerIds = new Set()) {
 }
 
 // ── Live matches ──────────────────────────────────────────────────────────────
-export async function getLiveMatches(wtaPlayerIds = new Set()) {
+export async function getLiveMatches(wtaPlayerIds = new Set(), singlesLookup=null) {
   try {
     const [atpWta, itf, utr, doubles] = await Promise.all([
       supabase
@@ -426,7 +558,7 @@ export async function getLiveMatches(wtaPlayerIds = new Set()) {
       ...(doubles.data ?? []),
     ];
 
-    return combined.map(m => normaliseMatch(m, wtaPlayerIds));
+    return combined.map(m => normaliseMatch(m, wtaPlayerIds, singlesLookup));
   } catch (e) {
     if (e?.name === 'AbortError') return [];
     console.error('[getLiveMatches]', e.message);
@@ -435,7 +567,7 @@ export async function getLiveMatches(wtaPlayerIds = new Set()) {
 }
 
 // ── Upcoming matches ──────────────────────────────────────────────────────────
-export async function getUpcomingMatches(wtaPlayerIds = new Set()) {
+export async function getUpcomingMatches(wtaPlayerIds = new Set(), singlesLookup = null) {
   try {
     const todayLocalDate = new Intl.DateTimeFormat('en-CA', {
       timeZone: 'Europe/Paris',
@@ -489,7 +621,7 @@ export async function getUpcomingMatches(wtaPlayerIds = new Set()) {
       ...(doubles.data ?? []),
     ];
 
-    return combined.map(m => normaliseMatch(m, wtaPlayerIds));
+    return combined.map(m => normaliseMatch(m, wtaPlayerIds, singlesLookup));
   } catch (e) {
     if (e?.name === 'AbortError') return [];
     console.error('[getUpcomingMatches]', e.message);
@@ -498,7 +630,7 @@ export async function getUpcomingMatches(wtaPlayerIds = new Set()) {
 }
 
 // ── Matches by date ───────────────────────────────────────────────────────────
-export async function getMatchesByDate(dateString, wtaPlayerIds = new Set()) {
+export async function getMatchesByDate(dateString, wtaPlayerIds = new Set(), singlesLookup = null) {
   try {
     const { data: byLocalDate, error: e1 } = await supabase
       .from('matches_live_status')
@@ -507,7 +639,7 @@ export async function getMatchesByDate(dateString, wtaPlayerIds = new Set()) {
       .order('match_date', { ascending: true });
 
     if (!e1 && byLocalDate && byLocalDate.length > 0) {
-      return byLocalDate.map(m => normaliseMatch(m, wtaPlayerIds));
+      return byLocalDate.map(m => normaliseMatch(m, wtaPlayerIds, singlesLookup));
     }
 
     const d    = new Date(`${dateString}T12:00:00.000Z`);
@@ -523,7 +655,7 @@ export async function getMatchesByDate(dateString, wtaPlayerIds = new Set()) {
 
     if (error) throw error;
 
-    return (data ?? []).map(m => normaliseMatch(m, wtaPlayerIds)).filter(m => {
+    return (data ?? []).map(m => normaliseMatch(m, wtaPlayerIds, singlesLookup)).filter(m => {
       if (!m.date) return false;
       if (m.local_date) return m.local_date === dateString;
       return new Date(m.date).toLocaleDateString('en-CA') === dateString;
