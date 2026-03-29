@@ -27,15 +27,15 @@ import Flag from '../components/Flag';
 // MATCH TYPE FILTER DEFINITIONS
 // ─────────────────────────────────────────────────────────────────────────────
 const MATCH_FILTERS = [
-  { id: 'atp_singles',       label: 'ATP',           shortLabel: 'ATP',    color: '#60a5fa' },
-  { id: 'wta_singles',       label: 'WTA',           shortLabel: 'WTA',    color: '#f472b6' },
-  { id: 'itf_men_singles',   label: 'ITF Men',       shortLabel: 'ITF M',  color: '#fb923c' },
-  { id: 'itf_women_singles', label: 'ITF Women',     shortLabel: 'ITF W',  color: '#f59e0b' },
-  { id: 'utr_men_singles',   label: 'UTR Men',       shortLabel: 'UTR M',  color: '#a78bfa' },
-  { id: 'utr_women_singles', label: 'UTR Women',     shortLabel: 'UTR W',  color: '#e879f9' },
-  { id: 'atp_doubles',       label: 'ATP Doubles',   shortLabel: 'ATP 2×', color: '#818cf8' },
-  { id: 'wta_doubles',       label: 'WTA Doubles',   shortLabel: 'WTA 2×', color: '#fb7185' },
-  { id: 'mixed_doubles',     label: 'Mixed Doubles', shortLabel: 'Mixed',  color: '#34d399' },
+  { id: 'atp_singles', label: 'ATP', shortLabel: 'ATP', color: '#60a5fa' },
+  { id: 'wta_singles', label: 'WTA', shortLabel: 'WTA', color: '#f472b6' },
+  { id: 'itf_men_singles', label: 'ITF Men', shortLabel: 'ITF M', color: '#fb923c' },
+  { id: 'itf_women_singles', label: 'ITF Women', shortLabel: 'ITF W', color: '#f59e0b' },
+  { id: 'utr_men_singles', label: 'UTR Men', shortLabel: 'UTR M', color: '#a78bfa' },
+  { id: 'utr_women_singles', label: 'UTR Women', shortLabel: 'UTR W', color: '#e879f9' },
+  { id: 'atp_doubles', label: 'ATP Doubles', shortLabel: 'ATP 2×', color: '#818cf8' },
+  { id: 'wta_doubles', label: 'WTA Doubles', shortLabel: 'WTA 2×', color: '#fb7185' },
+  { id: 'mixed_doubles', label: 'Mixed Doubles', shortLabel: 'Mixed', color: '#34d399' },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -48,57 +48,22 @@ export default function Dashboard({ showToast }) {
     try { return sessionStorage.getItem('tv_active_tab') ?? 'matches'; } catch { return 'matches'; }
   });
 
-  const [selectedMatch,  setSelectedMatch]  = useState(null);
-  const [searchOpen,     setSearchOpen]     = useState(false);
-  const [bioPlayer,      setBioPlayer]      = useState(null);
-  const [profileOpen,    setProfileOpen]    = useState(false);
+  const [selectedMatch, setSelectedMatch] = useState(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [bioPlayer, setBioPlayer] = useState(null);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
 
-  const avatarMenuRef       = useRef(null);
+  const avatarMenuRef = useRef(null);
   const avatarMenuRefMobile = useRef(null);
 
   const { live, upcoming, loading: matchesLoading, error: matchesError, refresh, singlesLookup, } = useMatches();
+  const reclassifiedLive = useMemo(() => live, [live]);
+  const reclassifiedUpcoming = useMemo(() => upcoming, [upcoming]);
+  const allMatchesReclassified = useMemo(() => [...live, ...upcoming], [live, upcoming]);
 
   // Raw combined list — used for search modal only
   const allMatches = useMemo(() => [...live, ...upcoming], [live, upcoming]);
-
-  // src/hooks/hooks.js
-// Replace the useMatches useEffect
-
-  useEffect(() => {
-    const cached = readSessionMatches();
-
-    if (cached) {
-      // Background refresh after 1s — user already sees data
-      const t = setTimeout(() => fetchAll(true), 1000);
-      startPolling();
-    } else {
-      fetchAll(false);
-      startPolling();
-    }
-
-    const handleVisibility = () => {
-      if (document.hidden) {
-        stopPolling();
-      } else {
-        // FIX: Always force-refresh on tab re-focus, regardless of cache
-        // Live scores may have changed while tab was hidden
-        fetchAll(true);
-        startPolling();
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibility);
-
-    return () => {
-      stopPolling();
-      document.removeEventListener('visibilitychange', handleVisibility);
-    };
-  }, [fetchAll, startPolling, stopPolling]);
-
-  // Split reclassified list for MatchesTab
-  const reclassifiedLive     = useMemo(() => allMatchesReclassified.filter(m => m.status === 'live'),     [allMatchesReclassified]);
-  const reclassifiedUpcoming = useMemo(() => allMatchesReclassified.filter(m => m.status === 'upcoming'), [allMatchesReclassified]);
 
   // Full player list from DB — feeds search modal
   const { players: allDbPlayers } = useAllPlayers();
@@ -129,7 +94,7 @@ export default function Dashboard({ showToast }) {
     if (!avatarMenuOpen) return;
     const fn = (e) => {
       if (!avatarMenuRef.current?.contains(e.target) &&
-          !avatarMenuRefMobile.current?.contains(e.target)) {
+        !avatarMenuRefMobile.current?.contains(e.target)) {
         setAvatarMenuOpen(false);
       }
     };
@@ -159,10 +124,10 @@ export default function Dashboard({ showToast }) {
   }, []);
 
   const tabs = [
-    { id: 'matches',     label: 'Matches',  icon: '🎾' },
-    { id: 'predictions', label: 'Predict',  icon: '🔮' },
-    { id: 'rankings',    label: 'Rankings', icon: '🏆' },
-    { id: 'chat',        label: 'AI Chat',  icon: '🤖' },
+    { id: 'matches', label: 'Matches', icon: '🎾' },
+    { id: 'predictions', label: 'Predict', icon: '🔮' },
+    { id: 'rankings', label: 'Rankings', icon: '🏆' },
+    { id: 'chat', label: 'AI Chat', icon: '🤖' },
   ];
 
   async function handleLogout() {
@@ -173,7 +138,7 @@ export default function Dashboard({ showToast }) {
 
   function switchTab(id) {
     setActiveTab(id);
-    try { sessionStorage.setItem('tv_active_tab', id); } catch {}
+    try { sessionStorage.setItem('tv_active_tab', id); } catch { }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -257,9 +222,9 @@ export default function Dashboard({ showToast }) {
     >
       {profile?.avatar_url
         ? <img src={profile.avatar_url} alt="Avatar"
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-            onError={e => { e.currentTarget.style.display = 'none'; }}
-          />
+          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          onError={e => { e.currentTarget.style.display = 'none'; }}
+        />
         : avatarInitial
       }
     </button>
@@ -466,7 +431,7 @@ function FilterPills({ activeFilter, onSelect, size = 'normal', counts = {} }) {
     }}>
       {MATCH_FILTERS.map(f => {
         const active = activeFilter === f.id;
-        const count  = counts[f.id] ?? 0;
+        const count = counts[f.id] ?? 0;
         return (
           <button key={f.id} onClick={() => onSelect(f.id)} style={{
             padding: size === 'small' ? '4px 10px' : '6px 14px',
@@ -506,11 +471,11 @@ function FilterPills({ activeFilter, onSelect, size = 'normal', counts = {} }) {
 // Replace the ENTIRE MatchesTab function with this:
 
 function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wtaPlayerIds, singlesLookup }) {
-  const [activeFilter,    setActiveFilter]    = useState('atp_singles');
-  const [calendarDate,    setCalendarDate]    = useState(null);
+  const [activeFilter, setActiveFilter] = useState('atp_singles');
+  const [calendarDate, setCalendarDate] = useState(null);
   const [calendarDateStr, setCalendarDateStr] = useState(null);
-  const [dateMatches,     setDateMatches]     = useState([]);
-  const [dateLoading,     setDateLoading]     = useState(false);
+  const [dateMatches, setDateMatches] = useState([]);
+  const [dateLoading, setDateLoading] = useState(false);
 
   const todayStr = useMemo(() => new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Europe/Paris',
@@ -535,7 +500,7 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
   }, [calendarDateStr, wtaPlayerIds, singlesLookup, todayStr]);
 
   if (loading) return <LoadingGrid />;
-  if (error)   return <ErrorMessage msg={error} onRetry={refresh} />;
+  if (error) return <ErrorMessage msg={error} onRetry={refresh} />;
 
   // ── Build today's unified match list ──────────────────────────────────────
   const todayMatches = (() => {
@@ -547,13 +512,13 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
     );
   })();
 
-  const pool            = isToday ? todayMatches : dateMatches;
-  const byType          = (arr) => arr.filter(m => deriveMatchType(m, wtaPlayerIds) === activeFilter);
+  const pool = isToday ? todayMatches : dateMatches;
+  const byType = (arr) => arr.filter(m => deriveMatchType(m, wtaPlayerIds) === activeFilter);
   const activeFilterDef = MATCH_FILTERS.find(f => f.id === activeFilter);
-  const filteredPool    = byType(pool);
+  const filteredPool = byType(pool);
 
   // A match is finished if status==='finished' OR winner_id is set (handles sync lag)
-  const filteredLive     = filteredPool.filter(m => m.status === 'live'     && !m.winner_id);
+  const filteredLive = filteredPool.filter(m => m.status === 'live' && !m.winner_id);
   const filteredUpcoming = filteredPool.filter(m => m.status === 'upcoming' && !m.winner_id);
   const filteredFinished = filteredPool.filter(m => m.status === 'finished' || !!m.winner_id);
 
@@ -573,8 +538,8 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
   const dayLabel = isToday
     ? ''
     : ` — ${calendarDate?.toLocaleDateString('en-GB', {
-        weekday: 'long', day: 'numeric', month: 'short',
-      }) ?? ''}`;
+      weekday: 'long', day: 'numeric', month: 'short',
+    }) ?? ''}`;
 
   const totalVisible = filteredLive.length + filteredUpcoming.length + filteredFinished.length;
 
@@ -681,14 +646,14 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
 // Replace the entire MatchCard component
 
 const MatchCard = memo(function MatchCard({ match: m, onPredict, wtaPlayerIds = new Set() }) {
-  const surfaceColors  = { Clay: '#f97316', Hard: '#60a5fa', Grass: '#4ade80' };
-  const surfaceColor   = surfaceColors[m.surface] ?? '#94a3b8';
-  const effectiveType  = deriveMatchType(m, wtaPlayerIds);
-  const matchTypeDef   = MATCH_FILTERS.find(f => f.id === effectiveType) ?? null;
+  const surfaceColors = { Clay: '#f97316', Hard: '#60a5fa', Grass: '#4ade80' };
+  const surfaceColor = surfaceColors[m.surface] ?? '#94a3b8';
+  const effectiveType = deriveMatchType(m, wtaPlayerIds);
+  const matchTypeDef = MATCH_FILTERS.find(f => f.id === effectiveType) ?? null;
 
   // FIX: treat as finished if winner_id is already set, even if status hasn't caught up
   const isFinished = m.status === 'finished' || !!m.winner_id;
-  const isLive     = m.status === 'live' && !m.winner_id;
+  const isLive = m.status === 'live' && !m.winner_id;
 
   return (
     <Card style={{ padding: '16px', transition: 'var(--t)' }}>
@@ -839,7 +804,7 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
   }, [selectedMatch?.id]);
 
   const { prediction, loading: predLoading, error: predError } = usePrediction(selectedMatch);
-  const [h2h,       setH2h]       = useState(null);
+  const [h2h, setH2h] = useState(null);
   const [h2hLoading, setH2hLoading] = useState(false);
 
   const todayStr = new Intl.DateTimeFormat('en-CA', {
@@ -849,11 +814,11 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
   // allMatches is already reclassified — just filter out finished
   const predictableMatches = allMatches.filter(m => {
     if (m.status === 'finished') return false;
-    if (m.status === 'live')     return true;
+    if (m.status === 'live') return true;
     const d = m.local_date ?? (m.date
       ? new Intl.DateTimeFormat('en-CA', {
-          timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit',
-        }).format(new Date(m.date))
+        timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit',
+      }).format(new Date(m.date))
       : null);
     return d === todayStr;
   });
@@ -969,8 +934,8 @@ function PredictionsTab({ allMatches, matchesLoading, selectedMatch, onSelectMat
 // ─────────────────────────────────────────────────────────────────────────────
 function MatchPickerRow({ match: m, selected, onSelect, wtaPlayerIds = new Set() }) {
   const effectiveType = deriveMatchType(m, wtaPlayerIds);
-  const matchTypeDef  = MATCH_FILTERS.find(f => f.id === effectiveType) ?? null;
-  const isLive        = m.status === 'live';
+  const matchTypeDef = MATCH_FILTERS.find(f => f.id === effectiveType) ?? null;
+  const isLive = m.status === 'live';
 
   return (
     <button onClick={() => onSelect(m)} style={{
@@ -1019,13 +984,13 @@ function MatchPickerRow({ match: m, selected, onSelect, wtaPlayerIds = new Set()
 // PREDICTION CARD
 // ─────────────────────────────────────────────────────────────────────────────
 function PredictionCard({ match: m, prediction: pred }) {
-  const p1        = m.player1;
-  const p2        = m.player2;
+  const p1 = m.player1;
+  const p2 = m.player2;
   const confColor = pred.confidence === 'High' ? 'var(--lime)'
     : pred.confidence === 'Medium' ? 'var(--yellow)' : 'var(--clay)';
-  const p1WinPct  = pred.player1_win_pct ?? 50;
-  const p2WinPct  = pred.player2_win_pct ?? (100 - p1WinPct);
-  const isAi      = pred.source === 'ai';
+  const p1WinPct = pred.player1_win_pct ?? 50;
+  const p2WinPct = pred.player2_win_pct ?? (100 - p1WinPct);
+  const isAi = pred.source === 'ai';
 
   return (
     <Card>
@@ -1127,15 +1092,15 @@ function PredictionCard({ match: m, prediction: pred }) {
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
             {pred.key_factors.map((f, i) => {
-              const fl   = f.toLowerCase();
+              const fl = f.toLowerCase();
               const icon = fl.includes('rank') || fl.includes('seed') ? '📊'
                 : fl.includes('surface') || fl.includes('clay') || fl.includes('grass') || fl.includes('hard') ? '🎾'
-                : fl.includes('form') || fl.includes('w/l') || fl.includes('won') || fl.includes('lost') ? '📈'
-                : fl.includes('h2h') || fl.includes('head') || fl.includes('meeting') || fl.includes('record') ? '⚔️'
-                : fl.includes('serve') || fl.includes('ace') || fl.includes('style') || fl.includes('game') ? '💥'
-                : fl.includes('round') || fl.includes('tournament') || fl.includes('draw') || fl.includes('seeded') ? '🏆'
-                : fl.includes('fatigue') || fl.includes('fitness') || fl.includes('injur') || fl.includes('schedule') ? '💪'
-                : '→';
+                  : fl.includes('form') || fl.includes('w/l') || fl.includes('won') || fl.includes('lost') ? '📈'
+                    : fl.includes('h2h') || fl.includes('head') || fl.includes('meeting') || fl.includes('record') ? '⚔️'
+                      : fl.includes('serve') || fl.includes('ace') || fl.includes('style') || fl.includes('game') ? '💥'
+                        : fl.includes('round') || fl.includes('tournament') || fl.includes('draw') || fl.includes('seeded') ? '🏆'
+                          : fl.includes('fatigue') || fl.includes('fitness') || fl.includes('injur') || fl.includes('schedule') ? '💪'
+                            : '→';
               return (
                 <div key={i} style={{
                   display: 'flex', alignItems: 'flex-start', gap: '10px',
@@ -1156,41 +1121,41 @@ function PredictionCard({ match: m, prediction: pred }) {
       {pred.source === 'ai' && !pred.key_factors?.some(f =>
         f.toLowerCase().includes('h2h') || f.toLowerCase().includes('head-to-head') || f.toLowerCase().includes('meeting')
       ) && (
-        <div style={{ marginTop: '12px', padding: '12px 14px', borderRadius: '10px', background: 'var(--bg-glass)', border: '1px solid var(--border)' }}>
-          <p style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '10px' }}>
-            Recent Form
-          </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {[
-              { name: m.player1?.name, form: m.player1?.recent_form },
-              { name: m.player2?.name, form: m.player2?.recent_form },
-            ].map(({ name, form }) => {
-              const letters = (form ?? '').split('').filter(c => c === 'W' || c === 'L');
-              if (!letters.length) return null;
-              return (
-                <div key={name} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '12px', color: 'var(--text-faint)', minWidth: '90px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {name}
-                  </span>
-                  <div style={{ display: 'flex', gap: '4px' }}>
-                    {letters.slice(-5).map((r, i) => (
-                      <div key={i} style={{
-                        width: '24px', height: '24px', borderRadius: '5px', fontWeight: 800, fontSize: '11px',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        background: r === 'W' ? 'rgba(74,222,128,0.15)' : 'rgba(248,113,113,0.12)',
-                        border: `1px solid ${r === 'W' ? 'rgba(74,222,128,0.35)' : 'rgba(248,113,113,0.3)'}`,
-                        color: r === 'W' ? 'var(--green)' : 'var(--red)',
-                      }}>
-                        {r}
-                      </div>
-                    ))}
+          <div style={{ marginTop: '12px', padding: '12px 14px', borderRadius: '10px', background: 'var(--bg-glass)', border: '1px solid var(--border)' }}>
+            <p style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '10px' }}>
+              Recent Form
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {[
+                { name: m.player1?.name, form: m.player1?.recent_form },
+                { name: m.player2?.name, form: m.player2?.recent_form },
+              ].map(({ name, form }) => {
+                const letters = (form ?? '').split('').filter(c => c === 'W' || c === 'L');
+                if (!letters.length) return null;
+                return (
+                  <div key={name} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '12px', color: 'var(--text-faint)', minWidth: '90px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {name}
+                    </span>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      {letters.slice(-5).map((r, i) => (
+                        <div key={i} style={{
+                          width: '24px', height: '24px', borderRadius: '5px', fontWeight: 800, fontSize: '11px',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          background: r === 'W' ? 'rgba(74,222,128,0.15)' : 'rgba(248,113,113,0.12)',
+                          border: `1px solid ${r === 'W' ? 'rgba(74,222,128,0.35)' : 'rgba(248,113,113,0.3)'}`,
+                          color: r === 'W' ? 'var(--green)' : 'var(--red)',
+                        }}>
+                          {r}
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              );
-            }).filter(Boolean)}
+                );
+              }).filter(Boolean)}
+            </div>
           </div>
-        </div>
-      )}
+        )}
     </Card>
   );
 }
@@ -1254,21 +1219,21 @@ function H2HPanel({ h2h, match: m }) {
 // RANKINGS TAB
 // ─────────────────────────────────────────────────────────────────────────────
 const RANKING_TOURS = [
-  { id: 'ATP',       label: 'ATP',        color: '#60a5fa', pointsLabel: 'Points', interactive: true  },
-  { id: 'WTA',       label: 'WTA',        color: '#f472b6', pointsLabel: 'Points', interactive: true  },
-  { id: 'ITF_MEN',   label: 'ITF Men',    color: '#fb923c', pointsLabel: 'Wins',   interactive: false },
-  { id: 'ITF_WOMEN', label: 'ITF Women',  color: '#f59e0b', pointsLabel: 'Wins',   interactive: false },
-  { id: 'UTR_MEN',   label: 'UTR Men',    color: '#a78bfa', pointsLabel: 'Wins',   interactive: false },
-  { id: 'UTR_WOMEN', label: 'UTR Women',  color: '#e879f9', pointsLabel: 'Wins',   interactive: false },
+  { id: 'ATP', label: 'ATP', color: '#60a5fa', pointsLabel: 'Points', interactive: true },
+  { id: 'WTA', label: 'WTA', color: '#f472b6', pointsLabel: 'Points', interactive: true },
+  { id: 'ITF_MEN', label: 'ITF Men', color: '#fb923c', pointsLabel: 'Wins', interactive: false },
+  { id: 'ITF_WOMEN', label: 'ITF Women', color: '#f59e0b', pointsLabel: 'Wins', interactive: false },
+  { id: 'UTR_MEN', label: 'UTR Men', color: '#a78bfa', pointsLabel: 'Wins', interactive: false },
+  { id: 'UTR_WOMEN', label: 'UTR Women', color: '#e879f9', pointsLabel: 'Wins', interactive: false },
 ];
 
 function RankingsTab({ onSelectPlayer }) {
-  const [tour,   setTour]   = useState('ATP');
+  const [tour, setTour] = useState('ATP');
   const [hovRow, setHovRow] = useState(null);
   const { rankings, loading, error } = useRankings(tour);
-  const tourDef    = RANKING_TOURS.find(t => t.id === tour) ?? RANKING_TOURS[0];
+  const tourDef = RANKING_TOURS.find(t => t.id === tour) ?? RANKING_TOURS[0];
   const isClickable = tourDef.interactive;
-  const isAltTour   = !isClickable;
+  const isAltTour = !isClickable;
 
   return (
     <div className="tv-fade-up">
@@ -1305,75 +1270,75 @@ function RankingsTab({ onSelectPlayer }) {
       </div>
 
       {loading ? <LoadingGrid />
-      : error   ? <ErrorMessage msg={error} />
-      : rankings.length === 0 ? (
-        <EmptyState
-          icon="📊"
-          title={`No ${tourDef.label} rankings yet`}
-          desc={isAltTour ? 'Rankings appear once matches of this type are synced.' : 'Rankings will appear after the next sync.'}
-        />
-      ) : (
-        <Card style={{ overflow: 'hidden' }}>
-          {/* Header row */}
-          <div className="tv-ranking-header" style={{
-            display: 'grid', gridTemplateColumns: '36px minmax(0,1fr) 70px',
-            gap: '8px', padding: '10px 16px', borderBottom: '1px solid var(--border)',
-            fontSize: '11px', fontWeight: 700, color: 'var(--text-faint)',
-            textTransform: 'uppercase', letterSpacing: '0.07em',
-          }}>
-            <span>#</span><span>Player</span>
-            <span style={{ textAlign: 'right' }}>{tourDef.pointsLabel}</span>
-          </div>
-
-          {rankings.map((p, i) => {
-            const rank    = p.rank ?? (i + 1);
-            const medal   = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : null;
-            const flag    = p.flag && p.flag !== '🏳️' ? p.flag : resolveFlag(p.country ?? '');
-            const rankDir = p.prev_rank == null ? null
-              : p.prev_rank > rank ? 'up' : p.prev_rank < rank ? 'down' : 'same';
-
-            return (
-              <div
-                className="tv-ranking-row" key={p.id ?? i}
-                onClick={() => isClickable && onSelectPlayer?.(p)}
-                onMouseEnter={() => isClickable && setHovRow(i)}
-                onMouseLeave={() => isClickable && setHovRow(null)}
-                style={{
-                  display: 'grid', gridTemplateColumns: '36px minmax(0,1fr) 70px',
-                  gap: '8px', padding: '12px 16px', borderTop: '1px solid var(--border)',
-                  background: isClickable && hovRow === i ? 'var(--bg-glass)' : 'transparent',
-                  cursor: isClickable ? 'pointer' : 'default',
-                  transition: 'background 0.12s', alignItems: 'center',
-                  opacity: isAltTour ? 0.78 : 1,
-                }}
-              >
-                <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '14px', color: rank <= 3 ? tourDef.color : 'var(--text-muted)' }}>
-                  {medal ?? rank}
-                </span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                  <Flag country={p?.country} name={p?.name} size={20} />
-                  <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {p.name}
-                  </span>
-                  {rankDir && rankDir !== 'same' && (
-                    <span style={{ fontSize: '10px', fontWeight: 700, flexShrink: 0, color: rankDir === 'up' ? 'var(--lime)' : 'var(--clay)' }}>
-                      {rankDir === 'up' ? '▲' : '▼'}
-                    </span>
-                  )}
-                </div>
-                <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: '13px', color: 'var(--text-muted)', textAlign: 'right' }}>
-                  {p.points != null ? p.points.toLocaleString() : '—'}
-                </span>
+        : error ? <ErrorMessage msg={error} />
+          : rankings.length === 0 ? (
+            <EmptyState
+              icon="📊"
+              title={`No ${tourDef.label} rankings yet`}
+              desc={isAltTour ? 'Rankings appear once matches of this type are synced.' : 'Rankings will appear after the next sync.'}
+            />
+          ) : (
+            <Card style={{ overflow: 'hidden' }}>
+              {/* Header row */}
+              <div className="tv-ranking-header" style={{
+                display: 'grid', gridTemplateColumns: '36px minmax(0,1fr) 70px',
+                gap: '8px', padding: '10px 16px', borderBottom: '1px solid var(--border)',
+                fontSize: '11px', fontWeight: 700, color: 'var(--text-faint)',
+                textTransform: 'uppercase', letterSpacing: '0.07em',
+              }}>
+                <span>#</span><span>Player</span>
+                <span style={{ textAlign: 'right' }}>{tourDef.pointsLabel}</span>
               </div>
-            );
-          })}
 
-          <div style={{ padding: '10px 16px', borderTop: '1px solid var(--border)', fontSize: '11px', color: 'var(--text-faint)', textAlign: 'center' }}>
-            Showing Top {rankings.length} · {isAltTour ? 'Derived from match wins' : 'Official rankings'}
-            {isClickable && <span style={{ color: tourDef.color }}> · Click a player for full profile</span>}
-          </div>
-        </Card>
-      )}
+              {rankings.map((p, i) => {
+                const rank = p.rank ?? (i + 1);
+                const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : null;
+                const flag = p.flag && p.flag !== '🏳️' ? p.flag : resolveFlag(p.country ?? '');
+                const rankDir = p.prev_rank == null ? null
+                  : p.prev_rank > rank ? 'up' : p.prev_rank < rank ? 'down' : 'same';
+
+                return (
+                  <div
+                    className="tv-ranking-row" key={p.id ?? i}
+                    onClick={() => isClickable && onSelectPlayer?.(p)}
+                    onMouseEnter={() => isClickable && setHovRow(i)}
+                    onMouseLeave={() => isClickable && setHovRow(null)}
+                    style={{
+                      display: 'grid', gridTemplateColumns: '36px minmax(0,1fr) 70px',
+                      gap: '8px', padding: '12px 16px', borderTop: '1px solid var(--border)',
+                      background: isClickable && hovRow === i ? 'var(--bg-glass)' : 'transparent',
+                      cursor: isClickable ? 'pointer' : 'default',
+                      transition: 'background 0.12s', alignItems: 'center',
+                      opacity: isAltTour ? 0.78 : 1,
+                    }}
+                  >
+                    <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '14px', color: rank <= 3 ? tourDef.color : 'var(--text-muted)' }}>
+                      {medal ?? rank}
+                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                      <Flag country={p?.country} name={p?.name} size={20} />
+                      <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {p.name}
+                      </span>
+                      {rankDir && rankDir !== 'same' && (
+                        <span style={{ fontSize: '10px', fontWeight: 700, flexShrink: 0, color: rankDir === 'up' ? 'var(--lime)' : 'var(--clay)' }}>
+                          {rankDir === 'up' ? '▲' : '▼'}
+                        </span>
+                      )}
+                    </div>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: '13px', color: 'var(--text-muted)', textAlign: 'right' }}>
+                      {p.points != null ? p.points.toLocaleString() : '—'}
+                    </span>
+                  </div>
+                );
+              })}
+
+              <div style={{ padding: '10px 16px', borderTop: '1px solid var(--border)', fontSize: '11px', color: 'var(--text-faint)', textAlign: 'center' }}>
+                Showing Top {rankings.length} · {isAltTour ? 'Derived from match wins' : 'Official rankings'}
+                {isClickable && <span style={{ color: tourDef.color }}> · Click a player for full profile</span>}
+              </div>
+            </Card>
+          )}
     </div>
   );
 }
