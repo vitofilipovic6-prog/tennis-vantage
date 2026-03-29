@@ -58,6 +58,7 @@ export default function Dashboard({ showToast }) {
   const avatarMenuRefMobile = useRef(null);
 
   const { live, upcoming, loading: matchesLoading, error: matchesError, refresh, singlesLookup, } = useMatches();
+
   const reclassifiedLive = useMemo(() => live, [live]);
   const reclassifiedUpcoming = useMemo(() => upcoming, [upcoming]);
   const allMatchesReclassified = useMemo(() => [...live, ...upcoming], [live, upcoming]);

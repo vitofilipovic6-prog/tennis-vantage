@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   getLiveMatches, getUpcomingMatches, getRankings,
-  getMatchesByDate, getPrediction, sendChatMessage,buildSinglesLookup
+  getMatchesByDate, getPrediction, sendChatMessage, buildSinglesLookup
 } from '../services/tennisApi';
 import { supabase } from '../services/supabase';
 
@@ -74,7 +74,7 @@ export function useMatches() {
   });
 
   const [loading, setLoading] = useState(!cached);
-  const [error,   setError]   = useState(null);
+  const [error, setError] = useState(null);
   const pollRef = useRef(null);
 
   // Build singles lookup from DB players for doubles flag enrichment
@@ -86,13 +86,11 @@ export function useMatches() {
       .from('players')
       .select('id, name, country, flag, rank')
       .not('name', 'is', null)
-      .not('name', 'like', '%/%')  // singles only — skip doubles rows
+      .not('name', 'like', '%/%')
       .order('rank', { ascending: true, nullsLast: true })
       .limit(1000)
       .then(({ data }) => {
         if (data?.length) {
-          const { buildSinglesLookup } = require('../services/tennisApi');
-          // buildSinglesLookup is imported at top of file — just call it
           setSinglesLookup(buildSinglesLookup(data));
         }
       })
@@ -102,8 +100,6 @@ export function useMatches() {
   const fetchAll = useCallback(async (background = false) => {
     if (!background) setLoading(true);
     try {
-      // Pass singlesLookup — may be null on first call (before DB fetch completes)
-      // That's fine: enrichDoublesPlayer no-ops when lookup is null
       const [liveData, upcomingData] = await Promise.all([
         getLiveMatches(new Set(), singlesLookup),
         getUpcomingMatches(new Set(), singlesLookup),
@@ -120,7 +116,13 @@ export function useMatches() {
     } finally {
       if (!background) setLoading(false);
     }
-  }, [singlesLookup]); // re-run fetchAll when lookup becomes available
+  }, [singlesLookup]);
+
+  // Re-enrich match flags once singlesLookup becomes available
+  useEffect(() => {
+    if (!singlesLookup) return;
+    fetchAll(true);
+  }, [singlesLookup]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const startPolling = useCallback(() => {
     pollRef.current = setInterval(() => {
