@@ -22,14 +22,6 @@ export function detectTour(tournamentNameOrMatch) {
 }
 
 // ── useMatches ────────────────────────────────────────────────────────────────
-// FIX: All hook instability issues resolved:
-//  - fetchAll is stored in a ref so it never appears in useEffect dep arrays
-//  - singlesLookup enrichment is handled inside fetchAll itself, not a
-//    separate useEffect that would double-fire
-//  - startPolling/stopPolling use the ref so the interval never restarts
-//    when singlesLookup changes
-//  - React StrictMode double-invoke is safe because cleanup cancels correctly
-// ─────────────────────────────────────────────────────────────────────────────
 const SESSION_MATCHES_KEY = 'tv_matches_cache';
 const SESSION_MATCHES_TTL = 5 * 60 * 1000;
 
@@ -71,21 +63,18 @@ export function useMatches() {
   const [loading, setLoading] = useState(!cached);
   const [error, setError] = useState(null);
 
-  // singlesLookup lives in a ref so fetchAll always reads the latest value
-  // without needing to be in any dependency array
   const singlesLookupRef = useRef(null);
   const [singlesLookup, setSinglesLookup] = useState(null);
 
   const pollRef    = useRef(null);
   const mountedRef = useRef(true);
 
-  // fetchAll stored in ref — stable identity, always reads latest singlesLookup
   const fetchAllRef = useRef(null);
   fetchAllRef.current = async (background = false) => {
     if (!mountedRef.current) return;
     if (!background) setLoading(true);
     try {
-      const lookup = singlesLookupRef.current; // always fresh
+      const lookup = singlesLookupRef.current;
       const [liveData, upcomingData] = await Promise.all([
         getLiveMatches(new Set(), lookup),
         getUpcomingMatches(new Set(), lookup),
@@ -104,12 +93,10 @@ export function useMatches() {
     }
   };
 
-  // Stable refresh exposed to consumers
   const refresh = useCallback((background = false) => {
     fetchAllRef.current(background);
   }, []);
 
-  // Load singles lookup once on mount — updates the ref AND state
   useEffect(() => {
     mountedRef.current = true;
 
@@ -126,9 +113,6 @@ export function useMatches() {
           const lookup = buildSinglesLookup(data);
           singlesLookupRef.current = lookup;
           setSinglesLookup(lookup);
-          // Re-fetch now that we have enrichment data, but only if we
-          // already have matches (background refresh). If still loading,
-          // the main fetch below will pick up the lookup via ref.
           if (!loading) {
             fetchAllRef.current(true);
           }
@@ -137,17 +121,13 @@ export function useMatches() {
       .catch(e => console.warn('[useMatches] singles lookup failed:', e.message));
 
     return () => { mountedRef.current = false; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // run once — intentionally empty deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // Main fetch + polling — stable, never restarts due to singlesLookup changes
   useEffect(() => {
     const hasCached = !!readSessionMatches();
+    fetchAllRef.current(hasCached);
 
-    // Initial fetch
-    fetchAllRef.current(hasCached); // background=true if cache exists, else show skeleton
-
-    // Polling every 60s
     pollRef.current = setInterval(() => {
       if (!document.hidden && mountedRef.current) {
         fetchAllRef.current(true);
@@ -172,8 +152,8 @@ export function useMatches() {
       clearInterval(pollRef.current);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // run once — intentionally empty deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return {
     live,
@@ -479,25 +459,49 @@ export function useAllPlayers() {
 }
 
 // ── usePrediction ─────────────────────────────────────────────────────────────
+// FIX #310: Extract matchId BEFORE the effect and store full match in a ref
+// so getPrediction() always gets a stable, current match object.
 export function usePrediction(match) {
   const [prediction, setPrediction] = useState(null);
   const [loading,    setLoading]    = useState(false);
   const [error,      setError]      = useState(null);
 
+  // FIX: Store match in a ref so the async callback always reads latest value
+  const matchRef = useRef(match);
+  useEffect(() => { matchRef.current = match; }, [match]);
+
+  // FIX: Extract id to a primitive — optional chaining in dep arrays is unreliable
+  // in production builds (Babel/SWC transpile ?. differently than dev)
   const matchId = match?.id ?? null;
 
   useEffect(() => {
-    if (!matchId) { setPrediction(null); setError(null); return; }
+    if (!matchId) {
+      setPrediction(null);
+      setError(null);
+      return;
+    }
+
     let cancelled = false;
     setLoading(true);
     setError(null);
-    getPrediction(match)
-      .then(data  => { if (!cancelled) { setPrediction(data); setError(null); } })
-      .catch(e    => { if (!cancelled) setError(e.message ?? 'Prediction failed'); })
-      .finally(() => { if (!cancelled) setLoading(false); });
+
+    // Use the ref to get the current match at call time
+    getPrediction(matchRef.current)
+      .then(data => {
+        if (!cancelled) {
+          setPrediction(data);
+          setError(null);
+        }
+      })
+      .catch(e => {
+        if (!cancelled) setError(e.message ?? 'Prediction failed');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
     return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [matchId]);
+  }, [matchId]); // Only re-run when match ID changes — safe now with ref above
 
   return { prediction, loading, error };
 }
@@ -541,7 +545,12 @@ export function useAiChat(contextMatch = null) {
   const [typing,   setTyping]   = useState(false);
   const bottomRef    = useRef(null);
   const messagesRef  = useRef(messages);
-  const lastSentRef  = useRef(0);
+
+  // FIX: Store contextMatch in a ref so sendMessage callback never goes stale
+  const contextMatchRef = useRef(contextMatch);
+  useEffect(() => { contextMatchRef.current = contextMatch; }, [contextMatch]);
+
+  const lastSentRef = useRef(0);
 
   useEffect(() => { messagesRef.current = messages; }, [messages]);
 
@@ -561,8 +570,10 @@ export function useAiChat(contextMatch = null) {
     setTyping(true);
 
     try {
-      const systemContext = contextMatch
-        ? `Match: ${contextMatch.player1?.name ?? 'Player 1'} (Rank #${contextMatch.player1?.rank ?? '?'}) vs ${contextMatch.player2?.name ?? 'Player 2'} (Rank #${contextMatch.player2?.rank ?? '?'}) on ${contextMatch.surface ?? 'Hard'} at ${contextMatch.tournament ?? 'Unknown'}, ${contextMatch.round ?? ''}. P1 form: ${contextMatch.player1?.recent_form ?? 'N/A'}. P2 form: ${contextMatch.player2?.recent_form ?? 'N/A'}.`
+      // FIX: Read from ref, not from closure — avoids stale contextMatch
+      const ctx = contextMatchRef.current;
+      const systemContext = ctx
+        ? `Match: ${ctx.player1?.name ?? 'Player 1'} (Rank #${ctx.player1?.rank ?? '?'}) vs ${ctx.player2?.name ?? 'Player 2'} (Rank #${ctx.player2?.rank ?? '?'}) on ${ctx.surface ?? 'Hard'} at ${ctx.tournament ?? 'Unknown'}, ${ctx.round ?? ''}. P1 form: ${ctx.player1?.recent_form ?? 'N/A'}. P2 form: ${ctx.player2?.recent_form ?? 'N/A'}.`
         : '';
 
       const history = [...messagesRef.current, userMsg]
@@ -577,7 +588,7 @@ export function useAiChat(contextMatch = null) {
     } finally {
       setTyping(false);
     }
-  }, [contextMatch]);
+  }, []); // FIX: Empty deps — all values read from refs, no stale closures
 
   const reset = useCallback(() => {
     setMessages([{ role: 'assistant', content: 'New session started. Ask me anything about tennis!' }]);

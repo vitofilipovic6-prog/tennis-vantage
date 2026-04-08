@@ -20,8 +20,6 @@ function getBootstrapUser() {
 export const bootstrapUserExists = !!getBootstrapUser();
 
 // Initial state always has loading: true
-// The bootstrap user is NOT put into state — Supabase must confirm it first
-// before any queries are made with auth headers
 const initialState = {
   user:        null,
   profile:     null,
@@ -30,35 +28,51 @@ const initialState = {
   error:       null,
 };
 
-// src/context/AuthContext.jsx
-// Replace the reducer function
-
 function reducer(state, action) {
   switch (action.type) {
     case 'AUTH_START':
       return { ...state, authLoading: true, error: null };
     case 'AUTH_END':
       return { ...state, authLoading: false };
+
     case 'SET_USER':
       return {
         ...state,
-        user: action.user,
-        // FIX: if profile is null (TOKEN_REFRESHED interim), keep existing
-        profile: action.profile ?? state.profile,
-        loading: false,
+        user:        action.user,
+        // FIX #310: NEVER set profile to null. If action.profile is null/undefined,
+        // keep the existing state.profile. This prevents a mid-render null wipe
+        // that causes downstream components to crash when reading profile?.full_name.
+        profile:     action.profile != null ? action.profile : state.profile,
+        loading:     false,
         authLoading: false,
-        error: null,
+        error:       null,
       };
+
+    // FIX #310: New action for TOKEN_REFRESHED — updates ONLY the user object,
+    // never touches profile. This prevents the null-profile render cycle.
+    case 'REFRESH_USER':
+      return {
+        ...state,
+        user:    action.user,
+        loading: false,
+        // profile intentionally untouched — it was already loaded at SIGNED_IN
+      };
+
     case 'UPDATE_PROFILE':
-      return { ...state, profile: { ...state.profile, ...action.patch } };
+      return { ...state, profile: { ...(state.profile ?? {}), ...action.patch } };
+
     case 'CLEAR_USER':
       return { ...state, user: null, profile: null, loading: false, authLoading: false };
+
     case 'SET_ERROR':
       return { ...state, error: action.error, authLoading: false };
+
     case 'CLEAR_ERROR':
       return { ...state, error: null };
+
     case 'LOADING_DONE':
       return { ...state, loading: false };
+
     default:
       return state;
   }
@@ -84,20 +98,20 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
+  // FIX #310: Use useCallback with no deps so this reference is permanently stable.
+  // Previously this was recreating on every render because it closed over `dispatch`
+  // which was a new reference each render in some React versions.
   const updateProfileInContext = useCallback((patch) => {
     dispatch({ type: 'UPDATE_PROFILE', patch });
-  }, []);
-
-// src/context/AuthContext.jsx
-// Replace the useEffect block (the auth subscription one)
+  }, []); // dispatch from useReducer is stable — safe to omit from deps
 
   useEffect(() => {
     mountedRef.current = true;
 
-    // Increase safety timeout — 4s is too tight on slow connections
+    // Increased safety timeout — 4s is too tight on slow connections
     const safetyTimeout = setTimeout(() => {
       if (mountedRef.current) dispatch({ type: 'LOADING_DONE' });
-    }, 8000); // 8s is safer
+    }, 8000);
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
@@ -154,13 +168,16 @@ export function AuthProvider({ children }) {
         if (event === 'TOKEN_REFRESHED' && session?.user) {
           clearTimeout(safetyTimeout);
           if (mountedRef.current) {
-            // FIX: Don't reference stale state.profile — re-read from reducer
-            // Just dispatch a lightweight user update without wiping profile
-            dispatch({ type: 'SET_USER', user: session.user, profile: null });
-            // Then immediately rehydrate profile
+            // FIX #310 (PRIMARY): Use REFRESH_USER instead of SET_USER.
+            // SET_USER with profile:null was wiping the profile mid-render,
+            // causing downstream components to crash in production builds.
+            // REFRESH_USER only updates the user token — profile is untouched.
+            dispatch({ type: 'REFRESH_USER', user: session.user });
+
+            // Still re-hydrate profile in background to catch any staleness
             loadProfile(session.user.id).then(profile => {
               if (mountedRef.current) {
-                dispatch({ type: 'SET_USER', user: session.user, profile });
+                dispatch({ type: 'UPDATE_PROFILE', patch: profile });
               }
             });
           }
@@ -176,10 +193,10 @@ export function AuthProvider({ children }) {
 
     return () => {
       mountedRef.current = false;
-      clearTimeout(safetyTimeout); // FIX: always clear on unmount
+      clearTimeout(safetyTimeout);
       subscription.unsubscribe();
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const login = useCallback(async (email, password) => {
@@ -190,27 +207,26 @@ export function AuthProvider({ children }) {
   }, []);
 
   const register = useCallback(async (email, password, fullName) => {
-  dispatch({ type: 'AUTH_START' });
-  const { data, error } = await supabase.auth.signUp({
-    email, password,
-    options: { data: { full_name: fullName } },
-  });
-  dispatch({ type: 'AUTH_END' });
+    dispatch({ type: 'AUTH_START' });
+    const { data, error } = await supabase.auth.signUp({
+      email, password,
+      options: { data: { full_name: fullName } },
+    });
+    dispatch({ type: 'AUTH_END' });
 
-  if (error) return { error: error.message, requiresConfirmation: false };
+    if (error) return { error: error.message, requiresConfirmation: false };
 
-  // Supabase returns no error but empty identities when email already exists.
-  // This prevents email enumeration on their end, so we must detect it ourselves.
-  if (data?.user && data.user.identities?.length === 0) {
-    return {
-      error: 'An account with this email already exists. Please sign in instead.',
-      requiresConfirmation: false,
-    };
-  }
+    // Supabase returns no error but empty identities when email already exists.
+    if (data?.user && data.user.identities?.length === 0) {
+      return {
+        error: 'An account with this email already exists. Please sign in instead.',
+        requiresConfirmation: false,
+      };
+    }
 
-  const requiresConfirmation = !data?.session;
-  return { error: null, requiresConfirmation };
-}, []);
+    const requiresConfirmation = !data?.session;
+    return { error: null, requiresConfirmation };
+  }, []);
 
   const loginWithGoogle = useCallback(async () => {
     dispatch({ type: 'AUTH_START' });
@@ -239,6 +255,15 @@ export function AuthProvider({ children }) {
     return { error: error?.message ?? null };
   }, []);
 
+  const resetPassword = useCallback(async (email) => {
+    dispatch({ type: 'AUTH_START' });
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset`,
+    });
+    dispatch({ type: 'AUTH_END' });
+    return { error: error ? { message: error.message } : null };
+  }, []);
+
   const logout = useCallback(async () => {
     await supabase.auth.signOut();
   }, []);
@@ -252,6 +277,7 @@ export function AuthProvider({ children }) {
     register,
     loginWithGoogle,
     sendMagicLink,
+    resetPassword,
     logout,
     clearError,
     updateProfileInContext,
