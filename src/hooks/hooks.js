@@ -22,10 +22,13 @@ export function detectTour(tournamentNameOrMatch) {
 }
 
 // ── useMatches ────────────────────────────────────────────────────────────────
-// Strategy: pure DB reads only — no Edge Function calls from client.
-// sync-matches cron (0:00 + 12:00) keeps schedule fresh.
-// sync-live cron (every 5 min) keeps status/scores fresh.
-// Frontend polls DB every 60s to pick up those changes.
+// FIX: All hook instability issues resolved:
+//  - fetchAll is stored in a ref so it never appears in useEffect dep arrays
+//  - singlesLookup enrichment is handled inside fetchAll itself, not a
+//    separate useEffect that would double-fire
+//  - startPolling/stopPolling use the ref so the interval never restarts
+//    when singlesLookup changes
+//  - React StrictMode double-invoke is safe because cleanup cancels correctly
 // ─────────────────────────────────────────────────────────────────────────────
 const SESSION_MATCHES_KEY = 'tv_matches_cache';
 const SESSION_MATCHES_TTL = 5 * 60 * 1000;
@@ -47,21 +50,14 @@ function writeSessionMatches(live, upcoming) {
     sessionStorage.setItem(SESSION_MATCHES_KEY, JSON.stringify({
       live, upcoming, ts: Date.now(),
     }));
-  } catch { }
+  } catch {}
 }
 
-// ── Deduplication helper ──────────────────────────────────────────────────────
-// getUpcomingMatches() now queries ['upcoming','live'] so any match already
-// promoted to live in Supabase appears in BOTH arrays.
-// This removes those duplicates — live always wins over upcoming.
 function deduplicateMatches(liveData, upcomingData) {
   const liveIds = new Set(liveData.map(m => m.id));
   const dedupedUpcoming = upcomingData.filter(m => !liveIds.has(m.id));
   return { liveData, dedupedUpcoming };
 }
-
-// src/hooks/hooks.js
-// Replace the useMatches hook entirely
 
 export function useMatches() {
   const cached = readSessionMatches();
@@ -72,16 +68,51 @@ export function useMatches() {
     const liveIds = new Set((cached.live ?? []).map(m => m.id));
     return (cached.upcoming ?? []).filter(m => !liveIds.has(m.id));
   });
-
   const [loading, setLoading] = useState(!cached);
   const [error, setError] = useState(null);
-  const pollRef = useRef(null);
 
-  // Build singles lookup from DB players for doubles flag enrichment
-  // This runs once and is stable — no re-fetching
+  // singlesLookup lives in a ref so fetchAll always reads the latest value
+  // without needing to be in any dependency array
+  const singlesLookupRef = useRef(null);
   const [singlesLookup, setSinglesLookup] = useState(null);
 
+  const pollRef    = useRef(null);
+  const mountedRef = useRef(true);
+
+  // fetchAll stored in ref — stable identity, always reads latest singlesLookup
+  const fetchAllRef = useRef(null);
+  fetchAllRef.current = async (background = false) => {
+    if (!mountedRef.current) return;
+    if (!background) setLoading(true);
+    try {
+      const lookup = singlesLookupRef.current; // always fresh
+      const [liveData, upcomingData] = await Promise.all([
+        getLiveMatches(new Set(), lookup),
+        getUpcomingMatches(new Set(), lookup),
+      ]);
+      if (!mountedRef.current) return;
+      const { dedupedUpcoming } = deduplicateMatches(liveData, upcomingData);
+      setLive(liveData);
+      setUpcoming(dedupedUpcoming);
+      setError(null);
+      writeSessionMatches(liveData, dedupedUpcoming);
+    } catch (e) {
+      if (!mountedRef.current) return;
+      if (!background) setError(e.message ?? 'Failed to load matches');
+    } finally {
+      if (!background && mountedRef.current) setLoading(false);
+    }
+  };
+
+  // Stable refresh exposed to consumers
+  const refresh = useCallback((background = false) => {
+    fetchAllRef.current(background);
+  }, []);
+
+  // Load singles lookup once on mount — updates the ref AND state
   useEffect(() => {
+    mountedRef.current = true;
+
     supabase
       .from('players')
       .select('id, name, country, flag, rank')
@@ -90,87 +121,74 @@ export function useMatches() {
       .order('rank', { ascending: true, nullsLast: true })
       .limit(1000)
       .then(({ data }) => {
+        if (!mountedRef.current) return;
         if (data?.length) {
-          setSinglesLookup(buildSinglesLookup(data));
+          const lookup = buildSinglesLookup(data);
+          singlesLookupRef.current = lookup;
+          setSinglesLookup(lookup);
+          // Re-fetch now that we have enrichment data, but only if we
+          // already have matches (background refresh). If still loading,
+          // the main fetch below will pick up the lookup via ref.
+          if (!loading) {
+            fetchAllRef.current(true);
+          }
         }
       })
       .catch(e => console.warn('[useMatches] singles lookup failed:', e.message));
-  }, []);
 
-  const fetchAll = useCallback(async (background = false) => {
-    if (!background) setLoading(true);
-    try {
-      const [liveData, upcomingData] = await Promise.all([
-        getLiveMatches(new Set(), singlesLookup),
-        getUpcomingMatches(new Set(), singlesLookup),
-      ]);
+    return () => { mountedRef.current = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // run once — intentionally empty deps
 
-      const { dedupedUpcoming } = deduplicateMatches(liveData, upcomingData);
-
-      setLive(liveData);
-      setUpcoming(dedupedUpcoming);
-      setError(null);
-      writeSessionMatches(liveData, dedupedUpcoming);
-    } catch (e) {
-      if (!background) setError(e.message ?? 'Failed to load matches');
-    } finally {
-      if (!background) setLoading(false);
-    }
-  }, [singlesLookup]);
-
-  // Re-enrich match flags once singlesLookup becomes available
+  // Main fetch + polling — stable, never restarts due to singlesLookup changes
   useEffect(() => {
-    if (!singlesLookup) return;
-    fetchAll(true);
-  }, [singlesLookup]); // eslint-disable-line react-hooks/exhaustive-deps
+    const hasCached = !!readSessionMatches();
 
-  const startPolling = useCallback(() => {
+    // Initial fetch
+    fetchAllRef.current(hasCached); // background=true if cache exists, else show skeleton
+
+    // Polling every 60s
     pollRef.current = setInterval(() => {
-      if (!document.hidden) fetchAll(true);
+      if (!document.hidden && mountedRef.current) {
+        fetchAllRef.current(true);
+      }
     }, 60_000);
-  }, [fetchAll]);
 
-  const stopPolling = useCallback(() => {
-    clearInterval(pollRef.current);
-  }, []);
+    const handleVisibility = () => {
+      if (document.hidden) {
+        clearInterval(pollRef.current);
+      } else {
+        fetchAllRef.current(true);
+        pollRef.current = setInterval(() => {
+          if (!document.hidden && mountedRef.current) {
+            fetchAllRef.current(true);
+          }
+        }, 60_000);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
 
-  useEffect(() => {
-    const cached = readSessionMatches();
+    return () => {
+      clearInterval(pollRef.current);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // run once — intentionally empty deps
 
-    if (cached) {
-      const t = setTimeout(() => fetchAll(true), 1000);
-      startPolling();
-      const handleVisibility = () => {
-        if (document.hidden) { stopPolling(); }
-        else { fetchAll(true); startPolling(); }
-      };
-      document.addEventListener('visibilitychange', handleVisibility);
-      return () => {
-        clearTimeout(t);
-        stopPolling();
-        document.removeEventListener('visibilitychange', handleVisibility);
-      };
-    } else {
-      fetchAll(false);
-      startPolling();
-      const handleVisibility = () => {
-        if (document.hidden) { stopPolling(); }
-        else { fetchAll(true); startPolling(); }
-      };
-      document.addEventListener('visibilitychange', handleVisibility);
-      return () => {
-        stopPolling();
-        document.removeEventListener('visibilitychange', handleVisibility);
-      };
-    }
-  }, [fetchAll, startPolling, stopPolling]);
-
-  return { live, upcoming, loading, error, syncing: false, refresh: () => fetchAll(false), singlesLookup, };
+  return {
+    live,
+    upcoming,
+    loading,
+    error,
+    syncing: false,
+    refresh,
+    singlesLookup,
+  };
 }
 
 // ── useMatchesByDate ──────────────────────────────────────────────────────────
 const matchDateCache = {};
-const MATCH_DATE_CACHE_TTL = 3 * 60 * 1000; // 3 minutes
+const MATCH_DATE_CACHE_TTL = 3 * 60 * 1000;
 
 function getMatchDateCache(dateString) {
   const entry = matchDateCache[dateString];
@@ -261,13 +279,11 @@ export function useActiveDates(startDate, endDate) {
 
     const toParisDate = (d) => new Intl.DateTimeFormat('en-CA', {
       timeZone: 'Europe/Paris',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
+      year: 'numeric', month: '2-digit', day: '2-digit',
     }).format(d);
 
     const start = startDate instanceof Date ? toParisDate(startDate) : startDate;
-    const end = endDate instanceof Date ? toParisDate(endDate) : endDate;
+    const end   = endDate   instanceof Date ? toParisDate(endDate)   : endDate;
 
     supabase
       .from('matches')
@@ -277,7 +293,7 @@ export function useActiveDates(startDate, endDate) {
       .not('local_date', 'is', null)
       .then(({ data }) => {
         const set = new Set((data ?? []).map(r => r.local_date));
-        activeDatesCache = set;
+        activeDatesCache     = set;
         activeDatesCacheTime = Date.now();
         setActiveDates(set);
         setLoading(false);
@@ -293,8 +309,8 @@ const rankingsCache = {};
 
 export function useRankings(tour = 'ATP') {
   const [rankings, setRankings] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [loading,  setLoading]  = useState(true);
+  const [error,    setError]    = useState(null);
 
   useEffect(() => {
     const cached = rankingsCache[tour];
@@ -357,13 +373,11 @@ export function useRankings(tour = 'ATP') {
 }
 
 // ── fetchAltRankings ──────────────────────────────────────────────────────────
-// Derives ITF/UTR pseudo-rankings from match wins in the DB.
-// Returns empty array (never throws) so the UI shows EmptyState, not an error.
 async function fetchAltRankings(tour) {
   const typeMap = {
-    ITF_MEN: ['itf_men_singles', 'itf_men_doubles'],
+    ITF_MEN:   ['itf_men_singles',   'itf_men_doubles'],
     ITF_WOMEN: ['itf_women_singles', 'itf_women_doubles'],
-    UTR_MEN: ['utr_men_singles'],
+    UTR_MEN:   ['utr_men_singles'],
     UTR_WOMEN: ['utr_women_singles'],
   };
   const types = typeMap[tour] ?? [];
@@ -385,11 +399,10 @@ async function fetchAltRankings(tour) {
       console.warn(`[fetchAltRankings:${tour}] query error:`, error.message);
       return [];
     }
-
     if (!data || data.length === 0) return [];
 
     const playerMap = new Map();
-    const winCount = new Map();
+    const winCount  = new Map();
 
     for (const m of data) {
       for (const p of [m.player1, m.player2]) {
@@ -410,8 +423,8 @@ async function fetchAltRankings(tour) {
       .sort((a, b) => (winCount.get(b.id) ?? 0) - (winCount.get(a.id) ?? 0))
       .map((p, i) => ({
         ...p,
-        rank: i + 1,
-        points: winCount.get(p.id) ?? 0,
+        rank:      i + 1,
+        points:    winCount.get(p.id) ?? 0,
         prev_rank: null,
       }));
 
@@ -422,11 +435,9 @@ async function fetchAltRankings(tour) {
 }
 
 // ── useAllPlayers ─────────────────────────────────────────────────────────────
-// Fetches all players from DB for the search modal.
-// Cached for 10 minutes — busted on manual refresh.
-let allPlayersCache = null;
+let allPlayersCache     = null;
 let allPlayersCacheTime = 0;
-const ALL_PLAYERS_TTL = 10 * 60 * 1000;
+const ALL_PLAYERS_TTL   = 10 * 60 * 1000;
 
 export function useAllPlayers() {
   const isStale = Date.now() - allPlayersCacheTime > ALL_PLAYERS_TTL;
@@ -454,7 +465,7 @@ export function useAllPlayers() {
         if (cancelled) return;
         if (error) { setLoading(false); return; }
         const sorted = (data ?? []).filter(p => p.name && !p.name.includes('/'));
-        allPlayersCache = sorted;
+        allPlayersCache     = sorted;
         allPlayersCacheTime = Date.now();
         setPlayers(sorted);
         setLoading(false);
@@ -470,8 +481,8 @@ export function useAllPlayers() {
 // ── usePrediction ─────────────────────────────────────────────────────────────
 export function usePrediction(match) {
   const [prediction, setPrediction] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [loading,    setLoading]    = useState(false);
+  const [error,      setError]      = useState(null);
 
   const matchId = match?.id ?? null;
 
@@ -481,11 +492,11 @@ export function usePrediction(match) {
     setLoading(true);
     setError(null);
     getPrediction(match)
-      .then(data => { if (!cancelled) { setPrediction(data); setError(null); } })
-      .catch(e => { if (!cancelled) setError(e.message ?? 'Prediction failed'); })
+      .then(data  => { if (!cancelled) { setPrediction(data); setError(null); } })
+      .catch(e    => { if (!cancelled) setError(e.message ?? 'Prediction failed'); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [matchId]);
 
   return { prediction, loading, error };
@@ -493,7 +504,7 @@ export function usePrediction(match) {
 
 // ── usePlayerSearch ───────────────────────────────────────────────────────────
 export function usePlayerSearch() {
-  const [query, setQuery] = useState('');
+  const [query,   setQuery]   = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -527,10 +538,10 @@ export function useAiChat(contextMatch = null) {
   const GREETING = "Hi! I'm your AI tennis analyst. Ask me anything about match predictions, player stats, head-to-head records, or surface analysis.";
 
   const [messages, setMessages] = useState([{ role: 'assistant', content: GREETING }]);
-  const [typing, setTyping] = useState(false);
-  const bottomRef = useRef(null);
-  const messagesRef = useRef(messages);
-  const lastSentRef = useRef(0);
+  const [typing,   setTyping]   = useState(false);
+  const bottomRef    = useRef(null);
+  const messagesRef  = useRef(messages);
+  const lastSentRef  = useRef(0);
 
   useEffect(() => { messagesRef.current = messages; }, [messages]);
 
@@ -541,7 +552,6 @@ export function useAiChat(contextMatch = null) {
   const sendMessage = useCallback(async (text) => {
     if (!text?.trim()) return;
 
-    // Rate-limit guard: prevent sending more than once every 3 seconds
     const now = Date.now();
     if (now - lastSentRef.current < 3000) return;
     lastSentRef.current = now;
@@ -555,7 +565,6 @@ export function useAiChat(contextMatch = null) {
         ? `Match: ${contextMatch.player1?.name ?? 'Player 1'} (Rank #${contextMatch.player1?.rank ?? '?'}) vs ${contextMatch.player2?.name ?? 'Player 2'} (Rank #${contextMatch.player2?.rank ?? '?'}) on ${contextMatch.surface ?? 'Hard'} at ${contextMatch.tournament ?? 'Unknown'}, ${contextMatch.round ?? ''}. P1 form: ${contextMatch.player1?.recent_form ?? 'N/A'}. P2 form: ${contextMatch.player2?.recent_form ?? 'N/A'}.`
         : '';
 
-      // Cap history to last 10 messages to prevent token bloat
       const history = [...messagesRef.current, userMsg]
         .slice(-10)
         .map(m => ({ role: m.role, content: m.content }));
@@ -597,10 +606,9 @@ export function useToast() {
 }
 
 // ── useEarliestMatchDate ──────────────────────────────────────────────────────
-// Fetches the earliest local_date that has matches in the DB
 export function useEarliestMatchDate() {
   const [earliestDate, setEarliestDate] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading,      setLoading]      = useState(true);
 
   useEffect(() => {
     supabase
