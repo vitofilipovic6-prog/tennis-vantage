@@ -571,12 +571,13 @@ function TournamentFilterPills({ tournaments, counts, activeTournament, onSelect
 // ─────────────────────────────────────────────────────────────────────────────
 function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wtaPlayerIds, singlesLookup, enrichDoubles }) {
   const [activeFilter, setActiveFilter] = useState('atp_singles');
-  const [activeTournament, setActiveTournament] = useState(null); // [NEW]
+  const [activeTournament, setActiveTournament] = useState(null);
   const [calendarDate, setCalendarDate] = useState(null);
   const [calendarDateStr, setCalendarDateStr] = useState(null);
   const [dateMatches, setDateMatches] = useState([]);
   const [dateLoading, setDateLoading] = useState(false);
 
+  // POMAKNI SVE useMemo i useEffect IZNAD "if (loading)"
   const todayStr = useMemo(() => new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Europe/Paris',
     year: 'numeric', month: '2-digit', day: '2-digit',
@@ -584,7 +585,6 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
 
   const isToday = !calendarDateStr || calendarDateStr === todayStr;
 
-  // [NEW] Reset tournament filter when type filter or date changes
   useEffect(() => { setActiveTournament(null); }, [activeFilter, calendarDateStr]);
 
   useEffect(() => {
@@ -600,27 +600,21 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
       .catch(() => { if (!cancelled) setDateMatches([]); })
       .finally(() => { if (!cancelled) setDateLoading(false); });
     return () => { cancelled = true; };
-  }, [calendarDateStr, wtaPlayerIds, singlesLookup, todayStr]);
+  }, [calendarDateStr, wtaPlayerIds, singlesLookup, todayStr, refresh]);
 
-  if (loading) return <LoadingGrid />;
-  if (error) return <ErrorMessage msg={error} onRetry={refresh} />;
-
-  // ── Build today's unified match list ──────────────────────────────────────
-  const todayMatches = (() => {
+  // Unified match list logic
+  const todayMatches = useMemo(() => {
     const map = new Map();
     upcoming.forEach(m => map.set(m.id, m));
     live.forEach(m => map.set(m.id, m));
     return [...map.values()].sort(
       (a, b) => new Date(a.date ?? 0).getTime() - new Date(b.date ?? 0).getTime()
     );
-  })();
+  }, [upcoming, live]);
 
   const pool = isToday ? todayMatches : dateMatches;
-
-  // [NEW] Full pool for the active type (all statuses)
   const typePool = pool.filter(m => deriveMatchType(m, wtaPlayerIds) === activeFilter);
 
-  // [NEW] Tournament filter data
   const tournamentCounts = useMemo(() => {
     const c = {};
     typePool.forEach(m => {
@@ -633,10 +627,13 @@ function MatchesTab({ live, upcoming, loading, error, refresh, onSelectMatch, wt
   const tournaments = useMemo(() =>
     Object.keys(tournamentCounts).sort(
       (a, b) => tournamentCounts[b] - tournamentCounts[a] || a.localeCompare(b)
-    )
-    , [tournamentCounts]);
+    ), [tournamentCounts]);
 
-  // [NEW] Apply tournament filter on top of type filter
+  // TEK SAD, NAKON SVIH HOOKOVA, STAVI CONDITIONAL RETURNS
+  if (loading) return <LoadingGrid />;
+  if (error) return <ErrorMessage msg={error} onRetry={refresh} />;
+
+  // Ostatak komponente (filteredPool, return JSX...) ostaje isti
   const filteredPool = activeTournament
     ? typePool.filter(m => m.tournament === activeTournament)
     : typePool;
