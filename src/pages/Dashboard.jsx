@@ -22,7 +22,7 @@ import PlayerSearchModal from '../components/PlayerSearchModal';
 import ProfilePage from './ProfilePage';
 import Flag from '../components/Flag';
 import { useTournamentFilter } from '../hooks/useTournamentFilter';
-import { useDoublesFlags } from '../hooks/useDoublesFlags';
+import { useAutoResolveDoublesFlags } from '../hooks/useAutoResolveDoublesFlags';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MATCH TYPE FILTER DEFINITIONS
@@ -67,7 +67,7 @@ export default function Dashboard({ showToast }) {
   const allMatches = useMemo(() => [...live, ...upcoming], [live, upcoming]);
 
   // Doubles flag resolution — enriches players with missing country codes via Gemini
-  const { enrichPlayer: enrichDoubles } = useDoublesFlags(allMatches);
+  const { enrichPlayer: enrichDoubles } = useAutoResolveDoublesFlags(allMatches);
 
   const { players: allDbPlayers } = useAllPlayers();
   const { rankings: wtaRankings } = useRankings('WTA');
